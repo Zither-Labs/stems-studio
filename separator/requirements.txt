@@ -1,0 +1,5 @@
+demucs>=4.0.0
+torch
+torchaudio
+yt-dlp>=2024.0.0
+numpy

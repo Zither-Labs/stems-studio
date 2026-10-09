@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stems Studio — Professional Audio Stem Mixer & Workstation</title>
+  <meta name="description" content="Interactive multi-track audio stem mixer and player. Isolate vocals, drums, bass, and accompaniment, adjust tempo and pitch, set A/B loops, and export studio mixdowns.">
+  <meta name="keywords" content="stems, audio mixer, demucs, vocals, karaoke, stems player, pitch shift, tempo control">
+  <meta name="author" content="Zither Labs">
+
+  <!-- Open Graph -->
+  <meta property="og:title" content="Stems Studio — Audio Stem Mixer">
+  <meta property="og:description" content="Interactive multi-track audio stem mixer, pitch & tempo control, and export studio.">
+  <meta property="og:type" content="website">
+
+  <!-- Studio Styles -->
+  <link rel="stylesheet" href="css/studio.css">
+</head>
+<body>
+
+  <!-- Top App Navigation Bar -->
+  <header class="studio-header">
+    <div class="brand-section">
+      <div class="brand-icon-wrap" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
+      </div>
+      <div class="brand-text">
+        <h1>Stems Studio</h1>
+        <span class="badge">Multi-Track Workstation</span>
+      </div>
+    </div>
+
+    <div class="header-actions">
+      <button class="btn btn-accent" id="btnLoadDemo" title="Generate and load 4 synchronized multi-track demo stems">
+        <svg viewBox="0 0 24 24"><path d="M5 3l14 9-14 9V3z"/></svg>
+        Load Studio Demo
+      </button>
+
+      <button class="btn btn-primary" id="btnImportStems" title="Import custom stem files or drop audios">
+        <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+        Import Stems
+      </button>
+
+      <button class="btn" id="btnSaveSession" title="Save session mix parameters">
+        <svg viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2zM17 21v-8H7v8M7 3v5h8"/></svg>
+        Save
+      </button>
+
+      <button class="btn" id="btnLoadSession" title="Restore saved session file">
+        <svg viewBox="0 0 24 24"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
+        Load
+      </button>
+      <input type="file" id="sessionFileInput" accept=".json" style="display:none;">
+    </div>
+  </header>
+
+  <!-- Master Transport Dock -->
+  <section class="transport-dock" aria-label="Transport Controls">
+    <!-- Playback Core -->
+    <div class="transport-playback">
+      <button class="rewind-btn" id="rewindBtn" title="Return to Start (Enter / Home)">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M11 18V6l-8.5 6 8.5 6zm.5-6l8.5 6V6l-8.5 6z"/></svg>
+      </button>
+
+      <button class="play-toggle-btn" id="playToggleBtn" title="Play / Pause (Spacebar)">
+        <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+      </button>
+
+      <button class="stop-btn" id="stopBtn" title="Stop">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M6 6h12v12H6z"/></svg>
+      </button>
+
+      <!-- Time Display -->
+      <div class="time-display-box" aria-live="polite">
+        <span class="current-time" id="currentTime">00:00.00</span>
+        <span class="time-divider">/</span>
+        <span class="total-time" id="totalTime">00:00.00</span>
+      </div>
+    </div>
+
+    <!-- Pitch & Tempo Steppers -->
+    <div class="pitch-tempo-cluster">
+      <div class="control-item">
+        <span class="control-label">Speed</span>
+        <select class="mini-select" id="speedSelect" title="Playback Speed">
+          <option value="0.5">0.50x</option>
+          <option value="0.75">0.75x</option>
+          <option value="0.9">0.90x</option>
+          <option value="1.0" selected>1.00x</option>
+          <option value="1.1">1.10x</option>
+          <option value="1.25">1.25x</option>
+          <option value="1.5">1.50x</option>
+        </select>
+      </div>
+
+      <div class="control-item">
+        <span class="control-label">Pitch</span>
+        <div class="pitch-stepper">
+          <button class="step-btn" id="pitchDownBtn" title="Pitch Down (Semitone)">-</button>
+          <span class="pitch-val" id="pitchVal">0 st</span>
+          <button class="step-btn" id="pitchUpBtn" title="Pitch Up (Semitone)">+</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- A/B Looping Toolbar -->
+    <div class="loop-toolbar">
+      <button class="loop-toggle-btn" id="loopToggleBtn" title="Toggle Looper (L)">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12v-3a4 4 0 014-4h12m0 0l-4-4m4 4l-4 4M20 12v3a4 4 0 01-4 4H4m0 0l4 4m-4-4l4-4"/></svg>
+        Loop
+      </button>
+      <button class="loop-marker-btn" id="setLoopInBtn" title="Set Loop In (A)">[ A</button>
+      <button class="loop-marker-btn" id="setLoopOutBtn" title="Set Loop Out (B)">B ]</button>
+      <button class="loop-marker-btn" id="clearLoopBtn" title="Clear Loop">Clear</button>
+    </div>
+
+    <!-- Quick Mix Presets -->
+    <div class="preset-toggles" role="group" aria-label="Mix Presets">
+      <button class="preset-chip" id="btnPresetKaraoke" title="Mute Vocals (K)">Karaoke</button>
+      <button class="preset-chip" id="btnPresetAcapella" title="Solo Vocals">Acapella</button>
+      <button class="preset-chip" id="btnPresetRhythm" title="Solo Drums and Bass">Rhythm</button>
+      <button class="preset-chip" id="btnPresetReset" title="Reset All Mutes and Solos">Reset</button>
+    </div>
+  </section>
+
+  <!-- Master Timeline & Global Scrubber Ruler -->
+  <section class="timeline-overview-deck" aria-label="Timeline Overview">
+    <div class="timeline-ruler">
+      <div class="timeline-ticks" id="timelineTicks"></div>
+    </div>
+    <div class="timeline-scrubber-track" id="scrubberTrack" title="Click or drag to seek">
+      <div class="scrubber-progress" id="scrubberProgress"></div>
+      <div class="scrubber-loop-overlay" id="scrubberLoopOverlay"></div>
+      <div class="scrubber-playhead" id="scrubberPlayhead"></div>
+    </div>
+  </section>
+
+  <!-- Studio Main Workstation Grid -->
+  <main class="studio-main">
+    <!-- Left Multi-Track Studio Rack -->
+    <section class="tracks-rack" id="tracksRack" aria-label="Audio Stems Mixer Rack">
+      <!-- Generated via studio-app.js -->
+    </section>
+
+    <!-- Right Sidebar Deck: Master Output & Export -->
+    <aside class="studio-sidebar" aria-label="Master Output and Studio Tools">
+      <!-- Master Channel Strip Panel -->
+      <div class="sidebar-panel">
+        <h2 class="panel-title">Master Output</h2>
+
+        <!-- Stereo Output Meters -->
+        <div class="master-vu-deck" aria-label="Master Stereo VU Meters">
+          <div class="channel-meter-row">
+            <span class="channel-lbl">L</span>
+            <div class="stereo-meter-track">
+              <div class="stereo-meter-fill" id="masterMeterL"></div>
+            </div>
+          </div>
+          <div class="channel-meter-row">
+            <span class="channel-lbl">R</span>
+            <div class="stereo-meter-track">
+              <div class="stereo-meter-fill" id="masterMeterR"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Master Volume Fader -->
+        <div class="master-fader-control">
+          <div class="slider-row">
+            <span class="slider-label">Master</span>
+            <input type="range" class="studio-slider" id="masterFader" min="0" max="1.5" step="0.01" value="1.0">
+            <span class="slider-readout" id="masterFaderVal">0.0 dB</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Export Studio Panel -->
+      <div class="sidebar-panel">
+        <h2 class="panel-title">Export Mixdown</h2>
+        <div class="export-actions-grid">
+          <button class="btn btn-accent export-btn" id="btnExportMix" title="Export full mixdown with current volume and pan settings">
+            <svg viewBox="0 0 24 24"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+            <div>
+              <span>Export Full Mix (.wav)</span>
+              <span class="export-btn-desc">High-res 44.1kHz 16-bit PCM</span>
+            </div>
+          </button>
+
+          <button class="btn export-btn" id="btnExportKaraoke" title="Export backing track with vocals muted">
+            <svg viewBox="0 0 24 24"><path d="M9 19V6l12-3v13M9 10l12-3"/></svg>
+            <div>
+              <span>Export Backing Track (.wav)</span>
+              <span class="export-btn-desc">Karaoke (Vocals Muted)</span>
+            </div>
+          </button>
+
+          <button class="btn export-btn" id="btnExportAcapella" title="Export solo vocal track">
+            <svg viewBox="0 0 24 24"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3zM19 10v2a7 7 0 01-14 0v-2M12 19v4M8 23h8"/></svg>
+            <div>
+              <span>Export Acapella (.wav)</span>
+              <span class="export-btn-desc">Isolated Vocal Stem</span>
+            </div>
+          </button>
+
+          <label style="display:flex; align-items:center; gap:0.5rem; font-size:0.75rem; color:var(--text-secondary); cursor:pointer; margin-top:4px;">
+            <input type="checkbox" id="exportLoopOnly" style="accent-color: var(--accent-indigo);">
+            Export Active Loop Region Only
+          </label>
+        </div>
+      </div>
+
+      <!-- Quick Shortcuts Panel -->
+      <div class="sidebar-panel">
+        <h2 class="panel-title">Studio Shortcuts</h2>
+        <div class="shortcuts-list">
+          <div class="shortcut-row"><span>Play / Pause</span> <kbd>Space</kbd></div>
+          <div class="shortcut-row"><span>Return to 0:00</span> <kbd>Enter</kbd></div>
+          <div class="shortcut-row"><span>Toggle Loop</span> <kbd>L</kbd></div>
+          <div class="shortcut-row"><span>Karaoke Toggle</span> <kbd>K</kbd></div>
+          <div class="shortcut-row"><span>Seek to Position</span> <kbd>Click Waveform</kbd></div>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <!-- Stem Files Dropzone Modal -->
+  <div class="modal-backdrop" id="dropzoneModal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="modal-window">
+      <div class="modal-header">
+        <h2 class="modal-title" id="modalTitle">Import Audio Stems</h2>
+        <button class="modal-close-btn" id="modalCloseBtn" aria-label="Close Modal">
+          <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" fill="none" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      <div class="dropzone-box" id="dropzoneBox">
+        <svg class="dropzone-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+          <path d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
+        </svg>
+        <h3 style="font-size:1.05rem; margin-bottom:0.35rem; font-weight:600;">Drag & Drop Stems Here</h3>
+        <p style="color:var(--text-muted); font-size:0.82rem;">Supports WAV, MP3, FLAC, AAC, OGG. Multi-file upload supported.</p>
+        <p style="color:var(--accent-cyan); font-size:0.75rem; margin-top:0.5rem;">Auto-maps filenames matching "vocal", "drum", "bass", "other"!</p>
+      </div>
+
+      <input type="file" id="fileInputHidden" multiple accept="audio/*" style="display:none;">
+
+      <div style="text-align:right;">
+        <button class="btn" onclick="document.getElementById('dropzoneModal').classList.remove('open')">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification Root -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <!-- App Scripts -->
+  <script src="js/audio-engine.js"></script>
+  <script src="js/waveform-renderer.js"></script>
+  <script src="js/demo-generator.js"></script>
+  <script src="js/export-engine.js"></script>
+  <script src="js/studio-app.js"></script>
+</body>
+</html>

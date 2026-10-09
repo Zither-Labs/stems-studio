@@ -1,0 +1,1156 @@
+/* ==========================================================================
+   Stems Studio - High-End Multi-Track Audio Workstation Design System
+   ========================================================================== */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@500;600;700;800&display=swap');
+
+:root {
+  /* Color Palette - Deep Obsidian Dark Studio */
+  --bg-core: #090b10;
+  --bg-surface-1: #0f131c;
+  --bg-surface-2: #161c28;
+  --bg-surface-3: #1f2738;
+  --bg-surface-hover: #263045;
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.16);
+  --border-glow: rgba(99, 102, 241, 0.35);
+
+  /* Track Stems Signature Accents */
+  --stem-vocal: #ff4d6d;
+  --stem-vocal-glow: rgba(255, 77, 109, 0.3);
+  --stem-drums: #f59e0b;
+  --stem-drums-glow: rgba(245, 158, 11, 0.3);
+  --stem-bass: #a855f7;
+  --stem-bass-glow: rgba(168, 85, 247, 0.3);
+  --stem-other: #06b6d4;
+  --stem-other-glow: rgba(6, 182, 212, 0.3);
+  --stem-master: #10b981;
+  --stem-master-glow: rgba(16, 185, 129, 0.35);
+
+  /* Neutral Typography & States */
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  --accent-cyan: #38bdf8;
+  --accent-indigo: #6366f1;
+  --accent-purple: #8b5cf6;
+  --danger-red: #ef4444;
+  --warning-amber: #f59e0b;
+  --success-emerald: #10b981;
+
+  /* UI Metrics */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+  --shadow-subtle: 0 4px 16px rgba(0, 0, 0, 0.4);
+  --shadow-elevated: 0 10px 32px rgba(0, 0, 0, 0.6);
+  --shadow-neon: 0 0 20px rgba(99, 102, 241, 0.25);
+  --transition-fast: 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-normal: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  width: 100%;
+  min-height: 100vh;
+  background-color: var(--bg-core);
+  color: var(--text-primary);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Background Atmosphere */
+body::before {
+  content: '';
+  position: fixed;
+  top: -20%;
+  left: 10%;
+  width: 80vw;
+  height: 60vh;
+  background: radial-gradient(circle, rgba(99, 102, 241, 0.08) 0%, rgba(168, 85, 247, 0.04) 50%, transparent 80%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ==========================================================================
+   Header & Top App Bar
+   ========================================================================== */
+
+.studio-header {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: rgba(15, 19, 28, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--border-subtle);
+  padding: 0.75rem 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.brand-section {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+}
+
+.brand-icon-wrap {
+  width: 38px;
+  height: 38px;
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, #6366f1, #a855f7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 16px rgba(99, 102, 241, 0.4);
+}
+
+.brand-icon-wrap svg {
+  width: 22px;
+  height: 22px;
+  fill: #fff;
+}
+
+.brand-text h1 {
+  font-family: 'Outfit', sans-serif;
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  background: linear-gradient(135deg, #ffffff 40%, #cbd5e1 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  line-height: 1.2;
+}
+
+.brand-text .badge {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--accent-cyan);
+  background: rgba(6, 182, 212, 0.12);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+/* Base Studio Buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  padding: 0.5rem 0.9rem;
+  border-radius: var(--radius-sm);
+  font-family: 'Inter', sans-serif;
+  font-size: 0.82rem;
+  font-weight: 500;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface-2);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  text-decoration: none;
+  user-select: none;
+}
+
+.btn:hover {
+  background: var(--bg-surface-hover);
+  border-color: var(--border-strong);
+  transform: translateY(-1px);
+}
+
+.btn:active {
+  transform: translateY(0);
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, #6366f1, #4f46e5);
+  border-color: rgba(255, 255, 255, 0.15);
+  color: #fff;
+  box-shadow: 0 4px 14px rgba(79, 70, 229, 0.35);
+}
+
+.btn-primary:hover {
+  background: linear-gradient(135deg, #4f46e5, #4338ca);
+  box-shadow: 0 6px 18px rgba(79, 70, 229, 0.5);
+}
+
+.btn-accent {
+  background: linear-gradient(135deg, #10b981, #059669);
+  border-color: rgba(255, 255, 255, 0.15);
+  color: #fff;
+  box-shadow: 0 4px 14px rgba(16, 185, 129, 0.35);
+}
+
+.btn-accent:hover {
+  background: linear-gradient(135deg, #059669, #047857);
+  box-shadow: 0 6px 18px rgba(16, 185, 129, 0.5);
+}
+
+.btn-danger {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: rgba(239, 68, 68, 0.3);
+  color: #fca5a5;
+}
+
+.btn-danger:hover {
+  background: rgba(239, 68, 68, 0.25);
+  border-color: rgba(239, 68, 68, 0.5);
+}
+
+.btn svg {
+  width: 15px;
+  height: 15px;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: none;
+}
+
+/* ==========================================================================
+   Master Transport Control Deck
+   ========================================================================== */
+
+.transport-dock {
+  background: var(--bg-surface-1);
+  border-bottom: 1px solid var(--border-subtle);
+  padding: 0.9rem 1.5rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.25rem;
+  z-index: 40;
+}
+
+.transport-playback {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.play-toggle-btn {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 0 20px rgba(99, 102, 241, 0.45);
+  transition: all var(--transition-fast);
+}
+
+.play-toggle-btn:hover {
+  transform: scale(1.06);
+  box-shadow: 0 0 26px rgba(99, 102, 241, 0.65);
+}
+
+.play-toggle-btn:active {
+  transform: scale(0.97);
+}
+
+.play-toggle-btn svg {
+  width: 22px;
+  height: 22px;
+  fill: currentColor;
+}
+
+.rewind-btn, .stop-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.rewind-btn:hover, .stop-btn:hover {
+  background: var(--bg-surface-hover);
+  color: var(--text-primary);
+}
+
+/* Digital Time Display */
+.time-display-box {
+  background: var(--bg-core);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  padding: 0.45rem 0.85rem;
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.6);
+}
+
+.current-time {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--accent-cyan);
+  letter-spacing: 0.04em;
+  text-shadow: 0 0 10px rgba(56, 189, 248, 0.4);
+}
+
+.time-divider {
+  color: var(--text-muted);
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 600;
+}
+
+.total-time {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+/* Pitch & Tempo Controls */
+.pitch-tempo-cluster {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  background: var(--bg-surface-2);
+  padding: 0.35rem 0.75rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+}
+
+.control-item {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.control-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.mini-select {
+  background: var(--bg-surface-3);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.8rem;
+  padding: 0.3rem 0.5rem;
+  border-radius: var(--radius-sm);
+  outline: none;
+  cursor: pointer;
+}
+
+.mini-select:focus {
+  border-color: var(--accent-indigo);
+}
+
+.pitch-stepper {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.step-btn {
+  width: 24px;
+  height: 24px;
+  background: var(--bg-surface-3);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+  border-radius: 4px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.step-btn:hover {
+  background: var(--accent-indigo);
+  color: #fff;
+}
+
+.pitch-val {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.82rem;
+  font-weight: 600;
+  min-width: 38px;
+  text-align: center;
+  color: var(--accent-purple);
+}
+
+/* Loop & Presets Toolbar */
+.loop-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.loop-toggle-btn {
+  padding: 0.4rem 0.75rem;
+  font-size: 0.78rem;
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-weight: 600;
+  transition: all var(--transition-fast);
+}
+
+.loop-toggle-btn.active {
+  background: rgba(99, 102, 241, 0.2);
+  border-color: var(--accent-indigo);
+  color: #fff;
+  box-shadow: 0 0 12px rgba(99, 102, 241, 0.35);
+}
+
+.loop-marker-btn {
+  padding: 0.35rem 0.55rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  font-family: 'JetBrains Mono', monospace;
+  border-radius: 4px;
+  background: var(--bg-surface-3);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.loop-marker-btn:hover {
+  border-color: var(--accent-cyan);
+}
+
+/* Preset Quick Toggles */
+.preset-toggles {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: var(--bg-surface-2);
+  padding: 0.25rem 0.45rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+}
+
+.preset-chip {
+  padding: 0.3rem 0.65rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.preset-chip:hover {
+  color: var(--text-primary);
+  background: var(--bg-surface-3);
+}
+
+.preset-chip.active {
+  background: rgba(255, 77, 109, 0.15);
+  border-color: var(--stem-vocal);
+  color: var(--stem-vocal);
+}
+
+/* ==========================================================================
+   Master Timeline & Global Scrubber
+   ========================================================================== */
+
+.timeline-overview-deck {
+  background: var(--bg-surface-1);
+  padding: 0.5rem 1.5rem 0.75rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.timeline-ruler {
+  position: relative;
+  height: 24px;
+  background: var(--bg-surface-2);
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  border: 1px solid var(--border-subtle);
+  border-bottom: none;
+  overflow: hidden;
+  user-select: none;
+}
+
+.timeline-ticks {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+}
+
+.timeline-scrubber-track {
+  position: relative;
+  height: 28px;
+  background: var(--bg-core);
+  border: 1px solid var(--border-strong);
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.scrubber-progress {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 0%;
+  background: rgba(99, 102, 241, 0.2);
+  pointer-events: none;
+}
+
+.scrubber-playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: #fff;
+  box-shadow: 0 0 10px #6366f1, 0 0 18px #fff;
+  transform: translateX(-50%);
+  pointer-events: none;
+  z-index: 10;
+}
+
+.scrubber-loop-overlay {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: rgba(56, 189, 248, 0.15);
+  border-left: 2px solid var(--accent-cyan);
+  border-right: 2px solid var(--accent-cyan);
+  pointer-events: none;
+  display: none;
+}
+
+/* ==========================================================================
+   Multi-Track Studio Rack (Tracks Deck)
+   ========================================================================== */
+
+.studio-main {
+  max-width: 1600px;
+  margin: 0 auto;
+  padding: 1.5rem;
+  display: grid;
+  grid-template-columns: 1fr 340px;
+  gap: 1.5rem;
+}
+
+@media (max-width: 1200px) {
+  .studio-main {
+    grid-template-columns: 1fr;
+  }
+}
+
+.tracks-rack {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+/* Individual Stem Track Card */
+.track-card {
+  background: var(--bg-surface-1);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  box-shadow: var(--shadow-subtle);
+  position: relative;
+}
+
+@media (max-width: 900px) {
+  .track-card {
+    grid-template-columns: 1fr;
+  }
+}
+
+.track-card:hover {
+  border-color: var(--border-strong);
+}
+
+.track-card.active-stem-vocal {
+  border-left: 4px solid var(--stem-vocal);
+}
+.track-card.active-stem-drums {
+  border-left: 4px solid var(--stem-drums);
+}
+.track-card.active-stem-bass {
+  border-left: 4px solid var(--stem-bass);
+}
+.track-card.active-stem-other {
+  border-left: 4px solid var(--stem-other);
+}
+.track-card.active-stem-custom {
+  border-left: 4px solid var(--accent-indigo);
+}
+
+/* Track Left Control Mixer Strip */
+.track-mixer-strip {
+  background: var(--bg-surface-2);
+  border-right: 1px solid var(--border-subtle);
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.track-header-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.track-identity {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  overflow: hidden;
+}
+
+.stem-badge-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.75rem;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.stem-vocal-icon {
+  background: var(--stem-vocal);
+  box-shadow: 0 0 10px var(--stem-vocal-glow);
+}
+.stem-drums-icon {
+  background: var(--stem-drums);
+  box-shadow: 0 0 10px var(--stem-drums-glow);
+}
+.stem-bass-icon {
+  background: var(--stem-bass);
+  box-shadow: 0 0 10px var(--stem-bass-glow);
+}
+.stem-other-icon {
+  background: var(--stem-other);
+  box-shadow: 0 0 10px var(--stem-other-glow);
+}
+.stem-custom-icon {
+  background: var(--accent-indigo);
+}
+
+.track-name-input {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--text-primary);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  padding: 2px 4px;
+  outline: none;
+  width: 100%;
+}
+
+.track-name-input:focus {
+  background: var(--bg-surface-3);
+  border-color: var(--border-strong);
+}
+
+.track-strip-buttons {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+/* Tactile Mute and Solo Buttons */
+.btn-mute, .btn-solo {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.85rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface-3);
+  color: var(--text-muted);
+  transition: all var(--transition-fast);
+}
+
+.btn-mute:hover, .btn-solo:hover {
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+
+.btn-mute.active {
+  background: #dc2626;
+  border-color: #ef4444;
+  color: #fff;
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.45);
+}
+
+.btn-solo.active {
+  background: #d97706;
+  border-color: #f59e0b;
+  color: #fff;
+  box-shadow: 0 0 12px rgba(245, 158, 11, 0.45);
+}
+
+/* Faders and Panning */
+.fader-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.slider-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.slider-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+  min-width: 32px;
+}
+
+.slider-readout {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  min-width: 48px;
+  text-align: right;
+}
+
+/* Range Inputs */
+input[type="range"].studio-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 6px;
+  background: var(--bg-core);
+  border-radius: 4px;
+  outline: none;
+  border: 1px solid var(--border-subtle);
+}
+
+input[type="range"].studio-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #f8fafc;
+  cursor: pointer;
+  border: 2px solid var(--accent-indigo);
+  box-shadow: 0 0 6px rgba(0, 0, 0, 0.8);
+  transition: transform var(--transition-fast);
+}
+
+input[type="range"].studio-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.25);
+}
+
+/* Dynamic Track VU Meter */
+.track-vu-container {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.vu-meter-bar {
+  flex: 1;
+  height: 6px;
+  background: var(--bg-core);
+  border-radius: 3px;
+  overflow: hidden;
+  position: relative;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.vu-meter-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #10b981 60%, #f59e0b 85%, #ef4444 100%);
+  transition: width 0.06s ease;
+}
+
+.vu-clip-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #334155;
+}
+
+.vu-clip-dot.clipping {
+  background: #ef4444;
+  box-shadow: 0 0 8px #ef4444;
+}
+
+/* Track Right Waveform Canvas Area */
+.track-waveform-zone {
+  position: relative;
+  background: var(--bg-surface-1);
+  min-height: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.track-canvas {
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+}
+
+.track-playhead-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: #fff;
+  box-shadow: 0 0 10px #6366f1;
+  pointer-events: none;
+  z-index: 10;
+  display: none;
+}
+
+.track-loop-highlight {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: rgba(56, 189, 248, 0.12);
+  border-left: 2px dashed rgba(56, 189, 248, 0.6);
+  border-right: 2px dashed rgba(56, 189, 248, 0.6);
+  pointer-events: none;
+  display: none;
+}
+
+.track-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--text-muted);
+  padding: 1.5rem;
+  pointer-events: none;
+}
+
+.track-empty-state svg {
+  width: 32px;
+  height: 32px;
+  stroke: var(--text-muted);
+}
+
+/* ==========================================================================
+   Master Controls & Studio Sidebar
+   ========================================================================== */
+
+.studio-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.sidebar-panel {
+  background: var(--bg-surface-1);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 1.25rem;
+  box-shadow: var(--shadow-subtle);
+}
+
+.panel-title {
+  font-family: 'Outfit', sans-serif;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 0.85rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* Master Stereo VU Meters */
+.master-vu-deck {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.channel-meter-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.channel-lbl {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  width: 14px;
+}
+
+.stereo-meter-track {
+  flex: 1;
+  height: 12px;
+  background: var(--bg-core);
+  border: 1px solid var(--border-subtle);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.stereo-meter-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #10b981 0%, #10b981 65%, #f59e0b 85%, #ef4444 100%);
+  transition: width 0.05s ease;
+}
+
+.master-fader-control {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+/* Quick Export Deck */
+.export-actions-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.6rem;
+}
+
+.export-btn {
+  width: 100%;
+  justify-content: flex-start;
+  padding: 0.65rem 0.85rem;
+  font-weight: 600;
+}
+
+.export-btn-desc {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin-top: 2px;
+  display: block;
+  font-weight: 400;
+}
+
+/* Key Shortcuts Reference */
+.shortcuts-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+
+.shortcut-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+kbd {
+  background: var(--bg-surface-3);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* ==========================================================================
+   Modals & Dropzones
+   ========================================================================== */
+
+.modal-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(5, 7, 10, 0.8);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--transition-normal);
+}
+
+.modal-backdrop.open {
+  opacity: 1;
+  pointer-events: all;
+}
+
+.modal-window {
+  background: var(--bg-surface-1);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-xl);
+  padding: 2rem;
+  max-width: 620px;
+  width: 90%;
+  box-shadow: var(--shadow-elevated);
+  transform: translateY(16px);
+  transition: transform var(--transition-normal);
+}
+
+.modal-backdrop.open .modal-window {
+  transform: translateY(0);
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.25rem;
+}
+
+.modal-title {
+  font-family: 'Outfit', sans-serif;
+  font-size: 1.35rem;
+  font-weight: 700;
+}
+
+.modal-close-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+}
+
+.modal-close-btn:hover {
+  color: var(--text-primary);
+}
+
+.dropzone-box {
+  border: 2px dashed var(--border-strong);
+  border-radius: var(--radius-lg);
+  padding: 2.5rem 1.5rem;
+  text-align: center;
+  cursor: pointer;
+  background: rgba(22, 28, 40, 0.4);
+  transition: all var(--transition-fast);
+  margin-bottom: 1.25rem;
+}
+
+.dropzone-box:hover, .dropzone-box.drag-over {
+  border-color: var(--accent-indigo);
+  background: rgba(99, 102, 241, 0.08);
+}
+
+.dropzone-icon {
+  width: 48px;
+  height: 48px;
+  margin: 0 auto 0.75rem;
+  color: var(--accent-indigo);
+}
+
+/* Toast Notifications */
+.toast-container {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 200;
+  pointer-events: none;
+}
+
+.toast {
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border-strong);
+  color: var(--text-primary);
+  padding: 0.75rem 1.2rem;
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-elevated);
+  font-size: 0.85rem;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  pointer-events: auto;
+  animation: slideInToast 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.toast.success {
+  border-left: 4px solid var(--success-emerald);
+}
+
+.toast.error {
+  border-left: 4px solid var(--danger-red);
+}
+
+@keyframes slideInToast {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}

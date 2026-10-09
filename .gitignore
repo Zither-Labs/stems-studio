@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+dist/
+build/
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+# OS & IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Large audio test exports
+*.wav.tmp
+temp_stems/
+output/
