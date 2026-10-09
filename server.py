@@ -60,6 +60,30 @@ STANDARD_4S_STEM_MAP = {
 }
 
 
+def get_device_info():
+    try:
+        import torch
+        if torch.cuda.is_available():
+            dev_name = torch.cuda.get_device_name(0)
+            vram = torch.cuda.get_device_properties(0).total_memory / (1024 ** 3)
+            return {
+                "device": "cuda",
+                "device_name": dev_name,
+                "vram_gb": round(vram, 1),
+                "cuda_available": True,
+                "cuda_version": getattr(torch.version, "cuda", "12.6")
+            }
+    except Exception:
+        pass
+    return {
+        "device": "cpu",
+        "device_name": "CPU",
+        "vram_gb": 0,
+        "cuda_available": False,
+        "cuda_version": None
+    }
+
+
 def run_separation_job(job_id, source_type, source_val, model="htdemucs_6s", preset="nepali_folk"):
     job = JOBS[job_id]
     job_dir = os.path.join(OUTPUT_DIR, job_id)
@@ -67,10 +91,12 @@ def run_separation_job(job_id, source_type, source_val, model="htdemucs_6s", pre
 
     try:
         audio_file = None
+        dev_info = get_device_info()
+        device_arg = dev_info["device"]
 
         # Step 1: Acquire audio file
         if source_type == "youtube":
-            job["message"] = "Downloading audio from YouTube..."
+            job["message"] = f"Downloading audio from YouTube ({dev_info['device_name']})..."
             job["progress"] = 15
             import yt_dlp
             ydl_opts = {
@@ -94,13 +120,14 @@ def run_separation_job(job_id, source_type, source_val, model="htdemucs_6s", pre
         if not os.path.isfile(audio_file):
             raise Exception("Failed to prepare source audio file.")
 
-        # Step 2: Run Demucs Separation
-        job["message"] = f"Separating audio into stems using {model}..."
+        # Step 2: Run Demucs Separation with GPU acceleration
+        job["message"] = f"Running neural separation with {model} on {dev_info['device_name']}..."
         job["progress"] = 35
 
         cmd = [
             sys.executable, "-m", "demucs.separate",
             "-n", model,
+            "-d", device_arg,
             "-o", job_dir,
             audio_file
         ]
@@ -185,7 +212,16 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
 
-        if parsed.path == "/api/status":
+        if parsed.path == "/api/engine":
+            dev_info = get_device_info()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(json.dumps(dev_info).encode("utf-8"))
+            return
+
+        elif parsed.path == "/api/status":
             query = urllib.parse.parse_qs(parsed.query)
             job_id = query.get("job_id", [""])[0]
             job = JOBS.get(job_id)

@@ -921,5 +921,32 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
+  // Query Server Engine & GPU Status
+  async function checkEngineStatus() {
+    const gpuBadgeText = document.getElementById('gpuBadgeText');
+    const gpuEngineBadge = document.getElementById('gpuEngineBadge');
+    if (!gpuBadgeText || !gpuEngineBadge) return;
+
+    try {
+      const resp = await fetch('/api/engine');
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data.cuda_available) {
+          gpuBadgeText.textContent = `⚡ GPU Active: ${data.device_name} (${data.vram_gb} GB VRAM)`;
+          gpuEngineBadge.style.color = '#34d399';
+          gpuEngineBadge.style.borderColor = 'rgba(16, 185, 129, 0.4)';
+          gpuEngineBadge.title = `NVIDIA CUDA ${data.cuda_version || '12.6'} acceleration enabled on ${data.device_name}`;
+        } else {
+          gpuBadgeText.textContent = `⚙️ Engine: ${data.device_name} Mode`;
+          gpuEngineBadge.style.color = '#f59e0b';
+          gpuEngineBadge.style.borderColor = 'rgba(245, 158, 11, 0.3)';
+        }
+      }
+    } catch (e) {
+      gpuBadgeText.textContent = '⚡ Web Audio Mode (Offline)';
+    }
+  }
+
+  checkEngineStatus();
   startAnimationLoop();
 });
