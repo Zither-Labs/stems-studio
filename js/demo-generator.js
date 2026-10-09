@@ -6,10 +6,10 @@
 
 class DemoStemGenerator {
   /**
-   * Generates 4 AudioBuffers: Vocals, Drums, Bass, Other
+   * Generates synchronized AudioBuffers for 4 or 6 stems.
    * Total length: 16.0 seconds (8 bars at 120 BPM in C Minor / Eb Major)
    */
-  static async generateDemoStems(audioCtx) {
+  static async generateDemoStems(audioCtx, is6Stems = true) {
     const sampleRate = 44100;
     const duration = 16.0; // 8 bars @ 120 BPM
     const bpm = 120;
@@ -24,15 +24,168 @@ class DemoStemGenerator {
 
     const drumsBuffer = await renderStem(this.generateDrums);
     const bassBuffer = await renderStem(this.generateBass);
-    const otherBuffer = await renderStem(this.generateChords);
     const vocalBuffer = await renderStem(this.generateVocals);
 
-    return {
-      vocal: vocalBuffer,
-      drums: drumsBuffer,
-      bass: bassBuffer,
-      other: otherBuffer
-    };
+    if (is6Stems) {
+      const guitarBuffer = await renderStem(this.generateGuitar);
+      const pianoBuffer = await renderStem(this.generateHarmonium);
+      const otherBuffer = await renderStem(this.generateFolkLead);
+
+      return {
+        vocal: vocalBuffer,
+        drums: drumsBuffer,
+        bass: bassBuffer,
+        guitar: guitarBuffer,
+        piano: pianoBuffer,
+        other: otherBuffer
+      };
+    } else {
+      const otherBuffer = await renderStem(this.generateChords);
+      return {
+        vocal: vocalBuffer,
+        drums: drumsBuffer,
+        bass: bassBuffer,
+        other: otherBuffer
+      };
+    }
+  }
+
+  /**
+   * Acoustic Guitar / Tungna Plucks
+   */
+  static generateGuitar(ctx, bpm, beatSec, totalDuration) {
+    const totalBars = Math.floor(totalDuration / (beatSec * 4));
+    // Plucked acoustic pattern in C minor
+    const chords = [
+      [261.63, 311.13, 392.00, 523.25], // Cm
+      [261.63, 311.13, 392.00, 523.25],
+      [207.65, 261.63, 311.13, 415.30], // Ab
+      [233.08, 293.66, 349.23, 466.16]  // Bb
+    ];
+
+    for (let bar = 0; bar < totalBars; bar++) {
+      const barStart = bar * beatSec * 4;
+      const notes = chords[bar % chords.length];
+      for (let s = 0; s < 8; s++) {
+        const time = barStart + s * (beatSec / 2);
+        const freq = notes[s % notes.length];
+
+        const osc = ctx.createOscillator();
+        const filter = ctx.createBiquadFilter();
+        const gain = ctx.createGain();
+
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(freq, time);
+
+        filter.type = 'lowpass';
+        filter.frequency.setValueAtTime(2800, time);
+        filter.frequency.exponentialRampToValueAtTime(600, time + 0.2);
+
+        gain.gain.setValueAtTime(0.25, time);
+        gain.gain.exponentialRampToValueAtTime(0.001, time + 0.35);
+
+        osc.connect(filter);
+        filter.connect(gain);
+        gain.connect(ctx.destination);
+
+        osc.start(time);
+        osc.stop(time + 0.38);
+      }
+    }
+  }
+
+  /**
+   * Harmonium & Reed Drone
+   */
+  static generateHarmonium(ctx, bpm, beatSec, totalDuration) {
+    const chordProgressions = [
+      { start: 0, dur: 4 * beatSec, freqs: [130.81, 196.00, 261.63] }, // C3, G3, C4
+      { start: 4 * beatSec, dur: 4 * beatSec, freqs: [130.81, 196.00, 311.13] },
+      { start: 8 * beatSec, dur: 4 * beatSec, freqs: [103.83, 155.56, 207.65] }, // Ab
+      { start: 12 * beatSec, dur: 4 * beatSec, freqs: [116.54, 174.61, 233.08] } // Bb
+    ];
+
+    chordProgressions.forEach(prog => {
+      prog.freqs.forEach(freq => {
+        const osc = ctx.createOscillator();
+        const filter = ctx.createBiquadFilter();
+        const gain = ctx.createGain();
+
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(freq, prog.start);
+
+        filter.type = 'bandpass';
+        filter.frequency.value = 750;
+        filter.Q.value = 2.0;
+
+        gain.gain.setValueAtTime(0.001, prog.start);
+        gain.gain.linearRampToValueAtTime(0.12, prog.start + 0.2);
+        gain.gain.exponentialRampToValueAtTime(0.001, prog.start + prog.dur);
+
+        osc.connect(filter);
+        filter.connect(gain);
+        gain.connect(ctx.destination);
+
+        osc.start(prog.start);
+        osc.stop(prog.start + prog.dur);
+      });
+    });
+  }
+
+  /**
+   * Sarangi & Bansuri / Folk Lead
+   */
+  static generateFolkLead(ctx, bpm, beatSec, totalDuration) {
+    // Expressive high melody lines mimicking Sarangi meend (pitch glides) and Bansuri
+    const folkNotes = [
+      { freq1: 523.25, freq2: 587.33, startBeat: 1.0, durBeats: 1.5 },
+      { freq1: 622.25, freq2: 523.25, startBeat: 3.0, durBeats: 2.0 },
+      { freq1: 466.16, freq2: 392.00, startBeat: 6.0, durBeats: 1.5 },
+      { freq1: 392.00, freq2: 466.16, startBeat: 9.0, durBeats: 2.0 },
+      { freq1: 523.25, freq2: 622.25, startBeat: 12.0, durBeats: 3.0 },
+      { freq1: 622.25, freq2: 783.99, startBeat: 17.0, durBeats: 2.5 },
+      { freq1: 783.99, freq2: 523.25, startBeat: 21.0, durBeats: 3.0 },
+      { freq1: 466.16, freq2: 523.25, startBeat: 26.0, durBeats: 4.0 }
+    ];
+
+    folkNotes.forEach(n => {
+      const time = n.startBeat * beatSec;
+      const dur = n.durBeats * beatSec;
+      if (time >= totalDuration) return;
+
+      const osc = ctx.createOscillator();
+      const vibrato = ctx.createOscillator();
+      const vibGain = ctx.createGain();
+      const filter = ctx.createBiquadFilter();
+      const gain = ctx.createGain();
+
+      osc.type = 'sawtooth';
+      // Meend glide from freq1 to freq2
+      osc.frequency.setValueAtTime(n.freq1, time);
+      osc.frequency.linearRampToValueAtTime(n.freq2, time + dur * 0.7);
+
+      vibrato.frequency.setValueAtTime(6.0, time);
+      vibGain.gain.setValueAtTime(0, time);
+      vibGain.gain.linearRampToValueAtTime(8, time + 0.25);
+      vibrato.connect(osc.frequency);
+
+      filter.type = 'bandpass';
+      filter.frequency.value = 1450;
+      filter.Q.value = 3.5;
+
+      gain.gain.setValueAtTime(0.001, time);
+      gain.gain.linearRampToValueAtTime(0.18, time + 0.1);
+      gain.gain.exponentialRampToValueAtTime(0.001, time + dur);
+
+      osc.connect(filter);
+      filter.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.start(time);
+      vibrato.start(time);
+      osc.stop(time + dur);
+      vibrato.stop(time + dur);
+    });
   }
 
   /**

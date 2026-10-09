@@ -1,68 +1,104 @@
 # Stems Studio
 
-A modern multi-track audio stem mixer, practice station, and export workstation built with the Web Audio API and HTML5 Canvas.
+A modern multi-track audio stem mixer, AI separator, and practice workstation featuring **6-Stem Neural Separation** optimized for acoustic and **Nepali folk music** (Madal, Sarangi, Bansuri, Harmonium, Plucks, Vocals).
 
 ![Stems Studio Interface](https://img.shields.io/badge/Audio-WebAudio%20API-6366f1?style=for-the-badge)
+![AI-Model](https://img.shields.io/badge/AI-Demucs%206--Stem%20(htdemucs__6s)-f59e0b?style=for-the-badge)
 ![Status](https://img.shields.io/badge/Status-Active-10b981?style=for-the-badge)
 
 ---
 
-## Features
+## 🎯 What Makes This Different: 4 Stems vs. 6 Stems (Nepali Folk)
 
-### 1. Multi-Track Mixer & Real-time Waveforms
-- **Sample-accurate Synchronized Playback** across all stem channels (Vocals, Drums, Bass, Instruments, or custom stems).
-- **Interactive High-DPI Waveforms:** Click-to-seek, drag-to-scrub, real-time playhead cursor and played-region shading.
-- **Dedicated Track Controls:**
-  - Tactile **Mute (M)** and **Solo (S)** buttons with glowing active indicators.
+Most stem tools only offer 4 generic channels (*Vocals, Drums, Bass, Other*). For Nepali folk songs (Lok Dohori, Selo, Deuda, Teej, folk ballads, and acoustic arrangements), 4-stem models fail because:
+1. Madal percussion gets split awkwardly between bass and drums.
+2. Sarangi, Bansuri (flute), Harmonium, and Acoustic Guitars are all crammed into a messy "Other" channel.
+
+**Stems Studio solves this with a dedicated 6-Stem AI Engine (`htdemucs_6s`):**
+- 🎤 **Vocals / स्वर:** Lead singing & chorus
+- 🪘 **Madal & Percussion / मादल:** Dual-head Madal (Baya bass thump & Dahina snaps), Tabla, Dholak
+- 🎻 **Sarangi & Bansuri / सारङ्गी-बाँसुरी:** Folk fiddle, bamboo flute, acoustic melody leads
+- 🎹 **Harmonium & Keys / हार्मोनियम:** Bellows harmonium chords, reed drone
+- 🎸 **Acoustic Pluck / टुङ्ना-गितार:** Tungna, Sarod, acoustic rhythm guitar
+- 🔊 **Bass & Low-End / बास:** Acoustic sub-bass and low frequencies
+
+You can also switch anytime between:
+- **6 Stems: Nepali Folk & Acoustic** (Madal, Sarangi, Flute, Harmonium, Pluck, Bass)
+- **6 Stems: Standard** (Vocals, Drums, Bass, Guitar, Piano, Other)
+- **4 Stems: Studio** (Vocals, Drums, Bass, Other)
+
+---
+
+## 🚀 How to Feed Audio into Stems Studio
+
+The app has a prominent intake bar right at the top of the screen:
+
+### Option 1: Paste a YouTube Link 🎬
+1. Paste any YouTube song link (e.g. `https://www.youtube.com/watch?v=...`).
+2. Select your Stem Profile (**6 Stems Nepali Folk**, **6 Stems Standard**, or **4 Stems**).
+3. Click **"✨ Separate Stems & Load Mixer"**.
+4. The server downloads the audio, runs neural separation, and automatically loads all stems into the multi-track studio!
+
+### Option 2: Upload Your Own Song File (FLAC / MP3 / WAV) 📁
+1. Click the **"Upload File"** tab.
+2. Drag and drop or browse any song file (`.flac`, `.mp3`, `.wav`, `.m4a`).
+3. Click **"✨ Separate Stems & Load Mixer"**.
+
+### Option 3: Drop Pre-Separated Stems 🎛️
+1. Click **"Import Stems"** or drag multiple stem files into the window.
+2. The studio automatically matches filenames matching "vocal", "madal", "drum", "bass", "guitar", "harmonium", "sarangi" to their track lanes!
+
+### Option 4: 1-Click Built-in Demo 🎵
+1. Click **"Load 6-Stem Folk Demo"** or **"Load Studio Demo"**.
+2. Immediately synthesizes 6 synchronized stems in your browser with zero download needed so you can explore all features right away!
+
+---
+
+## 🎛️ Studio Mixer Features
+
+- **Multi-Track Synchronized Playback:** Sample-accurate Web Audio synchronization across all channels.
+- **Interactive High-DPI Waveforms:** Click-to-seek, drag-to-scrub, real-time playhead, and played-region shading.
+- **Track Mixing Controls:**
+  - Tactile glowing **Mute (M)** and **Solo (S)** buttons per channel.
   - Smooth volume faders (-inf to +6 dB).
-  - Stereo pan controls (L100% to R100%).
-  - Real-time dynamic VU meters responding to live audio peaks.
-  - Inline track renaming.
-
-### 2. Master Transport & Tempo Engine
-- Master digital time display (MM:SS.ms elapsed and total duration).
-- Master Stereo VU meter with peak clipping detection.
-- **Playback Speed / Tempo Control:** 0.5x, 0.75x, 0.9x, 1.0x, 1.1x, 1.25x, 1.5x.
-- **Real-Time Pitch Shifter:** -12 to +12 semitones.
-- **A/B Region Looper:** Set Loop In (A), Set Loop Out (B), toggle looping, or clear with visual shaded loop window across all waveforms.
-
-### 3. One-Click Mix Presets
-- **Karaoke Mode:** Instantly mutes the vocal track for singing along.
-- **Acapella Mode:** Instantly isolates and solos the vocal stem.
-- **Rhythm Only Mode:** Solos drums and bass for groove practice.
-- **Reset:** Restores all levels, mutes, and solos to default.
-
-### 4. 1-Click Multi-Track Demo Stems
-- Built-in procedural synthesis engine (`DemoStemGenerator`) generates 4 synchronized, high-fidelity stems (Melody, Drums, Bass, Chords) directly inside the browser so you can test every studio feature immediately with no files needed.
-
-### 5. High-Quality Offline WAV Export
-- **Export Full Mix:** Renders current volume/pan/mute/solo mix to a 16-bit 44.1kHz stereo PCM WAV file.
-- **Export Backing Track (Karaoke):** Automatically mutes vocals and renders accompaniment.
-- **Export Acapella:** Renders isolated vocals.
-- **Export Loop Region Only:** Option to render only between Loop In and Loop Out markers.
-
-### 6. Session Persistence
-- **Save Session:** Exports your entire mix setup (volumes, pans, mutes, solos, speed, pitch, loop markers) as a `.stems-session.json` file.
-- **Load Session:** Restores saved sessions instantly.
+  - Stereo Pan knobs (L100% to R100%).
+  - Live dynamic VU meters responding to audio energy.
+- **Master Transport Controls:**
+  - Digital timecode readout (`MM:SS.ms`).
+  - **Speed / Tempo Engine:** `0.5x` to `1.5x` playback rate.
+  - **Pitch Shifter:** `-12` to `+12` semitone real-time shifting.
+  - **A/B Region Looper:** Set Loop In (A), Set Loop Out (B), with shaded loop window across all waveforms.
+- **1-Click Mix Presets:**
+  - **Karaoke Mode (K):** Mutes vocals for singing practice.
+  - **Acapella Mode:** Solos the vocal stem.
+  - **Rhythm Mode:** Solos Madal / Drums & Bass for timing drills.
+  - **Reset:** Restores all tracks to default levels.
+- **Offline WAV Export Studio:**
+  - Export Full Mixdown (`.wav`).
+  - Export Backing Track / Karaoke (`.wav`).
+  - Export Acapella (`.wav`).
+  - Export Active Loop Region Only (`.wav`).
 
 ---
 
-## AI Stem Separator CLI (Optional)
+## 💻 Running the App
 
-Located in `separator/`, this Python utility uses Facebook's Demucs model to split any local audio file or YouTube video into the 4 standard stem files (`vocals.wav`, `drums.wav`, `bass.wav`, `other.wav`):
-
-```bash
-cd separator
-pip install -r requirements.txt
-python separate.py "https://www.youtube.com/watch?v=..."
-# Or on Windows, double-click: Separate.bat
+### 1-Click Launch (Windows)
+Double-click:
+```bat
+Run-Stems-Studio.bat
 ```
+This automatically starts the local server and opens **http://localhost:8099** in your browser!
 
-Once processed, drag and drop the generated `.wav` files directly into Stems Studio!
+### Command Line
+```bash
+python server.py
+```
+Open [http://localhost:8099](http://localhost:8099).
 
 ---
 
-## Keyboard Shortcuts
+## ⌨️ Keyboard Shortcuts
 
 | Shortcut | Action |
 | :--- | :--- |
@@ -71,19 +107,4 @@ Once processed, drag and drop the generated `.wav` files directly into Stems Stu
 | `L` | Toggle Loop On / Off |
 | `K` | Toggle Karaoke Mode (Mute Vocals) |
 | `Click on Waveform` | Seek directly to timestamp |
-| `Esc` | Close Import Modal |
-
----
-
-## Running Locally
-
-Simply open `index.html` in any modern web browser or serve it with any local HTTP server:
-
-```bash
-# Python
-python -m http.server 8080
-
-# Or Node npx serve
-npx serve .
-```
-Navigate to `http://localhost:8080`.
+| `Esc` | Close Modal |

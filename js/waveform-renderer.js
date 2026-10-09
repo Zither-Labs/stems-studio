@@ -23,6 +23,18 @@ class WaveformRenderer {
       glow: 'rgba(192, 132, 252, 0.4)',
       playedOverlay: 'rgba(192, 132, 252, 0.15)'
     },
+    guitar: {
+      gradientTop: '#34d399',
+      gradientBottom: '#059669',
+      glow: 'rgba(52, 211, 153, 0.4)',
+      playedOverlay: 'rgba(52, 211, 153, 0.15)'
+    },
+    piano: {
+      gradientTop: '#f472b6',
+      gradientBottom: '#db2777',
+      glow: 'rgba(244, 114, 182, 0.4)',
+      playedOverlay: 'rgba(244, 114, 182, 0.15)'
+    },
     other: {
       gradientTop: '#38bdf8',
       gradientBottom: '#0369a1',

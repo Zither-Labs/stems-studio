@@ -54,6 +54,109 @@
     </div>
   </header>
 
+  <!-- UNMISSABLE SONG INTAKE & STEM SEPARATOR HERO DECK -->
+  <section class="intake-hero-deck" aria-label="Song Source and Stem Separator">
+    <div class="intake-card">
+      <div class="intake-header-row">
+        <div class="intake-title-wrap">
+          <div class="intake-title">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--accent-indigo);">
+              <path d="M9 19V6l12-3v13M9 10l12-3M9 19a3 3 0 11-6 0 3 3 0 016 0zm12-3a3 3 0 11-6 0 3 3 0 016 0z"/>
+            </svg>
+            Song Source &amp; Stem Separator
+          </div>
+          <span class="intake-subtitle">Paste a YouTube link or upload your own song (FLAC / MP3 / WAV)</span>
+        </div>
+
+        <!-- Input Source Tabs -->
+        <div class="intake-tabs-bar" role="tablist">
+          <button class="intake-tab-btn active" id="tabBtnYoutube" role="tab" aria-selected="true">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="#ff0000"><path d="M21.58 7.19c-.23-.86-.91-1.54-1.77-1.77C18.25 5 12 5 12 5s-6.25 0-7.81.42c-.86.23-1.54.91-1.77 1.77C2 8.75 2 12 2 12s0 3.25.42 4.81c.23.86.91 1.54 1.77 1.77C5.75 19 12 19 12 19s6.25 0 7.81-.42c.86-.23 1.54-.91 1.77-1.77C22 15.25 22 12 22 12s0-3.25-.42-4.81zM9.75 15.02V8.98L15 12l-5.25 3.02z"/></svg>
+            YouTube Link
+          </button>
+          <button class="intake-tab-btn" id="tabBtnUpload" role="tab" aria-selected="false">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+            Upload File (FLAC/MP3)
+          </button>
+          <button class="intake-tab-btn" id="tabBtnDemo" role="tab" aria-selected="false">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/><path d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            Built-in Demo
+          </button>
+        </div>
+      </div>
+
+      <!-- Model & Preset Selector -->
+      <div class="model-preset-row">
+        <span style="font-size:0.75rem; font-weight:700; color:var(--text-muted); text-transform:uppercase;">Stem Profile:</span>
+        <button class="preset-pill nepali-active" id="modelPillNepali" data-model="htdemucs_6s" data-preset="nepali_folk" title="Separates into 6 stems: Vocals, Madal/Percussion, Sarangi/Bansuri Lead, Harmonium, Acoustic Pluck, Bass">
+          🏔️ <strong>6 Stems: Nepali Folk &amp; Acoustic</strong> (Madal, Sarangi, Flute, Harmonium, Pluck, Bass)
+        </button>
+        <button class="preset-pill" id="modelPillStd6s" data-model="htdemucs_6s" data-preset="standard_6s" title="Standard 6 stems: Vocals, Drums, Bass, Guitar, Piano, Other">
+          🎸 <strong>6 Stems: Standard</strong> (Vocals, Drums, Bass, Guitar, Piano, Other)
+        </button>
+        <button class="preset-pill" id="modelPillStd4s" data-model="htdemucs" data-preset="standard_4s" title="Standard 4 stems: Vocals, Drums, Bass, Other">
+          🥁 <strong>4 Stems: Studio</strong> (Vocals, Drums, Bass, Other)
+        </button>
+      </div>
+
+      <!-- Form Pane: YouTube URL -->
+      <div class="intake-form-pane" id="paneYoutube">
+        <div class="youtube-input-wrap">
+          <svg viewBox="0 0 24 24"><path d="M21.58 7.19c-.23-.86-.91-1.54-1.77-1.77C18.25 5 12 5 12 5s-6.25 0-7.81.42c-.86.23-1.54.91-1.77 1.77C2 8.75 2 12 2 12s0 3.25.42 4.81c.23.86.91 1.54 1.77 1.77C5.75 19 12 19 12 19s6.25 0 7.81-.42c.86-.23 1.54-.91 1.77-1.77C22 15.25 22 12 22 12s0-3.25-.42-4.81zM9.75 15.02V8.98L15 12l-5.25 3.02z"/></svg>
+          <input type="text" class="studio-text-input" id="inputYoutubeUrl" placeholder="Paste YouTube link here (e.g. https://www.youtube.com/watch?v=... or share link)...">
+        </div>
+        <button class="btn-separate-cta" id="btnStartSeparationYoutube">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+          Separate Stems &amp; Load Mixer
+        </button>
+      </div>
+
+      <!-- Form Pane: File Upload (FLAC, MP3, WAV) -->
+      <div class="intake-form-pane" id="paneUpload" style="display:none;">
+        <div class="file-upload-strip" id="fileUploadStrip">
+          <div class="upload-strip-info">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 19V6l12-3v13M9 10l12-3M9 19a3 3 0 11-6 0 3 3 0 016 0zm12-3a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+            <div>
+              <strong id="uploadFileName">Choose or drag a song file (.flac, .mp3, .wav)</strong>
+              <div style="font-size:0.75rem; color:var(--text-muted);">Audio will be sent to the local Demucs engine for separation</div>
+            </div>
+          </div>
+          <button class="btn" id="btnBrowseSingleFile" type="button">Browse File</button>
+        </div>
+        <input type="file" id="inputSingleAudioFile" accept=".flac,.mp3,.wav,.m4a,.aac,.ogg" style="display:none;">
+        <button class="btn-separate-cta" id="btnStartSeparationFile" disabled>
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+          Separate Stems &amp; Load Mixer
+        </button>
+      </div>
+
+      <!-- Form Pane: Built-in Demo -->
+      <div class="intake-form-pane" id="paneDemo" style="display:none;">
+        <p style="color:var(--text-secondary); font-size:0.85rem; flex:1;">
+          Load our procedural 6-stem acoustic demonstration (includes synthesized Sarangi/Flute lead, Harmonium drone, Madal percussion, Acoustic plucks, and Vocals) directly inside the browser with no download required.
+        </p>
+        <button class="btn-separate-cta" id="btnLoad6StemDemo">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M5 3l14 9-14 9V3z"/></svg>
+          Load 6-Stem Folk Demo
+        </button>
+      </div>
+
+      <!-- Live Separation Progress Card -->
+      <div class="separation-progress-card" id="separationProgressCard">
+        <div class="progress-header-row">
+          <div class="progress-step-text">
+            <div class="pulse-indicator"></div>
+            <span id="progressMessage">Preparing neural stem separation...</span>
+          </div>
+          <span class="progress-percent-text" id="progressPercent">0%</span>
+        </div>
+        <div class="separation-bar-track">
+          <div class="separation-bar-fill" id="progressBarFill"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <!-- Master Transport Dock -->
   <section class="transport-dock" aria-label="Transport Controls">
     <!-- Playback Core -->

@@ -1,13 +1,14 @@
 /**
  * Stems Studio - Main Application Controller
- * Handles UI interactions, track rendering, transport updates, drag & drop, and animations.
+ * Handles Song Intake (YouTube URL / Audio File / Demo), AI Stem Separation,
+ * 6-Stem Nepali Folk & Acoustic profiles, multi-track mixing, and waveforms.
  */
 
 document.addEventListener('DOMContentLoaded', () => {
   const engine = new AudioEngine();
   let animationFrameId = null;
 
-  // DOM Elements
+  // DOM Elements - Transport & Master
   const tracksRack = document.getElementById('tracksRack');
   const playToggleBtn = document.getElementById('playToggleBtn');
   const rewindBtn = document.getElementById('rewindBtn');
@@ -35,39 +36,81 @@ document.addEventListener('DOMContentLoaded', () => {
   const masterMeterL = document.getElementById('masterMeterL');
   const masterMeterR = document.getElementById('masterMeterR');
 
+  // Intake Hero Elements
+  const tabBtnYoutube = document.getElementById('tabBtnYoutube');
+  const tabBtnUpload = document.getElementById('tabBtnUpload');
+  const tabBtnDemo = document.getElementById('tabBtnDemo');
+  const paneYoutube = document.getElementById('paneYoutube');
+  const paneUpload = document.getElementById('paneUpload');
+  const paneDemo = document.getElementById('paneDemo');
+
+  const inputYoutubeUrl = document.getElementById('inputYoutubeUrl');
+  const btnStartSeparationYoutube = document.getElementById('btnStartSeparationYoutube');
+
+  const fileUploadStrip = document.getElementById('fileUploadStrip');
+  const uploadFileName = document.getElementById('uploadFileName');
+  const btnBrowseSingleFile = document.getElementById('btnBrowseSingleFile');
+  const inputSingleAudioFile = document.getElementById('inputSingleAudioFile');
+  const btnStartSeparationFile = document.getElementById('btnStartSeparationFile');
+
+  const btnLoad6StemDemo = document.getElementById('btnLoad6StemDemo');
   const btnLoadDemo = document.getElementById('btnLoadDemo');
-  const btnImportStems = document.getElementById('btnImportStems');
-  const fileInputHidden = document.getElementById('fileInputHidden');
-  const dropzoneModal = document.getElementById('dropzoneModal');
-  const modalCloseBtn = document.getElementById('modalCloseBtn');
-  const dropzoneBox = document.getElementById('dropzoneBox');
+
+  const modelPillNepali = document.getElementById('modelPillNepali');
+  const modelPillStd6s = document.getElementById('modelPillStd6s');
+  const modelPillStd4s = document.getElementById('modelPillStd4s');
+
+  const separationProgressCard = document.getElementById('separationProgressCard');
+  const progressMessage = document.getElementById('progressMessage');
+  const progressPercent = document.getElementById('progressPercent');
+  const progressBarFill = document.getElementById('progressBarFill');
+
+  // Presets & Modal
+  const btnPresetKaraoke = document.getElementById('btnPresetKaraoke');
+  const btnPresetAcapella = document.getElementById('btnPresetAcapella');
+  const btnPresetRhythm = document.getElementById('btnPresetRhythm');
+  const btnPresetReset = document.getElementById('btnPresetReset');
 
   const btnExportMix = document.getElementById('btnExportMix');
   const btnExportKaraoke = document.getElementById('btnExportKaraoke');
   const btnExportAcapella = document.getElementById('btnExportAcapella');
   const exportLoopOnlyCheckbox = document.getElementById('exportLoopOnly');
 
-  const btnPresetKaraoke = document.getElementById('btnPresetKaraoke');
-  const btnPresetAcapella = document.getElementById('btnPresetAcapella');
-  const btnPresetRhythm = document.getElementById('btnPresetRhythm');
-  const btnPresetReset = document.getElementById('btnPresetReset');
+  const btnImportStems = document.getElementById('btnImportStems');
+  const fileInputHidden = document.getElementById('fileInputHidden');
+  const dropzoneModal = document.getElementById('dropzoneModal');
+  const modalCloseBtn = document.getElementById('modalCloseBtn');
+  const dropzoneBox = document.getElementById('dropzoneBox');
 
   const btnSaveSession = document.getElementById('btnSaveSession');
   const btnLoadSession = document.getElementById('btnLoadSession');
   const sessionFileInput = document.getElementById('sessionFileInput');
 
-  // Track configurations default list
-  const defaultTrackDefs = [
-    { id: 'vocal', name: 'Vocals', stemType: 'vocal' },
-    { id: 'drums', name: 'Drums', stemType: 'drums' },
-    { id: 'bass', name: 'Bass', stemType: 'bass' },
-    { id: 'other', name: 'Instruments', stemType: 'other' }
+  // State: Current Model & Preset Selection
+  let currentModel = 'htdemucs_6s';
+  let currentPreset = 'nepali_folk';
+  let selectedUploadFile = null;
+
+  // Default 6-Stem Nepali Folk Definition
+  const nepaliFolkTrackDefs = [
+    { id: 'vocal', name: 'Vocals / स्वर', stemType: 'vocal' },
+    { id: 'drums', name: 'Madal & Percussion / मादल', stemType: 'drums' },
+    { id: 'other', name: 'Sarangi & Bansuri / सारङ्गी-बाँसुरी', stemType: 'other' },
+    { id: 'piano', name: 'Harmonium & Keys / हार्मोनियम', stemType: 'piano' },
+    { id: 'guitar', name: 'Acoustic Pluck / टुङ्ना-गितार', stemType: 'guitar' },
+    { id: 'bass', name: 'Bass & Low-End / बास', stemType: 'bass' }
   ];
 
   // Initialize track models in audio engine
-  defaultTrackDefs.forEach(def => {
-    engine.addTrack(def.id, def.name, def.stemType, null);
-  });
+  function initializeTrackModels(defs) {
+    engine.tracks.clear();
+    defs.forEach(def => {
+      engine.addTrack(def.id, def.name, def.stemType, null);
+    });
+    renderAllTrackCards();
+  }
+
+  initializeTrackModels(nepaliFolkTrackDefs);
 
   // Render Track DOM Cards
   function renderAllTrackCards() {
@@ -83,20 +126,22 @@ document.addEventListener('DOMContentLoaded', () => {
     card.className = `track-card active-stem-${track.stemType}`;
     card.id = `trackCard_${track.id}`;
 
-    const iconChars = {
-      vocal: 'MIC',
-      drums: 'DRM',
-      bass: 'BAS',
-      other: 'INS',
-      custom: 'STM'
+    const iconSymbols = {
+      vocal: '🎤',
+      drums: '🪘',
+      bass: '🔊',
+      guitar: '🎸',
+      piano: '🎹',
+      other: '🎻',
+      custom: '🎛️'
     };
-    const iconChar = iconChars[track.stemType] || 'STM';
+    const iconSym = iconSymbols[track.stemType] || '🎛️';
 
     card.innerHTML = `
       <div class="track-mixer-strip">
         <div class="track-header-meta">
           <div class="track-identity">
-            <div class="stem-badge-icon stem-${track.stemType}-icon">${iconChar}</div>
+            <div class="stem-badge-icon stem-${track.stemType}-icon">${iconSym}</div>
             <input type="text" class="track-name-input" value="${track.name}" data-track-id="${track.id}">
           </div>
           <div class="track-strip-buttons">
@@ -133,7 +178,7 @@ document.addEventListener('DOMContentLoaded', () => {
         <div class="track-loop-highlight" id="loopHigh_${track.id}"></div>
         <div class="track-empty-state" id="emptyState_${track.id}" style="${track.buffer ? 'display:none;' : ''}">
           <svg viewBox="0 0 24 24" fill="none" stroke-width="1.5"><path d="M9 18V5l12-2v13M9 9l12-2M9 18a3 3 0 11-6 0 3 3 0 016 0zm12-2a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
-          <span>Drop audio or click Demo to load ${track.name}</span>
+          <span>Ready for separation: ${track.name}</span>
         </div>
       </div>
     `;
@@ -204,7 +249,6 @@ document.addEventListener('DOMContentLoaded', () => {
     return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}.${String(ms).padStart(2, '0')}`;
   }
 
-  // Update waveforms and canvases
   function redrawAllWaveforms() {
     const curTime = engine.getCurrentTime();
     const total = engine.totalDuration || 1;
@@ -223,18 +267,16 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // Real-time animation frame loop (Clock, Scrubber, Meters, Waveform playhead)
+  // Animation frame loop
   function startAnimationLoop() {
     function update() {
       const curTime = engine.getCurrentTime();
       const total = engine.totalDuration || 0;
       const progress = total > 0 ? (curTime / total) : 0;
 
-      // Digital Clock
       currentTimeEl.textContent = formatTime(curTime);
       totalTimeEl.textContent = formatTime(total);
 
-      // Scrubber
       scrubberProgress.style.width = `${progress * 100}%`;
       scrubberPlayhead.style.left = `${progress * 100}%`;
 
@@ -251,29 +293,269 @@ document.addEventListener('DOMContentLoaded', () => {
         const levels = engine.getTrackLevels(track.id);
         const vuFill = document.getElementById(`vuFill_${track.id}`);
         const vuClip = document.getElementById(`vuClip_${track.id}`);
-        if (vuFill) {
-          vuFill.style.width = `${Math.min(100, levels.peak * 110)}%`;
-        }
-        if (vuClip) {
-          vuClip.classList.toggle('clipping', levels.clip);
-        }
+        if (vuFill) vuFill.style.width = `${Math.min(100, levels.peak * 110)}%`;
+        if (vuClip) vuClip.classList.toggle('clipping', levels.clip);
       }
 
-      // Master Stereo VU Meters
+      // Master VU Meters
       const masterLevels = engine.getMasterLevels();
       if (masterMeterL) masterMeterL.style.width = `${Math.min(100, masterLevels.left * 100)}%`;
       if (masterMeterR) masterMeterR.style.width = `${Math.min(100, masterLevels.right * 100)}%`;
 
-      // Redraw waveforms
       redrawAllWaveforms();
-
       animationFrameId = requestAnimationFrame(update);
     }
     cancelAnimationFrame(animationFrameId);
     animationFrameId = requestAnimationFrame(update);
   }
 
-  // Transport Control Events
+  // =========================================================================
+  // Intake Tabs & Model Selection
+  // =========================================================================
+  function switchIntakeTab(activeTab) {
+    tabBtnYoutube.classList.toggle('active', activeTab === 'youtube');
+    tabBtnUpload.classList.toggle('active', activeTab === 'upload');
+    tabBtnDemo.classList.toggle('active', activeTab === 'demo');
+
+    paneYoutube.style.display = activeTab === 'youtube' ? 'flex' : 'none';
+    paneUpload.style.display = activeTab === 'upload' ? 'flex' : 'none';
+    paneDemo.style.display = activeTab === 'demo' ? 'flex' : 'none';
+  }
+
+  tabBtnYoutube.addEventListener('click', () => switchIntakeTab('youtube'));
+  tabBtnUpload.addEventListener('click', () => switchIntakeTab('upload'));
+  tabBtnDemo.addEventListener('click', () => switchIntakeTab('demo'));
+
+  // Stem Profile Pills
+  function selectStemProfile(model, preset) {
+    currentModel = model;
+    currentPreset = preset;
+
+    modelPillNepali.className = `preset-pill ${preset === 'nepali_folk' ? 'nepali-active' : ''}`;
+    modelPillStd6s.className = `preset-pill ${preset === 'standard_6s' ? 'active' : ''}`;
+    modelPillStd4s.className = `preset-pill ${preset === 'standard_4s' ? 'active' : ''}`;
+
+    if (preset === 'nepali_folk') {
+      showToast('Selected: 6 Stems (Nepali Folk & Acoustic: Madal, Sarangi, Flute, Harmonium, Pluck, Bass)', 'info');
+    } else if (preset === 'standard_6s') {
+      showToast('Selected: 6 Stems Standard (Vocals, Drums, Bass, Guitar, Piano, Other)', 'info');
+    } else {
+      showToast('Selected: 4 Stems Standard (Vocals, Drums, Bass, Other)', 'info');
+    }
+  }
+
+  modelPillNepali.addEventListener('click', () => selectStemProfile('htdemucs_6s', 'nepali_folk'));
+  modelPillStd6s.addEventListener('click', () => selectStemProfile('htdemucs_6s', 'standard_6s'));
+  modelPillStd4s.addEventListener('click', () => selectStemProfile('htdemucs', 'standard_4s'));
+
+  // File Upload Handlers
+  btnBrowseSingleFile.addEventListener('click', () => inputSingleAudioFile.click());
+  fileUploadStrip.addEventListener('click', (e) => {
+    if (e.target !== btnBrowseSingleFile) inputSingleAudioFile.click();
+  });
+
+  inputSingleAudioFile.addEventListener('change', (e) => {
+    if (e.target.files && e.target.files.length > 0) {
+      selectedUploadFile = e.target.files[0];
+      uploadFileName.textContent = `${selectedUploadFile.name} (${(selectedUploadFile.size / (1024 * 1024)).toFixed(1)} MB)`;
+      btnStartSeparationFile.disabled = false;
+      showToast(`Selected "${selectedUploadFile.name}"`, 'success');
+    }
+  });
+
+  fileUploadStrip.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    fileUploadStrip.classList.add('drag-over');
+  });
+
+  fileUploadStrip.addEventListener('dragleave', () => fileUploadStrip.classList.remove('drag-over'));
+
+  fileUploadStrip.addEventListener('drop', (e) => {
+    e.preventDefault();
+    fileUploadStrip.classList.remove('drag-over');
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      selectedUploadFile = e.dataTransfer.files[0];
+      uploadFileName.textContent = `${selectedUploadFile.name} (${(selectedUploadFile.size / (1024 * 1024)).toFixed(1)} MB)`;
+      btnStartSeparationFile.disabled = false;
+      showToast(`Selected "${selectedUploadFile.name}"`, 'success');
+    }
+  });
+
+  // =========================================================================
+  // AI Stem Separation Backend Integration
+  // =========================================================================
+  async function triggerSeparation(payload, isFormData = false) {
+    separationProgressCard.style.display = 'block';
+    progressPercent.textContent = '5%';
+    progressBarFill.style.width = '5%';
+    progressMessage.textContent = 'Contacting Stems Studio neural separation engine...';
+
+    btnStartSeparationYoutube.disabled = true;
+    btnStartSeparationFile.disabled = true;
+
+    try {
+      const headers = isFormData ? {} : { 'Content-Type': 'application/json' };
+      const body = isFormData ? payload : JSON.stringify(payload);
+
+      const resp = await fetch('/api/separate', {
+        method: 'POST',
+        headers,
+        body
+      });
+
+      if (!resp.ok) {
+        throw new Error(`Server returned error ${resp.status}`);
+      }
+
+      const initData = await resp.json();
+      const jobId = initData.job_id;
+
+      // Poll job progress
+      await pollJobStatus(jobId);
+
+    } catch (err) {
+      console.error(err);
+      progressMessage.textContent = `Error: ${err.message}. Make sure server.py or Run-Stems-Studio.bat is running!`;
+      progressBarFill.style.background = '#ef4444';
+      showToast(`Separation failed: ${err.message}`, 'error');
+    } finally {
+      btnStartSeparationYoutube.disabled = false;
+      btnStartSeparationFile.disabled = selectedUploadFile === null;
+    }
+  }
+
+  async function pollJobStatus(jobId) {
+    const pollInterval = setInterval(async () => {
+      try {
+        const resp = await fetch(`/api/status?job_id=${jobId}`);
+        const data = await resp.json();
+
+        if (data.status === 'processing') {
+          progressPercent.textContent = `${data.progress}%`;
+          progressBarFill.style.width = `${data.progress}%`;
+          progressMessage.textContent = data.message || 'Separating audio stems...';
+        } else if (data.status === 'completed') {
+          clearInterval(pollInterval);
+          progressPercent.textContent = '100%';
+          progressBarFill.style.width = '100%';
+          progressMessage.textContent = 'Separation complete! Decoding and loading audio tracks...';
+
+          await loadSeparatedStemsIntoMixer(data.stems);
+          setTimeout(() => {
+            separationProgressCard.style.display = 'none';
+          }, 4000);
+        } else if (data.status === 'error') {
+          clearInterval(pollInterval);
+          progressMessage.textContent = `Separation failed: ${data.error}`;
+          progressBarFill.style.background = '#ef4444';
+          showToast(`Error: ${data.error}`, 'error');
+        }
+      } catch (e) {
+        console.error('Polling error', e);
+      }
+    }, 800);
+  }
+
+  async function loadSeparatedStemsIntoMixer(stemsList) {
+    await engine.resume();
+    engine.tracks.clear();
+
+    for (const stem of stemsList) {
+      try {
+        const audioResp = await fetch(stem.url);
+        const arrayBuf = await audioResp.arrayBuffer();
+        const decodedBuf = await engine.ctx.decodeAudioData(arrayBuf);
+
+        engine.addTrack(stem.id, stem.name, stem.stemType, decodedBuf);
+      } catch (err) {
+        console.error(`Error loading stem ${stem.name}`, err);
+      }
+    }
+
+    renderAllTrackCards();
+    document.querySelectorAll('.track-empty-state').forEach(el => el.style.display = 'none');
+    redrawAllWaveforms();
+    showToast('All separated stems loaded successfully into mixer!', 'success');
+
+    // Auto-start playback
+    await engine.play();
+  }
+
+  // Trigger from YouTube
+  btnStartSeparationYoutube.addEventListener('click', () => {
+    const url = inputYoutubeUrl.value.trim();
+    if (!url) {
+      showToast('Please enter a YouTube video URL.', 'error');
+      inputYoutubeUrl.focus();
+      return;
+    }
+    triggerSeparation({
+      youtube_url: url,
+      model: currentModel,
+      preset: currentPreset
+    });
+  });
+
+  // Trigger from Single Audio File
+  btnStartSeparationFile.addEventListener('click', () => {
+    if (!selectedUploadFile) {
+      showToast('Please choose an audio file first.', 'error');
+      return;
+    }
+    const formData = new FormData();
+    formData.append('file', selectedUploadFile);
+    formData.append('model', currentModel);
+    formData.append('preset', currentPreset);
+    triggerSeparation(formData, true);
+  });
+
+  // =========================================================================
+  // Procedural Demo Stems
+  // =========================================================================
+  async function loadDemoStems(is6Stems = true) {
+    showToast(`Synthesizing ${is6Stems ? '6-Stem Nepali Folk' : '4-Stem'} demo audio...`, 'info');
+    btnLoad6StemDemo.disabled = true;
+    btnLoadDemo.disabled = true;
+
+    try {
+      await engine.resume();
+      const demoStems = await DemoStemGenerator.generateDemoStems(engine.ctx, is6Stems);
+
+      engine.tracks.clear();
+
+      if (is6Stems) {
+        engine.addTrack('vocal', 'Vocals / स्वर', 'vocal', demoStems.vocal);
+        engine.addTrack('drums', 'Madal & Percussion / मादल', 'drums', demoStems.drums);
+        engine.addTrack('other', 'Sarangi & Bansuri / सारङ्गी-बाँसुरी', 'other', demoStems.other);
+        engine.addTrack('piano', 'Harmonium & Keys / हार्मोनियम', 'piano', demoStems.piano);
+        engine.addTrack('guitar', 'Acoustic Pluck / टुङ्ना-गितार', 'guitar', demoStems.guitar);
+        engine.addTrack('bass', 'Bass & Low-End / बास', 'bass', demoStems.bass);
+      } else {
+        engine.addTrack('vocal', 'Vocals', 'vocal', demoStems.vocal);
+        engine.addTrack('drums', 'Drums', 'drums', demoStems.drums);
+        engine.addTrack('bass', 'Bass', 'bass', demoStems.bass);
+        engine.addTrack('other', 'Instruments', 'other', demoStems.other);
+      }
+
+      renderAllTrackCards();
+      document.querySelectorAll('.track-empty-state').forEach(el => el.style.display = 'none');
+      redrawAllWaveforms();
+      showToast('Demo stems loaded! Press Spacebar or Play.', 'success');
+    } catch (err) {
+      console.error(err);
+      showToast('Error generating demo stems: ' + err.message, 'error');
+    } finally {
+      btnLoad6StemDemo.disabled = false;
+      btnLoadDemo.disabled = false;
+    }
+  }
+
+  btnLoad6StemDemo.addEventListener('click', () => loadDemoStems(true));
+  btnLoadDemo.addEventListener('click', () => loadDemoStems(true));
+
+  // =========================================================================
+  // Transport & Playback Controls
+  // =========================================================================
   playToggleBtn.addEventListener('click', async () => {
     if (engine.isPlaying) {
       engine.pause();
@@ -282,13 +564,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  rewindBtn.addEventListener('click', () => {
-    engine.seek(0);
-  });
-
-  stopBtn.addEventListener('click', () => {
-    engine.stop();
-  });
+  rewindBtn.addEventListener('click', () => engine.seek(0));
+  stopBtn.addEventListener('click', () => engine.stop());
 
   scrubberTrack.addEventListener('click', (e) => {
     const rect = scrubberTrack.getBoundingClientRect();
@@ -312,7 +589,7 @@ document.addEventListener('DOMContentLoaded', () => {
     pitchValEl.textContent = `${newPitch >= 0 ? '+' : ''}${newPitch} st`;
   });
 
-  // Looping Events
+  // Looping
   loopToggleBtn.addEventListener('click', () => {
     const nextState = !engine.isLooping;
     engine.setLoop(nextState);
@@ -351,11 +628,10 @@ document.addEventListener('DOMContentLoaded', () => {
   // Presets
   btnPresetKaraoke.addEventListener('click', () => {
     const vocalTrack = engine.tracks.get('vocal');
-    if (!vocalTrack) return;
-    vocalTrack.isMuted = true;
+    if (vocalTrack) vocalTrack.isMuted = true;
     engine.updateMuteSoloStates();
     syncMuteSoloButtons();
-    showToast('Karaoke Mode: Vocals Muted', 'success');
+    showToast('Karaoke: Vocals Muted (गायन बन्द)', 'success');
   });
 
   btnPresetAcapella.addEventListener('click', () => {
@@ -365,7 +641,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     engine.updateMuteSoloStates();
     syncMuteSoloButtons();
-    showToast('Acapella Mode: Solo Vocals', 'success');
+    showToast('Acapella: Solo Vocals (स्वर मात्र)', 'success');
   });
 
   btnPresetRhythm.addEventListener('click', () => {
@@ -375,7 +651,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     engine.updateMuteSoloStates();
     syncMuteSoloButtons();
-    showToast('Rhythm Mode: Solo Drums & Bass', 'success');
+    showToast('Rhythm: Solo Madal, Drums & Bass (मादल र ताल मात्र)', 'success');
   });
 
   btnPresetReset.addEventListener('click', () => {
@@ -404,60 +680,19 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // Load Built-in Demo Stems
-  btnLoadDemo.addEventListener('click', async () => {
-    showToast('Synthesizing studio multi-track demo stems...', 'info');
-    btnLoadDemo.disabled = true;
-    btnLoadDemo.textContent = 'Generating...';
-
-    try {
-      await engine.resume();
-      const demoStems = await DemoStemGenerator.generateDemoStems(engine.ctx);
-
-      engine.setTrackBuffer('vocal', demoStems.vocal);
-      engine.setTrackBuffer('drums', demoStems.drums);
-      engine.setTrackBuffer('bass', demoStems.bass);
-      engine.setTrackBuffer('other', demoStems.other);
-
-      // Hide empty states
-      document.querySelectorAll('.track-empty-state').forEach(el => el.style.display = 'none');
-      redrawAllWaveforms();
-      showToast('Demo stems loaded! Press Play or Spacebar.', 'success');
-    } catch (err) {
-      console.error(err);
-      showToast('Error generating demo stems: ' + err.message, 'error');
-    } finally {
-      btnLoadDemo.disabled = false;
-      btnLoadDemo.innerHTML = `<svg viewBox="0 0 24 24"><path d="M5 3l14 9-14 9V3z"/></svg> Load Studio Demo`;
-    }
-  });
-
-  // File Dropzone & Import
-  btnImportStems.addEventListener('click', () => {
-    dropzoneModal.classList.add('open');
-  });
-
-  modalCloseBtn.addEventListener('click', () => {
-    dropzoneModal.classList.remove('open');
-  });
-
+  // Multi-Stem Import Modal
+  btnImportStems.addEventListener('click', () => dropzoneModal.classList.add('open'));
+  modalCloseBtn.addEventListener('click', () => dropzoneModal.classList.remove('open'));
   dropzoneModal.addEventListener('click', (e) => {
     if (e.target === dropzoneModal) dropzoneModal.classList.remove('open');
   });
-
-  dropzoneBox.addEventListener('click', () => {
-    fileInputHidden.click();
-  });
+  dropzoneBox.addEventListener('click', () => fileInputHidden.click());
 
   dropzoneBox.addEventListener('dragover', (e) => {
     e.preventDefault();
     dropzoneBox.classList.add('drag-over');
   });
-
-  dropzoneBox.addEventListener('dragleave', () => {
-    dropzoneBox.classList.remove('drag-over');
-  });
-
+  dropzoneBox.addEventListener('dragleave', () => dropzoneBox.classList.remove('drag-over'));
   dropzoneBox.addEventListener('drop', (e) => {
     e.preventDefault();
     dropzoneBox.classList.remove('drag-over');
@@ -483,16 +718,19 @@ document.addEventListener('DOMContentLoaded', () => {
         const arrayBuf = await file.arrayBuffer();
         const audioBuffer = await engine.ctx.decodeAudioData(arrayBuf);
 
-        // Detect stem type from filename
         const nameLower = file.name.toLowerCase();
         let targetId = 'other';
         if (nameLower.includes('vocal') || nameLower.includes('voice') || nameLower.includes('lead') || nameLower.includes('sing')) {
           targetId = 'vocal';
-        } else if (nameLower.includes('drum') || nameLower.includes('beat') || nameLower.includes('perc')) {
+        } else if (nameLower.includes('drum') || nameLower.includes('madal') || nameLower.includes('beat') || nameLower.includes('perc')) {
           targetId = 'drums';
         } else if (nameLower.includes('bass') || nameLower.includes('808') || nameLower.includes('sub')) {
           targetId = 'bass';
-        } else if (nameLower.includes('other') || nameLower.includes('inst') || nameLower.includes('music') || nameLower.includes('back')) {
+        } else if (nameLower.includes('guitar') || nameLower.includes('tungna') || nameLower.includes('acoustic')) {
+          targetId = 'guitar';
+        } else if (nameLower.includes('piano') || nameLower.includes('harmonium') || nameLower.includes('keys')) {
+          targetId = 'piano';
+        } else if (nameLower.includes('sarangi') || nameLower.includes('flute') || nameLower.includes('bansuri')) {
           targetId = 'other';
         }
 
@@ -553,8 +791,10 @@ document.addEventListener('DOMContentLoaded', () => {
   // Session Save & Load
   btnSaveSession.addEventListener('click', () => {
     const sessionData = {
-      version: 1,
+      version: 2,
       timestamp: Date.now(),
+      model: currentModel,
+      preset: currentPreset,
       playbackRate: engine.playbackRate,
       pitchSemitones: engine.pitchSemitones,
       loop: {
@@ -582,9 +822,7 @@ document.addEventListener('DOMContentLoaded', () => {
     showToast('Session saved to file', 'success');
   });
 
-  btnLoadSession.addEventListener('click', () => {
-    sessionFileInput.click();
-  });
+  btnLoadSession.addEventListener('click', () => sessionFileInput.click());
 
   sessionFileInput.addEventListener('change', async (e) => {
     if (!e.target.files || e.target.files.length === 0) return;
@@ -607,16 +845,17 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       if (session.tracks && Array.isArray(session.tracks)) {
         session.tracks.forEach(tData => {
-          const track = engine.tracks.get(tData.id);
-          if (track) {
-            track.name = tData.name || track.name;
-            track.volume = tData.volume !== undefined ? tData.volume : 1.0;
-            track.pan = tData.pan !== undefined ? tData.pan : 0;
-            track.isMuted = !!tData.isMuted;
-            track.isSoloed = !!tData.isSoloed;
-            engine.setTrackVolume(track.id, track.volume);
-            engine.setTrackPan(track.id, track.pan);
+          let track = engine.tracks.get(tData.id);
+          if (!track) {
+            track = engine.addTrack(tData.id, tData.name, tData.stemType, null);
           }
+          track.name = tData.name || track.name;
+          track.volume = tData.volume !== undefined ? tData.volume : 1.0;
+          track.pan = tData.pan !== undefined ? tData.pan : 0;
+          track.isMuted = !!tData.isMuted;
+          track.isSoloed = !!tData.isSoloed;
+          engine.setTrackVolume(track.id, track.volume);
+          engine.setTrackPan(track.id, track.pan);
         });
         engine.updateMuteSoloStates();
         renderAllTrackCards();
@@ -629,7 +868,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Global Keyboard Shortcuts
   window.addEventListener('keydown', (e) => {
-    // Ignore keystrokes inside text inputs
     if (['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName)) return;
 
     if (e.code === 'Space') {
@@ -669,10 +907,10 @@ document.addEventListener('DOMContentLoaded', () => {
       toast.style.transform = 'translateX(100%)';
       toast.style.transition = 'all 0.3s ease';
       setTimeout(() => toast.remove(), 300);
-    }, 3200);
+    }, 3500);
   }
 
-  // Handle Playback State changes from engine
+  // Engine playback state update
   engine.on('playbackStateChanged', (playing) => {
     if (playing) {
       playToggleBtn.innerHTML = `<svg viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>`;
@@ -683,7 +921,5 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // Initial render
-  renderAllTrackCards();
   startAnimationLoop();
 });
