@@ -36,34 +36,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const masterMeterL = document.getElementById('masterMeterL');
   const masterMeterR = document.getElementById('masterMeterR');
 
-  // Intake Hero Elements
-  const tabBtnYoutube = document.getElementById('tabBtnYoutube');
-  const tabBtnUpload = document.getElementById('tabBtnUpload');
-  const tabBtnDemo = document.getElementById('tabBtnDemo');
-  const paneYoutube = document.getElementById('paneYoutube');
-  const paneUpload = document.getElementById('paneUpload');
-  const paneDemo = document.getElementById('paneDemo');
-
-  const inputYoutubeUrl = document.getElementById('inputYoutubeUrl');
-  const btnStartSeparationYoutube = document.getElementById('btnStartSeparationYoutube');
-
-  const fileUploadStrip = document.getElementById('fileUploadStrip');
-  const uploadFileName = document.getElementById('uploadFileName');
-  const btnBrowseSingleFile = document.getElementById('btnBrowseSingleFile');
-  const inputSingleAudioFile = document.getElementById('inputSingleAudioFile');
-  const btnStartSeparationFile = document.getElementById('btnStartSeparationFile');
-
-  const btnLoad6StemDemo = document.getElementById('btnLoad6StemDemo');
+  // Simple loader
   const btnLoadDemo = document.getElementById('btnLoadDemo');
-
-  const modelPillNepali = document.getElementById('modelPillNepali');
-  const modelPillStd6s = document.getElementById('modelPillStd6s');
-  const modelPillStd4s = document.getElementById('modelPillStd4s');
-
-  const separationProgressCard = document.getElementById('separationProgressCard');
-  const progressMessage = document.getElementById('progressMessage');
-  const progressPercent = document.getElementById('progressPercent');
-  const progressBarFill = document.getElementById('progressBarFill');
 
   // Presets & Modal
   const btnPresetKaraoke = document.getElementById('btnPresetKaraoke');
@@ -86,10 +60,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnLoadSession = document.getElementById('btnLoadSession');
   const sessionFileInput = document.getElementById('sessionFileInput');
 
-  // State: Current Model & Preset Selection
-  let currentModel = 'htdemucs_6s';
-  let currentPreset = 'nepali_folk';
-  let selectedUploadFile = null;
 
   // Default 6-Stem Nepali Folk Definition
   const nepaliFolkTrackDefs = [
@@ -309,205 +279,6 @@ document.addEventListener('DOMContentLoaded', () => {
     animationFrameId = requestAnimationFrame(update);
   }
 
-  // =========================================================================
-  // Intake Tabs & Model Selection
-  // =========================================================================
-  function switchIntakeTab(activeTab) {
-    tabBtnYoutube.classList.toggle('active', activeTab === 'youtube');
-    tabBtnUpload.classList.toggle('active', activeTab === 'upload');
-    tabBtnDemo.classList.toggle('active', activeTab === 'demo');
-
-    paneYoutube.style.display = activeTab === 'youtube' ? 'flex' : 'none';
-    paneUpload.style.display = activeTab === 'upload' ? 'flex' : 'none';
-    paneDemo.style.display = activeTab === 'demo' ? 'flex' : 'none';
-  }
-
-  tabBtnYoutube.addEventListener('click', () => switchIntakeTab('youtube'));
-  tabBtnUpload.addEventListener('click', () => switchIntakeTab('upload'));
-  tabBtnDemo.addEventListener('click', () => switchIntakeTab('demo'));
-
-  // Stem Profile Pills
-  function selectStemProfile(model, preset) {
-    currentModel = model;
-    currentPreset = preset;
-
-    modelPillNepali.className = `preset-pill ${preset === 'nepali_folk' ? 'nepali-active' : ''}`;
-    modelPillStd6s.className = `preset-pill ${preset === 'standard_6s' ? 'active' : ''}`;
-    modelPillStd4s.className = `preset-pill ${preset === 'standard_4s' ? 'active' : ''}`;
-
-    if (preset === 'nepali_folk') {
-      showToast('Selected: 6 Stems (Nepali Folk & Acoustic: Madal, Sarangi, Flute, Harmonium, Pluck, Bass)', 'info');
-    } else if (preset === 'standard_6s') {
-      showToast('Selected: 6 Stems Standard (Vocals, Drums, Bass, Guitar, Piano, Other)', 'info');
-    } else {
-      showToast('Selected: 4 Stems Standard (Vocals, Drums, Bass, Other)', 'info');
-    }
-  }
-
-  modelPillNepali.addEventListener('click', () => selectStemProfile('htdemucs_6s', 'nepali_folk'));
-  modelPillStd6s.addEventListener('click', () => selectStemProfile('htdemucs_6s', 'standard_6s'));
-  modelPillStd4s.addEventListener('click', () => selectStemProfile('htdemucs', 'standard_4s'));
-
-  // File Upload Handlers
-  btnBrowseSingleFile.addEventListener('click', () => inputSingleAudioFile.click());
-  fileUploadStrip.addEventListener('click', (e) => {
-    if (e.target !== btnBrowseSingleFile) inputSingleAudioFile.click();
-  });
-
-  inputSingleAudioFile.addEventListener('change', (e) => {
-    if (e.target.files && e.target.files.length > 0) {
-      selectedUploadFile = e.target.files[0];
-      uploadFileName.textContent = `${selectedUploadFile.name} (${(selectedUploadFile.size / (1024 * 1024)).toFixed(1)} MB)`;
-      btnStartSeparationFile.disabled = false;
-      showToast(`Selected "${selectedUploadFile.name}"`, 'success');
-    }
-  });
-
-  fileUploadStrip.addEventListener('dragover', (e) => {
-    e.preventDefault();
-    fileUploadStrip.classList.add('drag-over');
-  });
-
-  fileUploadStrip.addEventListener('dragleave', () => fileUploadStrip.classList.remove('drag-over'));
-
-  fileUploadStrip.addEventListener('drop', (e) => {
-    e.preventDefault();
-    fileUploadStrip.classList.remove('drag-over');
-    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      selectedUploadFile = e.dataTransfer.files[0];
-      uploadFileName.textContent = `${selectedUploadFile.name} (${(selectedUploadFile.size / (1024 * 1024)).toFixed(1)} MB)`;
-      btnStartSeparationFile.disabled = false;
-      showToast(`Selected "${selectedUploadFile.name}"`, 'success');
-    }
-  });
-
-  // =========================================================================
-  // AI Stem Separation Backend Integration
-  // =========================================================================
-  async function triggerSeparation(payload, isFormData = false) {
-    separationProgressCard.style.display = 'block';
-    progressPercent.textContent = '5%';
-    progressBarFill.style.width = '5%';
-    progressMessage.textContent = 'Contacting Stems Studio neural separation engine...';
-
-    btnStartSeparationYoutube.disabled = true;
-    btnStartSeparationFile.disabled = true;
-
-    try {
-      const headers = isFormData ? {} : { 'Content-Type': 'application/json' };
-      const body = isFormData ? payload : JSON.stringify(payload);
-
-      const resp = await fetch('/api/separate', {
-        method: 'POST',
-        headers,
-        body
-      });
-
-      if (!resp.ok) {
-        throw new Error(`Server returned error ${resp.status}`);
-      }
-
-      const initData = await resp.json();
-      const jobId = initData.job_id;
-
-      // Poll job progress
-      await pollJobStatus(jobId);
-
-    } catch (err) {
-      console.error(err);
-      progressMessage.textContent = `Error: ${err.message}. Make sure server.py or Run-Stems-Studio.bat is running!`;
-      progressBarFill.style.background = '#ef4444';
-      showToast(`Separation failed: ${err.message}`, 'error');
-    } finally {
-      btnStartSeparationYoutube.disabled = false;
-      btnStartSeparationFile.disabled = selectedUploadFile === null;
-    }
-  }
-
-  async function pollJobStatus(jobId) {
-    const pollInterval = setInterval(async () => {
-      try {
-        const resp = await fetch(`/api/status?job_id=${jobId}`);
-        const data = await resp.json();
-
-        if (data.status === 'processing') {
-          progressPercent.textContent = `${data.progress}%`;
-          progressBarFill.style.width = `${data.progress}%`;
-          progressMessage.textContent = data.message || 'Separating audio stems...';
-        } else if (data.status === 'completed') {
-          clearInterval(pollInterval);
-          progressPercent.textContent = '100%';
-          progressBarFill.style.width = '100%';
-          progressMessage.textContent = 'Separation complete! Decoding and loading audio tracks...';
-
-          await loadSeparatedStemsIntoMixer(data.stems);
-          setTimeout(() => {
-            separationProgressCard.style.display = 'none';
-          }, 4000);
-        } else if (data.status === 'error') {
-          clearInterval(pollInterval);
-          progressMessage.textContent = `Separation failed: ${data.error}`;
-          progressBarFill.style.background = '#ef4444';
-          showToast(`Error: ${data.error}`, 'error');
-        }
-      } catch (e) {
-        console.error('Polling error', e);
-      }
-    }, 800);
-  }
-
-  async function loadSeparatedStemsIntoMixer(stemsList) {
-    await engine.resume();
-    engine.tracks.clear();
-
-    for (const stem of stemsList) {
-      try {
-        const audioResp = await fetch(stem.url);
-        const arrayBuf = await audioResp.arrayBuffer();
-        const decodedBuf = await engine.ctx.decodeAudioData(arrayBuf);
-
-        engine.addTrack(stem.id, stem.name, stem.stemType, decodedBuf);
-      } catch (err) {
-        console.error(`Error loading stem ${stem.name}`, err);
-      }
-    }
-
-    renderAllTrackCards();
-    document.querySelectorAll('.track-empty-state').forEach(el => el.style.display = 'none');
-    redrawAllWaveforms();
-    showToast('All separated stems loaded successfully into mixer!', 'success');
-
-    // Auto-start playback
-    await engine.play();
-  }
-
-  // Trigger from YouTube
-  btnStartSeparationYoutube.addEventListener('click', () => {
-    const url = inputYoutubeUrl.value.trim();
-    if (!url) {
-      showToast('Please enter a YouTube video URL.', 'error');
-      inputYoutubeUrl.focus();
-      return;
-    }
-    triggerSeparation({
-      youtube_url: url,
-      model: currentModel,
-      preset: currentPreset
-    });
-  });
-
-  // Trigger from Single Audio File
-  btnStartSeparationFile.addEventListener('click', () => {
-    if (!selectedUploadFile) {
-      showToast('Please choose an audio file first.', 'error');
-      return;
-    }
-    const formData = new FormData();
-    formData.append('file', selectedUploadFile);
-    formData.append('model', currentModel);
-    formData.append('preset', currentPreset);
-    triggerSeparation(formData, true);
-  });
 
   // =========================================================================
   // Procedural Demo Stems
@@ -550,8 +321,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  btnLoad6StemDemo.addEventListener('click', () => loadDemoStems(true));
-  btnLoadDemo.addEventListener('click', () => loadDemoStems(true));
+  if (btnLoadDemo) {
+    btnLoadDemo.addEventListener('click', () => loadDemoStems(true));
+  }
 
   // =========================================================================
   // Transport & Playback Controls
@@ -921,33 +693,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // Query Server Engine & GPU Status
-  async function checkEngineStatus() {
-    const gpuBadgeText = document.getElementById('gpuBadgeText');
-    const gpuEngineBadge = document.getElementById('gpuEngineBadge');
-    if (!gpuBadgeText || !gpuEngineBadge) return;
-
-    try {
-      const resp = await fetch('/api/engine');
-      if (resp.ok) {
-        const data = await resp.json();
-        if (data.cuda_available) {
-          gpuBadgeText.textContent = `⚡ GPU Active: ${data.device_name} (${data.vram_gb} GB VRAM)`;
-          gpuEngineBadge.style.color = '#34d399';
-          gpuEngineBadge.style.borderColor = 'rgba(16, 185, 129, 0.4)';
-          gpuEngineBadge.title = `NVIDIA CUDA ${data.cuda_version || '12.6'} acceleration enabled on ${data.device_name}`;
-        } else {
-          gpuBadgeText.textContent = `⚙️ Engine: ${data.device_name} Mode`;
-          gpuEngineBadge.style.color = '#f59e0b';
-          gpuEngineBadge.style.borderColor = 'rgba(245, 158, 11, 0.3)';
-        }
-      }
-    } catch (e) {
-      gpuBadgeText.textContent = '⚡ Web Audio Mode (Offline)';
-    }
-  }
-
-  checkEngineStatus();
   startAnimationLoop();
 
   // =========================================================================
