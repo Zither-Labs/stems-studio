@@ -1,6 +1,11 @@
 # Stems Studio
 
-A modern multi-track audio stem mixer, AI separator, and practice workstation featuring **6-Stem Neural Separation** optimized for acoustic and **Nepali folk music** (Madal, Sarangi, Bansuri, Harmonium, Plucks, Vocals).
+A modern multi-track audio stem mixer, AI separator, **vocal training studio**, and practice workstation featuring **6-Stem Neural Separation** optimized for acoustic and **Nepali folk music** (Madal, Sarangi, Bansuri, Harmonium, Plucks, Vocals).
+
+**NEW: Vocal Training Features!**
+- 🎤 **Record & Compare:** Record your voice while singing along, then compare with the original
+- 🎵 **Note Teaching:** See the notes being sung in real-time with a pitch timeline visualization
+- 📊 **Pitch Accuracy:** Get accuracy scores showing how closely you match the original vocals
 
 ![Stems Studio Interface](https://img.shields.io/badge/Audio-WebAudio%20API-6366f1?style=for-the-badge)
 ![AI-Model](https://img.shields.io/badge/AI-Demucs%206--Stem%20(htdemucs__6s)-f59e0b?style=for-the-badge)
@@ -78,6 +83,38 @@ The app has a prominent intake bar right at the top of the screen:
   - Export Backing Track / Karaoke (`.wav`).
   - Export Acapella (`.wav`).
   - Export Active Loop Region Only (`.wav`).
+
+---
+
+## 🎤 Vocal Training Studio / स्वर अभ्यास
+
+The Vocal Training Studio helps you learn to sing songs by:
+
+### 1. Record & Compare Your Vocals
+- Click **"Setup Microphone"** to enable your microphone
+- Click **"Record"** to start recording while the backing track plays
+- After recording, toggle between **Original Vocal**, **My Recording**, or **Both** to compare
+- Your recording is displayed alongside the original in the waveform view
+
+### 2. Learn the Notes (Pitch Analysis)
+- Click **"Analyze Vocals"** to extract the pitch/notes from the original vocal track
+- The **Pitch Timeline** shows a piano-roll style view of what notes are being sung
+- Your recorded pitch appears in **cyan** overlaid on the **red** original pitch
+- Real-time **note display** shows the current note name (e.g., C4, G#5)
+
+### 3. Get Accuracy Feedback
+- After recording, see your **Pitch Accuracy Score** (0-100%)
+- The **cents meter** shows if you're sharp (+) or flat (-) from the target pitch
+- Color coding: 🟢 Green = on pitch, 🟡 Yellow = slightly off, 🔴 Red = off key
+
+### Training Workflow
+1. Load a song (YouTube URL, upload, or demo)
+2. Click **"Analyze Vocals"** to see the pitch timeline
+3. Practice with **Karaoke Mode** (vocals muted) first
+4. When ready, click **"Setup Microphone"** then **"Record"**
+5. Sing along with the backing track
+6. Stop recording and review your pitch accuracy
+7. Use **A/B loop** to practice difficult sections repeatedly
 
 ---
 

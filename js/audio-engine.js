@@ -469,6 +469,319 @@ class AudioEngine {
       if (l.event === event) l.fn(data);
     }
   }
+
+  // =========================================================================
+  // Vocal Training Module - Recording Track & Pitch Analysis
+  // =========================================================================
+
+  initVocalTraining() {
+    if (this.vocalRecorder) return;
+    
+    this.vocalRecorder = new VocalRecorder(this.ctx);
+    this.pitchVisualizer = null;
+    this.originalVocalPitchData = null;
+    this.userPitchData = [];
+    this.isRecordingVocals = false;
+    this.comparisonMode = 'side-by-side'; // 'side-by-side', 'overlay', 'a-b-toggle'
+    this.playbackSource = 'original'; // 'original', 'user', 'both'
+    
+    this.userVocalTrack = null;
+  }
+
+  async requestMicrophoneAccess() {
+    this.initVocalTraining();
+    
+    this.vocalRecorder.onPitchUpdate = (pitchInfo) => {
+      if (this.isRecordingVocals) {
+        const currentTime = this.getCurrentTime();
+        this.userPitchData.push({
+          time: currentTime,
+          ...pitchInfo
+        });
+      }
+      this.emit('pitchDetected', pitchInfo);
+    };
+    
+    this.vocalRecorder.onLevelUpdate = (levels) => {
+      this.emit('micLevelUpdate', levels);
+    };
+    
+    this.vocalRecorder.onRecordingComplete = (recording) => {
+      this.processUserRecording(recording);
+    };
+    
+    return await this.vocalRecorder.requestMicrophoneAccess();
+  }
+
+  async analyzeVocalStem() {
+    const vocalTrack = this.tracks.get('vocal');
+    if (!vocalTrack || !vocalTrack.buffer) {
+      return null;
+    }
+    
+    this.emit('analysisStarted', { type: 'vocal' });
+    
+    const pitchData = PitchDetector.analyzeAudioBuffer(
+      vocalTrack.buffer,
+      this.ctx.sampleRate,
+      {
+        hopSize: 512,
+        frameSize: 2048,
+        threshold: 0.12,
+        minFreq: 80,
+        maxFreq: 1200
+      }
+    );
+    
+    this.originalVocalPitchData = pitchData.map(p => ({
+      time: p.time,
+      frequency: p.frequency,
+      confidence: p.confidence,
+      isSilent: p.isSilent
+    }));
+    
+    this.emit('analysisComplete', {
+      type: 'vocal',
+      data: this.originalVocalPitchData
+    });
+    
+    return this.originalVocalPitchData;
+  }
+
+  getOriginalVocalPitchData() {
+    return this.originalVocalPitchData;
+  }
+
+  getUserPitchData() {
+    return this.userPitchData;
+  }
+
+  async startVocalRecording() {
+    if (!this.vocalRecorder || !this.vocalRecorder.hasPermission) {
+      const result = await this.requestMicrophoneAccess();
+      if (!result.success) return false;
+    }
+    
+    this.userPitchData = [];
+    const startOffset = this.getCurrentTime();
+    
+    const success = await this.vocalRecorder.startRecording(startOffset);
+    if (success) {
+      this.isRecordingVocals = true;
+      this.emit('recordingStateChanged', { recording: true, offset: startOffset });
+    }
+    
+    return success;
+  }
+
+  stopVocalRecording() {
+    if (!this.vocalRecorder || !this.isRecordingVocals) return null;
+    
+    const result = this.vocalRecorder.stopRecording();
+    this.isRecordingVocals = false;
+    this.emit('recordingStateChanged', { recording: false, result });
+    
+    return result;
+  }
+
+  processUserRecording(recording) {
+    const { buffer, offset, duration } = recording;
+    
+    if (!this.userVocalTrack) {
+      this.userVocalTrack = {
+        id: 'user-vocal',
+        name: 'My Recording / मेरो रेकर्डिङ',
+        stemType: 'user-vocal',
+        buffer: buffer,
+        source: null,
+        volume: 1.0,
+        pan: 0,
+        isMuted: false,
+        isSoloed: false,
+        offset: offset,
+        peaks: null,
+        nodes: this.createTrackNodes()
+      };
+    } else {
+      this.userVocalTrack.buffer = buffer;
+      this.userVocalTrack.offset = offset;
+    }
+    
+    this.userVocalTrack.peaks = this.extractPeaks(buffer, 1200);
+    
+    this.emit('userRecordingReady', {
+      track: this.userVocalTrack,
+      pitchData: this.userPitchData
+    });
+  }
+
+  createTrackNodes() {
+    const trackGain = this.ctx.createGain();
+    const muteSoloGain = this.ctx.createGain();
+    const panner = this.ctx.createStereoPanner();
+    
+    const eqLow = this.ctx.createBiquadFilter();
+    eqLow.type = 'lowshelf';
+    eqLow.frequency.value = 320;
+    eqLow.gain.value = 0;
+    
+    const eqMid = this.ctx.createBiquadFilter();
+    eqMid.type = 'peaking';
+    eqMid.frequency.value = 1000;
+    eqMid.Q.value = 1.0;
+    eqMid.gain.value = 0;
+    
+    const eqHigh = this.ctx.createBiquadFilter();
+    eqHigh.type = 'highshelf';
+    eqHigh.frequency.value = 3200;
+    eqHigh.gain.value = 0;
+    
+    const analyser = this.ctx.createAnalyser();
+    analyser.fftSize = 128;
+    
+    eqLow.connect(eqMid);
+    eqMid.connect(eqHigh);
+    eqHigh.connect(panner);
+    panner.connect(trackGain);
+    trackGain.connect(muteSoloGain);
+    muteSoloGain.connect(analyser);
+    muteSoloGain.connect(this.masterGain);
+    
+    return { eqLow, eqMid, eqHigh, panner, trackGain, muteSoloGain, analyser };
+  }
+
+  getUserVocalTrack() {
+    return this.userVocalTrack;
+  }
+
+  setComparisonMode(mode) {
+    this.comparisonMode = mode;
+    this.updateComparisonPlayback();
+    this.emit('comparisonModeChanged', mode);
+  }
+
+  setPlaybackSource(source) {
+    this.playbackSource = source;
+    this.updateComparisonPlayback();
+    this.emit('playbackSourceChanged', source);
+  }
+
+  updateComparisonPlayback() {
+    const vocalTrack = this.tracks.get('vocal');
+    
+    if (this.playbackSource === 'original') {
+      if (vocalTrack) vocalTrack.isMuted = false;
+      if (this.userVocalTrack) this.userVocalTrack.isMuted = true;
+    } else if (this.playbackSource === 'user') {
+      if (vocalTrack) vocalTrack.isMuted = true;
+      if (this.userVocalTrack) this.userVocalTrack.isMuted = false;
+    } else {
+      if (vocalTrack) vocalTrack.isMuted = false;
+      if (this.userVocalTrack) this.userVocalTrack.isMuted = false;
+    }
+    
+    this.updateMuteSoloStates();
+  }
+
+  playUserVocalTrack(offset = 0) {
+    if (!this.userVocalTrack || !this.userVocalTrack.buffer) return;
+    
+    if (this.userVocalTrack.source) {
+      try { this.userVocalTrack.source.stop(); } catch (e) {}
+    }
+    
+    const source = this.ctx.createBufferSource();
+    source.buffer = this.userVocalTrack.buffer;
+    source.connect(this.userVocalTrack.nodes.eqLow);
+    
+    const trackOffset = this.userVocalTrack.offset || 0;
+    const playOffset = Math.max(0, offset - trackOffset);
+    
+    if (playOffset < this.userVocalTrack.buffer.duration) {
+      source.start(0, playOffset);
+    }
+    
+    this.userVocalTrack.source = source;
+  }
+
+  stopUserVocalTrack() {
+    if (this.userVocalTrack && this.userVocalTrack.source) {
+      try { this.userVocalTrack.source.stop(); } catch (e) {}
+      this.userVocalTrack.source = null;
+    }
+  }
+
+  setMicMonitorEnabled(enabled) {
+    if (this.vocalRecorder) {
+      this.vocalRecorder.setMonitorEnabled(enabled);
+    }
+  }
+
+  setMicInputLevel(level) {
+    if (this.vocalRecorder) {
+      this.vocalRecorder.setInputLevel(level);
+    }
+  }
+
+  clearUserRecording() {
+    if (this.vocalRecorder) {
+      this.vocalRecorder.clearRecording();
+    }
+    this.userPitchData = [];
+    this.userVocalTrack = null;
+    this.emit('userRecordingCleared');
+  }
+
+  async downloadUserRecording(filename) {
+    if (this.vocalRecorder) {
+      return await this.vocalRecorder.downloadRecording(filename);
+    }
+    return false;
+  }
+
+  calculatePitchAccuracy() {
+    if (!this.originalVocalPitchData || !this.userPitchData) {
+      return null;
+    }
+    
+    let matchedCount = 0;
+    let totalCount = 0;
+    let totalCentsOff = 0;
+    
+    const tolerance = 50;
+    const timeTolerance = 0.1;
+    
+    for (const userPoint of this.userPitchData) {
+      if (!userPoint.frequency) continue;
+      
+      const nearestOriginal = this.originalVocalPitchData.find(p => 
+        Math.abs(p.time - userPoint.time) < timeTolerance && p.frequency
+      );
+      
+      if (nearestOriginal) {
+        totalCount++;
+        
+        const userMidi = 12 * Math.log2(userPoint.frequency / 440) + 69;
+        const originalMidi = 12 * Math.log2(nearestOriginal.frequency / 440) + 69;
+        const centsDiff = Math.abs((userMidi - originalMidi) * 100);
+        
+        totalCentsOff += centsDiff;
+        
+        if (centsDiff <= tolerance) {
+          matchedCount++;
+        }
+      }
+    }
+    
+    if (totalCount === 0) return null;
+    
+    return {
+      accuracy: (matchedCount / totalCount) * 100,
+      averageCentsOff: totalCentsOff / totalCount,
+      totalNotes: totalCount,
+      matchedNotes: matchedCount
+    };
+  }
 }
 
 window.AudioEngine = AudioEngine;

@@ -1502,4 +1502,663 @@ kbd {
   animation: pulseGlow 1.5s infinite;
 }
 
+/* ==========================================================================
+   Vocal Training Studio - Sangeet Yatra Inspired Theme
+   ========================================================================== */
+
+.vocal-training-deck {
+  background: linear-gradient(180deg, rgba(15, 19, 28, 0.95) 0%, rgba(9, 11, 16, 0.98) 100%);
+  border-bottom: 1px solid var(--border-subtle);
+  padding: 1.25rem 1.5rem;
+  position: relative;
+  overflow: hidden;
+}
+
+.vocal-training-deck::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 100%;
+  background: radial-gradient(ellipse at 30% 0%, rgba(255, 77, 109, 0.08) 0%, transparent 50%),
+              radial-gradient(ellipse at 70% 100%, rgba(56, 189, 248, 0.06) 0%, transparent 50%);
+  pointer-events: none;
+}
+
+.training-panel {
+  max-width: 1400px;
+  margin: 0 auto;
+  position: relative;
+  z-index: 1;
+}
+
+/* Training Header */
+.training-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+
+.training-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+}
+
+.training-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, #ff4d6d, #a855f7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 20px rgba(255, 77, 109, 0.4);
+}
+
+.training-icon svg {
+  width: 22px;
+  height: 22px;
+  color: #fff;
+}
+
+.training-title {
+  font-family: 'Outfit', sans-serif;
+  font-size: 1.2rem;
+  font-weight: 700;
+  background: linear-gradient(135deg, #ffffff 40%, #ff4d6d 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  margin: 0;
+}
+
+.training-subtitle {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  display: block;
+  margin-top: 2px;
+}
+
+/* Training Mode Tabs */
+.training-mode-tabs {
+  display: flex;
+  gap: 0.35rem;
+  background: var(--bg-core);
+  padding: 4px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+}
+
+.training-tab {
+  padding: 0.5rem 1rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  transition: all var(--transition-fast);
+}
+
+.training-tab:hover {
+  color: var(--text-primary);
+}
+
+.training-tab.active {
+  background: linear-gradient(135deg, rgba(255, 77, 109, 0.2), rgba(168, 85, 247, 0.15));
+  color: #fff;
+  box-shadow: 0 2px 10px rgba(255, 77, 109, 0.25);
+}
+
+.training-tab svg {
+  opacity: 0.7;
+}
+
+.training-tab.active svg {
+  opacity: 1;
+}
+
+/* Microphone Control Strip */
+.mic-control-strip {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+
+.btn-mic-setup {
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #fff;
+  padding: 0.55rem 1rem;
+  font-weight: 600;
+  gap: 0.5rem;
+  box-shadow: 0 4px 14px rgba(99, 102, 241, 0.35);
+}
+
+.btn-mic-setup:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(99, 102, 241, 0.5);
+}
+
+.btn-mic-setup.active {
+  background: linear-gradient(135deg, #10b981, #059669);
+  box-shadow: 0 4px 14px rgba(16, 185, 129, 0.35);
+}
+
+.btn-mic-setup.active:hover {
+  box-shadow: 0 6px 20px rgba(16, 185, 129, 0.5);
+}
+
+/* Mic Level Meter */
+.mic-level-meter {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1;
+  min-width: 150px;
+  max-width: 250px;
+}
+
+.meter-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+}
+
+.mic-meter-track {
+  flex: 1;
+  height: 8px;
+  background: var(--bg-core);
+  border-radius: 4px;
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+}
+
+.mic-meter-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #10b981 0%, #10b981 60%, #f59e0b 80%, #ef4444 100%);
+  transition: width 0.05s ease;
+}
+
+.mic-clip-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #334155;
+  transition: all 0.1s ease;
+}
+
+.mic-clip-dot.clipping {
+  background: #ef4444;
+  box-shadow: 0 0 10px #ef4444;
+}
+
+/* Mic Input Control */
+.mic-input-control {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.input-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.mic-gain-slider {
+  width: 80px;
+}
+
+.gain-readout {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  min-width: 45px;
+}
+
+/* Monitor Toggle */
+.monitor-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  cursor: pointer;
+  padding: 0.4rem 0.75rem;
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface-3);
+  border: 1px solid var(--border-subtle);
+  transition: all var(--transition-fast);
+}
+
+.monitor-toggle:hover {
+  border-color: var(--accent-cyan);
+}
+
+.monitor-toggle input {
+  accent-color: var(--accent-cyan);
+}
+
+.toggle-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+/* Recording Controls Strip */
+.recording-controls-strip {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: var(--bg-surface-1);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+
+/* Record Button - Big Glowing */
+.btn-record {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 1.25rem;
+  border-radius: var(--radius-md);
+  background: var(--bg-surface-3);
+  border: 2px solid var(--border-strong);
+  color: var(--text-secondary);
+  font-weight: 700;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.btn-record:hover:not(:disabled) {
+  border-color: #ef4444;
+  color: #fca5a5;
+}
+
+.btn-record:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-record.recording {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: #ef4444;
+  color: #fff;
+  animation: recordPulse 1.5s infinite;
+}
+
+.record-icon {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #ef4444;
+  transition: all var(--transition-fast);
+}
+
+.btn-record.recording .record-icon {
+  background: #ef4444;
+  box-shadow: 0 0 12px #ef4444;
+  animation: pulseGlow 0.8s infinite;
+}
+
+@keyframes recordPulse {
+  0%, 100% { box-shadow: 0 0 15px rgba(239, 68, 68, 0.3); }
+  50% { box-shadow: 0 0 25px rgba(239, 68, 68, 0.5); }
+}
+
+.btn-stop-recording {
+  padding: 0.55rem 0.9rem;
+}
+
+.btn-stop-recording:disabled {
+  opacity: 0.5;
+}
+
+/* Recording Timer */
+.recording-timer {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.85rem;
+  background: var(--bg-core);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.timer-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #334155;
+}
+
+.recording-timer.active {
+  border-color: #ef4444;
+  color: #fca5a5;
+}
+
+.recording-timer.active .timer-dot {
+  background: #ef4444;
+  animation: pulseGlow 0.8s infinite;
+}
+
+.recording-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+
+/* Pitch Display Panel */
+.pitch-display-panel {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  gap: 1rem;
+  padding: 1rem;
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  margin-bottom: 1rem;
+}
+
+@media (max-width: 768px) {
+  .pitch-display-panel {
+    grid-template-columns: 1fr;
+  }
+}
+
+.current-pitch-display {
+  position: relative;
+}
+
+.pitch-note-canvas {
+  width: 100%;
+  height: 140px;
+  border-radius: var(--radius-md);
+  background: var(--bg-core);
+  border: 1px solid var(--border-subtle);
+}
+
+/* Pitch Info Stats */
+.pitch-info-stats {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.75rem;
+}
+
+.stat-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 0.85rem;
+  background: var(--bg-surface-3);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+}
+
+.stat-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+}
+
+.stat-value {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.stat-item.accuracy-stat .stat-value {
+  color: var(--success-emerald);
+}
+
+/* Comparison Controls */
+.comparison-controls {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.65rem 1rem;
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  margin-bottom: 1rem;
+}
+
+.comparison-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.source-toggle-group {
+  display: flex;
+  gap: 0.35rem;
+  background: var(--bg-core);
+  padding: 3px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+}
+
+.source-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.85rem;
+  border-radius: 4px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.source-btn:hover {
+  color: var(--text-primary);
+}
+
+.source-btn.active {
+  background: var(--bg-surface-3);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.source-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.source-dot.original {
+  background: #ff4d6d;
+  box-shadow: 0 0 6px rgba(255, 77, 109, 0.5);
+}
+
+.source-dot.user {
+  background: #38bdf8;
+  box-shadow: 0 0 6px rgba(56, 189, 248, 0.5);
+}
+
+.source-dot.both {
+  background: linear-gradient(135deg, #ff4d6d 50%, #38bdf8 50%);
+}
+
+/* Pitch Graph Container */
+.pitch-graph-container {
+  max-width: 1400px;
+  margin: 0 auto;
+  background: var(--bg-surface-1);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.pitch-graph-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.85rem 1.25rem;
+  background: var(--bg-surface-2);
+  border-bottom: 1px solid var(--border-subtle);
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.graph-title {
+  font-family: 'Outfit', sans-serif;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+}
+
+.graph-title svg {
+  color: var(--accent-cyan);
+}
+
+.graph-legend {
+  display: flex;
+  gap: 1.25rem;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.legend-item.original .legend-dot {
+  background: #ff4d6d;
+  box-shadow: 0 0 8px rgba(255, 77, 109, 0.5);
+}
+
+.legend-item.user .legend-dot {
+  background: #38bdf8;
+  box-shadow: 0 0 8px rgba(56, 189, 248, 0.5);
+}
+
+.pitch-graph-canvas-wrap {
+  position: relative;
+  height: 280px;
+  background: #090b10;
+}
+
+.pitch-graph-canvas {
+  width: 100%;
+  height: 100%;
+}
+
+.graph-overlay-message {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  background: rgba(9, 11, 16, 0.8);
+  backdrop-filter: blur(4px);
+}
+
+.graph-overlay-message svg {
+  color: var(--accent-indigo);
+  opacity: 0.6;
+}
+
+.graph-overlay-message.hidden {
+  display: none;
+}
+
+/* User Vocal Track Card Styles */
+.track-card.active-stem-user-vocal {
+  border-left: 4px solid var(--accent-cyan);
+}
+
+.stem-user-vocal-icon {
+  background: linear-gradient(135deg, #38bdf8, #06b6d4);
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.4);
+}
+
+/* Recording Waveform Animation */
+@keyframes waveformPulse {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
+.track-card.recording .track-waveform-zone {
+  animation: waveformPulse 1s infinite;
+}
+
+/* Responsive Adjustments */
+@media (max-width: 900px) {
+  .training-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  
+  .mic-control-strip {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .mic-level-meter {
+    max-width: none;
+  }
+  
+  .recording-controls-strip {
+    justify-content: center;
+  }
+  
+  .recording-actions {
+    margin-left: 0;
+    width: 100%;
+    justify-content: center;
+  }
+}
 

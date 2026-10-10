@@ -949,4 +949,451 @@ document.addEventListener('DOMContentLoaded', () => {
 
   checkEngineStatus();
   startAnimationLoop();
+
+  // =========================================================================
+  // Vocal Training Studio Module
+  // =========================================================================
+  
+  // DOM Elements - Vocal Training
+  const btnSetupMic = document.getElementById('btnSetupMic');
+  const micSetupText = document.getElementById('micSetupText');
+  const micMeterFill = document.getElementById('micMeterFill');
+  const micClipDot = document.getElementById('micClipDot');
+  const micGainSlider = document.getElementById('micGainSlider');
+  const micGainReadout = document.getElementById('micGainReadout');
+  const micMonitorToggle = document.getElementById('micMonitorToggle');
+  
+  const btnRecord = document.getElementById('btnRecord');
+  const btnStopRecording = document.getElementById('btnStopRecording');
+  const recordingTimer = document.getElementById('recordingTimer');
+  const recordingTimeDisplay = document.getElementById('recordingTimeDisplay');
+  const btnClearRecording = document.getElementById('btnClearRecording');
+  const btnDownloadRecording = document.getElementById('btnDownloadRecording');
+  
+  const pitchNoteCanvas = document.getElementById('pitchNoteCanvas');
+  const pitchGraphCanvas = document.getElementById('pitchGraphCanvas');
+  const graphOverlayMessage = document.getElementById('graphOverlayMessage');
+  const btnAnalyzeVocals = document.getElementById('btnAnalyzeVocals');
+  
+  const targetNoteDisplay = document.getElementById('targetNoteDisplay');
+  const yourNoteDisplay = document.getElementById('yourNoteDisplay');
+  const accuracyDisplay = document.getElementById('accuracyDisplay');
+  
+  const btnSourceOriginal = document.getElementById('btnSourceOriginal');
+  const btnSourceUser = document.getElementById('btnSourceUser');
+  const btnSourceBoth = document.getElementById('btnSourceBoth');
+  
+  const trainingTabs = document.querySelectorAll('.training-tab');
+  
+  // Pitch Visualizer Instance
+  let pitchVisualizer = null;
+  let recordingTimerInterval = null;
+  let recordingStartTimestamp = 0;
+  let microphoneReady = false;
+  let currentUserPitch = null;
+
+  // Initialize Pitch Visualizer
+  if (pitchGraphCanvas) {
+    pitchVisualizer = new PitchVisualizer({ canvas: pitchGraphCanvas });
+    pitchVisualizer.resize();
+    
+    window.addEventListener('resize', () => {
+      if (pitchVisualizer) pitchVisualizer.resize();
+    });
+  }
+
+  // Setup Microphone Button
+  if (btnSetupMic) {
+    btnSetupMic.addEventListener('click', async () => {
+      if (microphoneReady) {
+        showToast('Microphone already connected!', 'info');
+        return;
+      }
+      
+      btnSetupMic.disabled = true;
+      micSetupText.textContent = 'Requesting access...';
+      
+      const result = await engine.requestMicrophoneAccess();
+      
+      if (result.success) {
+        microphoneReady = true;
+        btnSetupMic.classList.add('active');
+        micSetupText.textContent = 'Microphone Ready';
+        btnRecord.disabled = false;
+        showToast('Microphone connected! Ready to record.', 'success');
+      } else {
+        btnSetupMic.disabled = false;
+        micSetupText.textContent = 'Setup Microphone';
+        showToast(`Microphone access denied: ${result.error}`, 'error');
+      }
+    });
+  }
+
+  // Mic Level Updates
+  engine.on('micLevelUpdate', (levels) => {
+    if (micMeterFill) {
+      micMeterFill.style.width = `${Math.min(100, levels.peak * 120)}%`;
+    }
+    if (micClipDot) {
+      micClipDot.classList.toggle('clipping', levels.clipping);
+    }
+  });
+
+  // Pitch Detection Updates
+  engine.on('pitchDetected', (pitchInfo) => {
+    currentUserPitch = pitchInfo;
+    
+    // Update pitch note canvas
+    if (pitchNoteCanvas) {
+      PitchVisualizer.renderNoteDisplay(pitchNoteCanvas, pitchInfo);
+    }
+    
+    // Update your note display
+    if (yourNoteDisplay) {
+      if (pitchInfo.note && !pitchInfo.isSilent) {
+        yourNoteDisplay.textContent = `${pitchInfo.note}${pitchInfo.octave}`;
+        yourNoteDisplay.style.color = Math.abs(pitchInfo.cents) <= 15 ? '#10b981' : 
+                                       Math.abs(pitchInfo.cents) <= 30 ? '#f59e0b' : '#ef4444';
+      } else {
+        yourNoteDisplay.textContent = '—';
+        yourNoteDisplay.style.color = '';
+      }
+    }
+    
+    // Add to visualizer if recording
+    if (engine.isRecordingVocals && pitchVisualizer) {
+      pitchVisualizer.addUserPitchPoint({
+        time: engine.getCurrentTime(),
+        frequency: pitchInfo.frequency,
+        confidence: pitchInfo.confidence
+      });
+    }
+  });
+
+  // Mic Gain Slider
+  if (micGainSlider) {
+    micGainSlider.addEventListener('input', (e) => {
+      const val = parseFloat(e.target.value);
+      engine.setMicInputLevel(val);
+      if (micGainReadout) {
+        micGainReadout.textContent = formatDb(val);
+      }
+    });
+  }
+
+  // Monitor Toggle
+  if (micMonitorToggle) {
+    micMonitorToggle.addEventListener('change', (e) => {
+      engine.setMicMonitorEnabled(e.target.checked);
+      showToast(e.target.checked ? 'Monitor ON - You can hear yourself' : 'Monitor OFF', 'info');
+    });
+  }
+
+  // Record Button
+  if (btnRecord) {
+    btnRecord.addEventListener('click', async () => {
+      if (engine.isRecordingVocals) {
+        // Stop recording
+        engine.stopVocalRecording();
+      } else {
+        // Start recording
+        const success = await engine.startVocalRecording();
+        if (success) {
+          // Also start playback if not playing
+          if (!engine.isPlaying) {
+            await engine.play();
+          }
+        }
+      }
+    });
+  }
+
+  // Recording State Changes
+  engine.on('recordingStateChanged', (state) => {
+    if (state.recording) {
+      btnRecord.classList.add('recording');
+      btnRecord.querySelector('span').textContent = 'Recording...';
+      btnStopRecording.disabled = false;
+      recordingTimer.classList.add('active');
+      recordingStartTimestamp = Date.now();
+      
+      // Start timer
+      recordingTimerInterval = setInterval(() => {
+        const elapsed = (Date.now() - recordingStartTimestamp) / 1000;
+        recordingTimeDisplay.textContent = formatTime(elapsed);
+      }, 50);
+      
+      // Clear previous user pitch data in visualizer
+      if (pitchVisualizer) {
+        pitchVisualizer.clearUserPitchData();
+      }
+      
+      showToast('Recording started! Sing along with the track.', 'success');
+    } else {
+      btnRecord.classList.remove('recording');
+      btnRecord.querySelector('span').textContent = 'Record';
+      btnStopRecording.disabled = true;
+      recordingTimer.classList.remove('active');
+      
+      if (recordingTimerInterval) {
+        clearInterval(recordingTimerInterval);
+        recordingTimerInterval = null;
+      }
+      
+      showToast('Recording stopped.', 'info');
+    }
+  });
+
+  // Stop Recording Button
+  if (btnStopRecording) {
+    btnStopRecording.addEventListener('click', () => {
+      engine.stopVocalRecording();
+      engine.pause();
+    });
+  }
+
+  // User Recording Ready
+  engine.on('userRecordingReady', (data) => {
+    btnClearRecording.disabled = false;
+    btnDownloadRecording.disabled = false;
+    
+    // Update pitch visualizer with user data
+    if (pitchVisualizer) {
+      pitchVisualizer.setUserPitchData(engine.getUserPitchData());
+      pitchVisualizer.render();
+    }
+    
+    // Calculate and display accuracy
+    const accuracy = engine.calculatePitchAccuracy();
+    if (accuracy && accuracyDisplay) {
+      accuracyDisplay.textContent = `${accuracy.accuracy.toFixed(1)}%`;
+      accuracyDisplay.style.color = accuracy.accuracy >= 80 ? '#10b981' :
+                                     accuracy.accuracy >= 60 ? '#f59e0b' : '#ef4444';
+    }
+    
+    showToast('Recording saved! You can now compare with the original.', 'success');
+  });
+
+  // Clear Recording Button
+  if (btnClearRecording) {
+    btnClearRecording.addEventListener('click', () => {
+      engine.clearUserRecording();
+      btnClearRecording.disabled = true;
+      btnDownloadRecording.disabled = true;
+      recordingTimeDisplay.textContent = '00:00.00';
+      
+      if (pitchVisualizer) {
+        pitchVisualizer.clearUserPitchData();
+        pitchVisualizer.render();
+      }
+      
+      if (accuracyDisplay) {
+        accuracyDisplay.textContent = '—';
+        accuracyDisplay.style.color = '';
+      }
+      
+      showToast('Recording cleared.', 'info');
+    });
+  }
+
+  // Download Recording Button
+  if (btnDownloadRecording) {
+    btnDownloadRecording.addEventListener('click', async () => {
+      const dateStr = new Date().toISOString().slice(0, 10);
+      const success = await engine.downloadUserRecording(`my-vocals_${dateStr}.wav`);
+      if (success) {
+        showToast('Recording downloaded!', 'success');
+      }
+    });
+  }
+
+  // Analyze Vocals Button
+  if (btnAnalyzeVocals) {
+    btnAnalyzeVocals.addEventListener('click', async () => {
+      const vocalTrack = engine.tracks.get('vocal');
+      if (!vocalTrack || !vocalTrack.buffer) {
+        showToast('Load a song first to analyze vocals.', 'error');
+        return;
+      }
+      
+      btnAnalyzeVocals.disabled = true;
+      btnAnalyzeVocals.innerHTML = `
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" class="spin">
+          <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+        </svg>
+        Analyzing...
+      `;
+      
+      showToast('Analyzing vocal track pitch... This may take a moment.', 'info');
+      
+      try {
+        const pitchData = await engine.analyzeVocalStem();
+        
+        if (pitchData && pitchVisualizer) {
+          pitchVisualizer.setOriginalPitchData(pitchData);
+          pitchVisualizer.render();
+          
+          if (graphOverlayMessage) {
+            graphOverlayMessage.classList.add('hidden');
+          }
+          
+          // Start animation loop for visualizer
+          pitchVisualizer.startAnimation(() => engine.getCurrentTime());
+        }
+        
+        showToast('Vocal analysis complete! You can now see the pitch timeline.', 'success');
+      } catch (err) {
+        console.error('Analysis error:', err);
+        showToast('Error analyzing vocals: ' + err.message, 'error');
+      } finally {
+        btnAnalyzeVocals.disabled = false;
+        btnAnalyzeVocals.innerHTML = `
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+          </svg>
+          Analyze Vocals
+        `;
+      }
+    });
+  }
+
+  // Update target note display based on current playback position
+  function updateTargetNote() {
+    const originalPitchData = engine.getOriginalVocalPitchData();
+    if (!originalPitchData || originalPitchData.length === 0) return;
+    
+    const currentTime = engine.getCurrentTime();
+    
+    // Find the nearest pitch point
+    let nearest = null;
+    let minDist = Infinity;
+    
+    for (const point of originalPitchData) {
+      const dist = Math.abs(point.time - currentTime);
+      if (dist < minDist && point.frequency) {
+        minDist = dist;
+        nearest = point;
+      }
+    }
+    
+    if (nearest && minDist < 0.2 && targetNoteDisplay) {
+      const noteInfo = frequencyToNote(nearest.frequency);
+      if (noteInfo.note) {
+        targetNoteDisplay.textContent = `${noteInfo.note}${noteInfo.octave}`;
+      }
+    } else if (targetNoteDisplay) {
+      targetNoteDisplay.textContent = '—';
+    }
+  }
+
+  function frequencyToNote(frequency) {
+    if (!frequency || frequency <= 0) return { note: null, octave: null };
+    
+    const A4_FREQ = 440;
+    const A4_MIDI = 69;
+    const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+    
+    const midiNumber = 12 * Math.log2(frequency / A4_FREQ) + A4_MIDI;
+    const roundedMidi = Math.round(midiNumber);
+    const noteIndex = ((roundedMidi % 12) + 12) % 12;
+    const octave = Math.floor(roundedMidi / 12) - 1;
+    
+    return {
+      note: NOTE_NAMES[noteIndex],
+      octave: octave
+    };
+  }
+
+  // Add target note update to animation loop
+  const originalStartAnimationLoop = startAnimationLoop;
+  startAnimationLoop = function() {
+    function update() {
+      const curTime = engine.getCurrentTime();
+      const total = engine.totalDuration || 0;
+      const progress = total > 0 ? (curTime / total) : 0;
+
+      currentTimeEl.textContent = formatTime(curTime);
+      totalTimeEl.textContent = formatTime(total);
+
+      scrubberProgress.style.width = `${progress * 100}%`;
+      scrubberPlayhead.style.left = `${progress * 100}%`;
+
+      if (engine.isLooping && total > 0) {
+        scrubberLoopOverlay.style.display = 'block';
+        scrubberLoopOverlay.style.left = `${(engine.loopStart / total) * 100}%`;
+        scrubberLoopOverlay.style.width = `${((engine.loopEnd - engine.loopStart) / total) * 100}%`;
+      } else {
+        scrubberLoopOverlay.style.display = 'none';
+      }
+
+      // Track VU Meters
+      for (const track of engine.tracks.values()) {
+        const levels = engine.getTrackLevels(track.id);
+        const vuFill = document.getElementById(`vuFill_${track.id}`);
+        const vuClip = document.getElementById(`vuClip_${track.id}`);
+        if (vuFill) vuFill.style.width = `${Math.min(100, levels.peak * 110)}%`;
+        if (vuClip) vuClip.classList.toggle('clipping', levels.clip);
+      }
+
+      // Master VU Meters
+      const masterLevels = engine.getMasterLevels();
+      if (masterMeterL) masterMeterL.style.width = `${Math.min(100, masterLevels.left * 100)}%`;
+      if (masterMeterR) masterMeterR.style.width = `${Math.min(100, masterLevels.right * 100)}%`;
+
+      redrawAllWaveforms();
+      
+      // Update target note for vocal training
+      updateTargetNote();
+
+      animationFrameId = requestAnimationFrame(update);
+    }
+    cancelAnimationFrame(animationFrameId);
+    animationFrameId = requestAnimationFrame(update);
+  };
+  
+  startAnimationLoop();
+
+  // Comparison Source Buttons
+  const sourceButtons = [btnSourceOriginal, btnSourceUser, btnSourceBoth];
+  sourceButtons.forEach(btn => {
+    if (btn) {
+      btn.addEventListener('click', () => {
+        sourceButtons.forEach(b => b && b.classList.remove('active'));
+        btn.classList.add('active');
+        engine.setPlaybackSource(btn.dataset.source);
+        
+        const labels = {
+          'original': 'Original vocal selected',
+          'user': 'Your recording selected',
+          'both': 'Both vocals playing'
+        };
+        showToast(labels[btn.dataset.source], 'info');
+      });
+    }
+  });
+
+  // Training Mode Tabs
+  trainingTabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+      trainingTabs.forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      
+      const mode = tab.dataset.mode;
+      // Could show/hide different panels based on mode
+      showToast(`${mode.charAt(0).toUpperCase() + mode.slice(1)} mode activated`, 'info');
+    });
+  });
+
+  // Add CSS for spinning animation
+  const style = document.createElement('style');
+  style.textContent = `
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+    .spin {
+      animation: spin 1s linear infinite;
+    }
+  `;
+  document.head.appendChild(style);
 });
