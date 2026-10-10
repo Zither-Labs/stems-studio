@@ -951,16 +951,13 @@ document.addEventListener('DOMContentLoaded', () => {
   startAnimationLoop();
 
   // =========================================================================
-  // Vocal Training Studio Module
+  // Vocal Training Studio Module (Compact Sidebar Version)
   // =========================================================================
   
   // DOM Elements - Vocal Training
   const btnSetupMic = document.getElementById('btnSetupMic');
   const micSetupText = document.getElementById('micSetupText');
   const micMeterFill = document.getElementById('micMeterFill');
-  const micClipDot = document.getElementById('micClipDot');
-  const micGainSlider = document.getElementById('micGainSlider');
-  const micGainReadout = document.getElementById('micGainReadout');
   const micMonitorToggle = document.getElementById('micMonitorToggle');
   
   const btnRecord = document.getElementById('btnRecord');
@@ -971,8 +968,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnDownloadRecording = document.getElementById('btnDownloadRecording');
   
   const pitchNoteCanvas = document.getElementById('pitchNoteCanvas');
-  const pitchGraphCanvas = document.getElementById('pitchGraphCanvas');
-  const graphOverlayMessage = document.getElementById('graphOverlayMessage');
   const btnAnalyzeVocals = document.getElementById('btnAnalyzeVocals');
   
   const targetNoteDisplay = document.getElementById('targetNoteDisplay');
@@ -983,24 +978,11 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnSourceUser = document.getElementById('btnSourceUser');
   const btnSourceBoth = document.getElementById('btnSourceBoth');
   
-  const trainingTabs = document.querySelectorAll('.training-tab');
-  
-  // Pitch Visualizer Instance
-  let pitchVisualizer = null;
+  // State
   let recordingTimerInterval = null;
   let recordingStartTimestamp = 0;
   let microphoneReady = false;
   let currentUserPitch = null;
-
-  // Initialize Pitch Visualizer
-  if (pitchGraphCanvas) {
-    pitchVisualizer = new PitchVisualizer({ canvas: pitchGraphCanvas });
-    pitchVisualizer.resize();
-    
-    window.addEventListener('resize', () => {
-      if (pitchVisualizer) pitchVisualizer.resize();
-    });
-  }
 
   // Setup Microphone Button
   if (btnSetupMic) {
@@ -1112,28 +1094,25 @@ document.addEventListener('DOMContentLoaded', () => {
   engine.on('recordingStateChanged', (state) => {
     if (state.recording) {
       btnRecord.classList.add('recording');
-      btnRecord.querySelector('span').textContent = 'Recording...';
-      btnStopRecording.disabled = false;
-      recordingTimer.classList.add('active');
+      if (btnStopRecording) btnStopRecording.disabled = false;
+      if (recordingTimer) recordingTimer.classList.add('active');
       recordingStartTimestamp = Date.now();
       
       // Start timer
       recordingTimerInterval = setInterval(() => {
         const elapsed = (Date.now() - recordingStartTimestamp) / 1000;
-        recordingTimeDisplay.textContent = formatTime(elapsed);
-      }, 50);
+        const mins = Math.floor(elapsed / 60);
+        const secs = Math.floor(elapsed % 60);
+        if (recordingTimeDisplay) {
+          recordingTimeDisplay.textContent = `${mins}:${String(secs).padStart(2, '0')}`;
+        }
+      }, 100);
       
-      // Clear previous user pitch data in visualizer
-      if (pitchVisualizer) {
-        pitchVisualizer.clearUserPitchData();
-      }
-      
-      showToast('Recording started! Sing along with the track.', 'success');
+      showToast('🎤 Recording! Sing along...', 'success');
     } else {
       btnRecord.classList.remove('recording');
-      btnRecord.querySelector('span').textContent = 'Record';
-      btnStopRecording.disabled = true;
-      recordingTimer.classList.remove('active');
+      if (btnStopRecording) btnStopRecording.disabled = true;
+      if (recordingTimer) recordingTimer.classList.remove('active');
       
       if (recordingTimerInterval) {
         clearInterval(recordingTimerInterval);
@@ -1154,24 +1133,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // User Recording Ready
   engine.on('userRecordingReady', (data) => {
-    btnClearRecording.disabled = false;
-    btnDownloadRecording.disabled = false;
-    
-    // Update pitch visualizer with user data
-    if (pitchVisualizer) {
-      pitchVisualizer.setUserPitchData(engine.getUserPitchData());
-      pitchVisualizer.render();
-    }
+    if (btnClearRecording) btnClearRecording.disabled = false;
+    if (btnDownloadRecording) btnDownloadRecording.disabled = false;
     
     // Calculate and display accuracy
     const accuracy = engine.calculatePitchAccuracy();
     if (accuracy && accuracyDisplay) {
-      accuracyDisplay.textContent = `${accuracy.accuracy.toFixed(1)}%`;
+      accuracyDisplay.textContent = `${accuracy.accuracy.toFixed(0)}%`;
       accuracyDisplay.style.color = accuracy.accuracy >= 80 ? '#10b981' :
                                      accuracy.accuracy >= 60 ? '#f59e0b' : '#ef4444';
     }
     
-    showToast('Recording saved! You can now compare with the original.', 'success');
+    showToast('✅ Recording saved! Compare with original.', 'success');
   });
 
   // Clear Recording Button
@@ -1179,13 +1152,8 @@ document.addEventListener('DOMContentLoaded', () => {
     btnClearRecording.addEventListener('click', () => {
       engine.clearUserRecording();
       btnClearRecording.disabled = true;
-      btnDownloadRecording.disabled = true;
-      recordingTimeDisplay.textContent = '00:00.00';
-      
-      if (pitchVisualizer) {
-        pitchVisualizer.clearUserPitchData();
-        pitchVisualizer.render();
-      }
+      if (btnDownloadRecording) btnDownloadRecording.disabled = true;
+      if (recordingTimeDisplay) recordingTimeDisplay.textContent = '0:00';
       
       if (accuracyDisplay) {
         accuracyDisplay.textContent = '—';
@@ -1217,42 +1185,19 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       
       btnAnalyzeVocals.disabled = true;
-      btnAnalyzeVocals.innerHTML = `
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" class="spin">
-          <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
-        </svg>
-        Analyzing...
-      `;
+      btnAnalyzeVocals.textContent = '...';
       
-      showToast('Analyzing vocal track pitch... This may take a moment.', 'info');
+      showToast('Analyzing vocal pitch...', 'info');
       
       try {
-        const pitchData = await engine.analyzeVocalStem();
-        
-        if (pitchData && pitchVisualizer) {
-          pitchVisualizer.setOriginalPitchData(pitchData);
-          pitchVisualizer.render();
-          
-          if (graphOverlayMessage) {
-            graphOverlayMessage.classList.add('hidden');
-          }
-          
-          // Start animation loop for visualizer
-          pitchVisualizer.startAnimation(() => engine.getCurrentTime());
-        }
-        
-        showToast('Vocal analysis complete! You can now see the pitch timeline.', 'success');
+        await engine.analyzeVocalStem();
+        showToast('✅ Vocal analysis complete!', 'success');
       } catch (err) {
         console.error('Analysis error:', err);
-        showToast('Error analyzing vocals: ' + err.message, 'error');
+        showToast('Error: ' + err.message, 'error');
       } finally {
         btnAnalyzeVocals.disabled = false;
-        btnAnalyzeVocals.innerHTML = `
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
-          </svg>
-          Analyze Vocals
-        `;
+        btnAnalyzeVocals.textContent = 'Analyze';
       }
     });
   }
@@ -1372,28 +1317,4 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // Training Mode Tabs
-  trainingTabs.forEach(tab => {
-    tab.addEventListener('click', () => {
-      trainingTabs.forEach(t => t.classList.remove('active'));
-      tab.classList.add('active');
-      
-      const mode = tab.dataset.mode;
-      // Could show/hide different panels based on mode
-      showToast(`${mode.charAt(0).toUpperCase() + mode.slice(1)} mode activated`, 'info');
-    });
-  });
-
-  // Add CSS for spinning animation
-  const style = document.createElement('style');
-  style.textContent = `
-    @keyframes spin {
-      from { transform: rotate(0deg); }
-      to { transform: rotate(360deg); }
-    }
-    .spin {
-      animation: spin 1s linear infinite;
-    }
-  `;
-  document.head.appendChild(style);
 });

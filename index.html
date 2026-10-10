@@ -162,181 +162,6 @@
     </div>
   </section>
 
-  <!-- Vocal Training Studio Panel -->
-  <section class="vocal-training-deck" id="vocalTrainingDeck" aria-label="Vocal Training Studio">
-    <div class="training-panel">
-      <!-- Training Header -->
-      <div class="training-header">
-        <div class="training-title-wrap">
-          <div class="training-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3zM19 10v2a7 7 0 01-14 0v-2M12 19v4M8 23h8"/>
-            </svg>
-          </div>
-          <div>
-            <h2 class="training-title">Vocal Training Studio / स्वर अभ्यास</h2>
-            <span class="training-subtitle">Record your voice, compare with original, learn the notes</span>
-          </div>
-        </div>
-        
-        <div class="training-mode-tabs">
-          <button class="training-tab active" id="tabPractice" data-mode="practice">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/>
-            </svg>
-            Practice Mode
-          </button>
-          <button class="training-tab" id="tabAnalyze" data-mode="analyze">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
-            </svg>
-            Note Analysis
-          </button>
-          <button class="training-tab" id="tabCompare" data-mode="compare">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M18 20V10M12 20V4M6 20v-6"/>
-            </svg>
-            Compare
-          </button>
-        </div>
-      </div>
-
-      <!-- Microphone Setup & Recording Controls -->
-      <div class="mic-control-strip">
-        <button class="btn btn-mic-setup" id="btnSetupMic" title="Enable microphone access">
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3zM19 10v2a7 7 0 01-14 0v-2"/>
-          </svg>
-          <span id="micSetupText">Setup Microphone</span>
-        </button>
-
-        <div class="mic-level-meter" id="micLevelMeter">
-          <span class="meter-label">Input</span>
-          <div class="mic-meter-track">
-            <div class="mic-meter-fill" id="micMeterFill"></div>
-          </div>
-          <div class="mic-clip-dot" id="micClipDot"></div>
-        </div>
-
-        <div class="mic-input-control">
-          <label class="input-label">Gain</label>
-          <input type="range" class="studio-slider mic-gain-slider" id="micGainSlider" min="0" max="2" step="0.05" value="1.0">
-          <span class="gain-readout" id="micGainReadout">0 dB</span>
-        </div>
-
-        <label class="monitor-toggle" title="Listen to your microphone through speakers">
-          <input type="checkbox" id="micMonitorToggle">
-          <span class="toggle-label">Monitor</span>
-        </label>
-      </div>
-
-      <!-- Recording Controls -->
-      <div class="recording-controls-strip">
-        <button class="btn-record" id="btnRecord" disabled title="Start recording your voice">
-          <div class="record-icon"></div>
-          <span>Record</span>
-        </button>
-        
-        <button class="btn btn-stop-recording" id="btnStopRecording" disabled>
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M6 6h12v12H6z"/></svg>
-          Stop
-        </button>
-
-        <div class="recording-timer" id="recordingTimer">
-          <div class="timer-dot"></div>
-          <span id="recordingTimeDisplay">00:00.00</span>
-        </div>
-
-        <div class="recording-actions">
-          <button class="btn" id="btnClearRecording" disabled title="Clear your recording">
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
-            </svg>
-            Clear
-          </button>
-          <button class="btn" id="btnDownloadRecording" disabled title="Download your recording">
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/>
-            </svg>
-            Save
-          </button>
-        </div>
-      </div>
-
-      <!-- Pitch Display Panel -->
-      <div class="pitch-display-panel">
-        <div class="current-pitch-display">
-          <canvas id="pitchNoteCanvas" class="pitch-note-canvas"></canvas>
-        </div>
-        
-        <div class="pitch-info-stats">
-          <div class="stat-item">
-            <span class="stat-label">Target Note</span>
-            <span class="stat-value" id="targetNoteDisplay">—</span>
-          </div>
-          <div class="stat-item">
-            <span class="stat-label">Your Note</span>
-            <span class="stat-value" id="yourNoteDisplay">—</span>
-          </div>
-          <div class="stat-item accuracy-stat">
-            <span class="stat-label">Accuracy</span>
-            <span class="stat-value" id="accuracyDisplay">—</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Comparison Controls -->
-      <div class="comparison-controls" id="comparisonControls">
-        <span class="comparison-label">Listen to:</span>
-        <div class="source-toggle-group">
-          <button class="source-btn active" id="btnSourceOriginal" data-source="original">
-            <span class="source-dot original"></span>
-            Original Vocal
-          </button>
-          <button class="source-btn" id="btnSourceUser" data-source="user">
-            <span class="source-dot user"></span>
-            My Recording
-          </button>
-          <button class="source-btn" id="btnSourceBoth" data-source="both">
-            <span class="source-dot both"></span>
-            Both
-          </button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Piano Roll / Pitch Graph Visualization -->
-    <div class="pitch-graph-container">
-      <div class="pitch-graph-header">
-        <h3 class="graph-title">
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
-          </svg>
-          Pitch Timeline / स्वर समयरेखा
-        </h3>
-        <div class="graph-legend">
-          <span class="legend-item original"><span class="legend-dot"></span> Original</span>
-          <span class="legend-item user"><span class="legend-dot"></span> Your Voice</span>
-        </div>
-        <button class="btn" id="btnAnalyzeVocals" title="Analyze vocal track pitch">
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
-          </svg>
-          Analyze Vocals
-        </button>
-      </div>
-      <div class="pitch-graph-canvas-wrap">
-        <canvas id="pitchGraphCanvas" class="pitch-graph-canvas"></canvas>
-        <div class="graph-overlay-message" id="graphOverlayMessage">
-          <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.5">
-            <path d="M9 19V6l12-3v13M9 10l12-3M9 19a3 3 0 11-6 0 3 3 0 016 0zm12-3a3 3 0 11-6 0 3 3 0 016 0z"/>
-          </svg>
-          <span>Load a song and click "Analyze Vocals" to see the pitch timeline</span>
-        </div>
-      </div>
-    </div>
-  </section>
-
   <!-- Master Transport Dock -->
   <section class="transport-dock" aria-label="Transport Controls">
     <!-- Playback Core -->
@@ -425,13 +250,67 @@
       <!-- Generated via studio-app.js -->
     </section>
 
-    <!-- Right Sidebar Deck: Master Output & Export -->
-    <aside class="studio-sidebar" aria-label="Master Output and Studio Tools">
-      <!-- Master Channel Strip Panel -->
+    <!-- Right Sidebar Deck: Vocal Training & Controls -->
+    <aside class="studio-sidebar" aria-label="Vocal Training and Controls">
+      
+      <!-- Compact Vocal Training Panel -->
+      <div class="sidebar-panel vocal-training-panel">
+        <h2 class="panel-title">
+          🎤 Vocal Training
+          <button class="btn btn-sm" id="btnAnalyzeVocals" title="Analyze vocal pitch">Analyze</button>
+        </h2>
+        
+        <!-- Mic Setup Row -->
+        <div class="compact-mic-row">
+          <button class="btn btn-sm btn-mic-setup" id="btnSetupMic">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3zM19 10v2a7 7 0 01-14 0v-2"/>
+            </svg>
+            <span id="micSetupText">Mic</span>
+          </button>
+          <div class="mic-meter-mini">
+            <div class="mic-meter-fill" id="micMeterFill"></div>
+          </div>
+          <label class="monitor-mini" title="Monitor">
+            <input type="checkbox" id="micMonitorToggle">
+            🎧
+          </label>
+        </div>
+
+        <!-- Record Controls -->
+        <div class="compact-record-row">
+          <button class="btn-record-mini" id="btnRecord" disabled>
+            <div class="record-icon"></div>
+          </button>
+          <button class="btn btn-sm" id="btnStopRecording" disabled>⏹</button>
+          <span class="timer-mini" id="recordingTimer">
+            <span id="recordingTimeDisplay">0:00</span>
+          </span>
+          <button class="btn btn-sm" id="btnClearRecording" disabled>🗑</button>
+          <button class="btn btn-sm" id="btnDownloadRecording" disabled>💾</button>
+        </div>
+
+        <!-- Current Pitch Display -->
+        <div class="pitch-display-mini">
+          <canvas id="pitchNoteCanvas" class="pitch-canvas-mini"></canvas>
+          <div class="pitch-stats-mini">
+            <div><span class="label">Target:</span> <span id="targetNoteDisplay">—</span></div>
+            <div><span class="label">You:</span> <span id="yourNoteDisplay">—</span></div>
+            <div><span class="label">Accuracy:</span> <span id="accuracyDisplay">—</span></div>
+          </div>
+        </div>
+
+        <!-- Compare Toggle -->
+        <div class="compare-toggle-row">
+          <button class="source-btn-mini active" id="btnSourceOriginal" data-source="original">Original</button>
+          <button class="source-btn-mini" id="btnSourceUser" data-source="user">Mine</button>
+          <button class="source-btn-mini" id="btnSourceBoth" data-source="both">Both</button>
+        </div>
+      </div>
+
+      <!-- Master Output (Compact) -->
       <div class="sidebar-panel">
         <h2 class="panel-title">Master Output</h2>
-
-        <!-- Stereo Output Meters -->
         <div class="master-vu-deck" aria-label="Master Stereo VU Meters">
           <div class="channel-meter-row">
             <span class="channel-lbl">L</span>
@@ -446,62 +325,34 @@
             </div>
           </div>
         </div>
-
-        <!-- Master Volume Fader -->
         <div class="master-fader-control">
           <div class="slider-row">
-            <span class="slider-label">Master</span>
+            <span class="slider-label">Vol</span>
             <input type="range" class="studio-slider" id="masterFader" min="0" max="1.5" step="0.01" value="1.0">
-            <span class="slider-readout" id="masterFaderVal">0.0 dB</span>
+            <span class="slider-readout" id="masterFaderVal">0 dB</span>
           </div>
         </div>
       </div>
 
-      <!-- Export Studio Panel -->
+      <!-- Export (Compact) -->
       <div class="sidebar-panel">
-        <h2 class="panel-title">Export Mixdown</h2>
-        <div class="export-actions-grid">
-          <button class="btn btn-accent export-btn" id="btnExportMix" title="Export full mixdown with current volume and pan settings">
-            <svg viewBox="0 0 24 24"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
-            <div>
-              <span>Export Full Mix (.wav)</span>
-              <span class="export-btn-desc">High-res 44.1kHz 16-bit PCM</span>
-            </div>
-          </button>
-
-          <button class="btn export-btn" id="btnExportKaraoke" title="Export backing track with vocals muted">
-            <svg viewBox="0 0 24 24"><path d="M9 19V6l12-3v13M9 10l12-3"/></svg>
-            <div>
-              <span>Export Backing Track (.wav)</span>
-              <span class="export-btn-desc">Karaoke (Vocals Muted)</span>
-            </div>
-          </button>
-
-          <button class="btn export-btn" id="btnExportAcapella" title="Export solo vocal track">
-            <svg viewBox="0 0 24 24"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3zM19 10v2a7 7 0 01-14 0v-2M12 19v4M8 23h8"/></svg>
-            <div>
-              <span>Export Acapella (.wav)</span>
-              <span class="export-btn-desc">Isolated Vocal Stem</span>
-            </div>
-          </button>
-
-          <label style="display:flex; align-items:center; gap:0.5rem; font-size:0.75rem; color:var(--text-secondary); cursor:pointer; margin-top:4px;">
-            <input type="checkbox" id="exportLoopOnly" style="accent-color: var(--accent-indigo);">
-            Export Active Loop Region Only
-          </label>
+        <h2 class="panel-title">Export</h2>
+        <div class="export-btns-compact">
+          <button class="btn btn-sm btn-accent" id="btnExportMix">Full Mix</button>
+          <button class="btn btn-sm" id="btnExportKaraoke">Karaoke</button>
+          <button class="btn btn-sm" id="btnExportAcapella">Vocals</button>
         </div>
+        <label class="export-loop-label">
+          <input type="checkbox" id="exportLoopOnly">
+          Loop region only
+        </label>
       </div>
 
-      <!-- Quick Shortcuts Panel -->
-      <div class="sidebar-panel">
-        <h2 class="panel-title">Studio Shortcuts</h2>
-        <div class="shortcuts-list">
-          <div class="shortcut-row"><span>Play / Pause</span> <kbd>Space</kbd></div>
-          <div class="shortcut-row"><span>Return to 0:00</span> <kbd>Enter</kbd></div>
-          <div class="shortcut-row"><span>Toggle Loop</span> <kbd>L</kbd></div>
-          <div class="shortcut-row"><span>Karaoke Toggle</span> <kbd>K</kbd></div>
-          <div class="shortcut-row"><span>Seek to Position</span> <kbd>Click Waveform</kbd></div>
-        </div>
+      <!-- Shortcuts (Minimal) -->
+      <div class="sidebar-panel shortcuts-mini">
+        <span><kbd>Space</kbd> Play</span>
+        <span><kbd>K</kbd> Karaoke</span>
+        <span><kbd>L</kbd> Loop</span>
       </div>
     </aside>
   </main>
