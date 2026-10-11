@@ -31,7 +31,7 @@ Most stem tools only offer 4 generic channels (*Vocals, Drums, Bass, Other*). Fo
 
 ## 🚀 How to Feed Audio into Stems Studio
 
-The bar at the top of the screen has three buttons.
+The bar at the top of the screen has four buttons.
 
 ### ✨ Create Stems (split a song)
 1. Click **"✨ Create Stems"**.
@@ -40,6 +40,11 @@ The bar at the top of the screen has three buttons.
 4. When it finishes, the stems load into the mixer by themselves.
 
 This uses the 6-stem Nepali folk model (`htdemucs_6s`). It needs `server.py` to be running (see below); the window tells you if it is not.
+
+### 📚 My Library (never split the same song twice)
+Every song you create is saved automatically in a small database on your computer (`separated_output/library.db`, with the stem files beside it). Click **"📚 My Library"** to see them all, open one instantly, or delete the ones you no longer need.
+
+If you run **Create Stems** on a song that is already in the library, it is opened straight away instead of being processed again. This works for the same audio file even if you renamed it, and for the same YouTube video even if the link looks different. The library is stored only on this computer and is not uploaded to GitHub.
 
 ### 📁 Import Stems
 Click **"Import Stems"** or drag several stem files into the window. File names containing "vocal", "madal", "drum", "bass", "guitar", "harmonium" or "sarangi" are matched to the right track.

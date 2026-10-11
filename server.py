@@ -5,13 +5,17 @@ Supports YouTube URLs and local FLAC / MP3 / WAV files.
 Supports 4-stem and 6-stem (htdemucs_6s) models with Nepali Folk presets!
 """
 
+import contextlib
 import email.message
 import email.parser
+import hashlib
 import http.server
 import json
 import os
+import re
 import shutil
 import socketserver
+import sqlite3
 import subprocess
 import sys
 import threading
@@ -30,6 +34,148 @@ PORT = 8099
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 OUTPUT_DIR = os.path.join(BASE_DIR, "separated_output")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+DB_PATH = os.path.join(OUTPUT_DIR, "library.db")
+SONG_ID_RE = re.compile(r"^[0-9a-f]{8}$")
+YOUTUBE_ID_RE = re.compile(r"(?:v=|youtu\.be/|shorts/|embed/|live/)([A-Za-z0-9_-]{11})")
+
+
+# ---------------------------------------------------------------------------
+# Song library (SQLite). Remembers every finished separation so the same song
+# is never split twice.
+# ---------------------------------------------------------------------------
+@contextlib.contextmanager
+def library_db():
+    conn = sqlite3.connect(DB_PATH, timeout=15)
+    conn.row_factory = sqlite3.Row
+    try:
+        with conn:
+            yield conn
+    finally:
+        conn.close()
+
+
+def init_library():
+    with library_db() as conn:
+        conn.execute(
+            """CREATE TABLE IF NOT EXISTS songs (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                source_type TEXT NOT NULL,
+                source_label TEXT,
+                content_key TEXT NOT NULL,
+                model TEXT NOT NULL,
+                preset TEXT NOT NULL,
+                created_at REAL NOT NULL,
+                stems_json TEXT NOT NULL,
+                size_bytes INTEGER NOT NULL DEFAULT 0
+            )"""
+        )
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_songs_key ON songs(content_key, model, preset)"
+        )
+
+
+def youtube_content_key(url):
+    match = YOUTUBE_ID_RE.search(url)
+    return "yt:" + (match.group(1) if match else url.strip())
+
+
+def file_content_key(file_bytes):
+    return "file:" + hashlib.sha256(file_bytes).hexdigest()
+
+
+def song_dir(song_id):
+    return os.path.join(OUTPUT_DIR, song_id)
+
+
+def row_to_summary(row):
+    stems = json.loads(row["stems_json"])
+    return {
+        "id": row["id"],
+        "title": row["title"],
+        "source_type": row["source_type"],
+        "source_label": row["source_label"],
+        "model": row["model"],
+        "preset": row["preset"],
+        "created_at": row["created_at"],
+        "stem_count": len(stems),
+        "size_bytes": row["size_bytes"],
+    }
+
+
+def stems_files_exist(song_id, stems):
+    return bool(stems) and all(
+        os.path.isfile(os.path.join(song_dir(song_id), os.path.basename(s["url"]))) for s in stems
+    )
+
+
+def find_cached_song(content_key, model, preset):
+    """Return the saved song for this exact audio + model, or None."""
+    with library_db() as conn:
+        row = conn.execute(
+            "SELECT * FROM songs WHERE content_key = ? AND model = ? AND preset = ?",
+            (content_key, model, preset),
+        ).fetchone()
+        if not row:
+            return None
+        stems = json.loads(row["stems_json"])
+        if not stems_files_exist(row["id"], stems):
+            conn.execute("DELETE FROM songs WHERE id = ?", (row["id"],))
+            return None
+        return {"id": row["id"], "title": row["title"], "stems": stems}
+
+
+def save_song(song_id, title, source_type, source_label, content_key, model, preset, stems):
+    size = 0
+    for s in stems:
+        path = os.path.join(song_dir(song_id), os.path.basename(s["url"]))
+        if os.path.isfile(path):
+            size += os.path.getsize(path)
+    with library_db() as conn:
+        conn.execute(
+            """INSERT OR REPLACE INTO songs
+               (id, title, source_type, source_label, content_key, model, preset,
+                created_at, stems_json, size_bytes)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (song_id, title, source_type, source_label, content_key, model, preset,
+             time.time(), json.dumps(stems), size),
+        )
+
+
+def list_songs():
+    songs = []
+    with library_db() as conn:
+        rows = conn.execute("SELECT * FROM songs ORDER BY created_at DESC").fetchall()
+        for row in rows:
+            if stems_files_exist(row["id"], json.loads(row["stems_json"])):
+                songs.append(row_to_summary(row))
+            else:
+                conn.execute("DELETE FROM songs WHERE id = ?", (row["id"],))
+    return songs
+
+
+def get_song(song_id):
+    with library_db() as conn:
+        row = conn.execute("SELECT * FROM songs WHERE id = ?", (song_id,)).fetchone()
+    if not row:
+        return None
+    stems = json.loads(row["stems_json"])
+    if not stems_files_exist(song_id, stems):
+        return None
+    summary = row_to_summary(row)
+    summary["stems"] = stems
+    return summary
+
+
+def delete_song(song_id):
+    with library_db() as conn:
+        deleted = conn.execute("DELETE FROM songs WHERE id = ?", (song_id,)).rowcount
+    shutil.rmtree(song_dir(song_id), ignore_errors=True)
+    return deleted > 0
+
+
+init_library()
 
 # Active separation jobs: job_id -> { status, progress, message, stems, error }
 JOBS = {}
@@ -84,7 +230,8 @@ def get_device_info():
     }
 
 
-def run_separation_job(job_id, source_type, source_val, model="htdemucs_6s", preset="nepali_folk"):
+def run_separation_job(job_id, source_type, source_val, model="htdemucs_6s", preset="nepali_folk",
+                       content_key=None, source_label="", title=None):
     job = JOBS[job_id]
     job_dir = os.path.join(OUTPUT_DIR, job_id)
     os.makedirs(job_dir, exist_ok=True)
@@ -118,7 +265,7 @@ def run_separation_job(job_id, source_type, source_val, model="htdemucs_6s", pre
             audio_file = os.path.join(job_dir, "source_audio.wav")
         else:
             audio_file = source_val
-            job["title"] = os.path.splitext(os.path.basename(audio_file))[0]
+            job["title"] = title or os.path.splitext(os.path.basename(audio_file))[0]
 
         if not os.path.isfile(audio_file):
             raise Exception("Failed to prepare source audio file.")
@@ -203,12 +350,25 @@ def run_separation_job(job_id, source_type, source_val, model="htdemucs_6s", pre
                 "url": f"/api/stems/{job_id}/{sf}"
             })
 
+        # Keep only the finished stems; drop the working copies to save disk space.
+        for entry in os.listdir(job_dir):
+            entry_path = os.path.join(job_dir, entry)
+            if os.path.isdir(entry_path):
+                shutil.rmtree(entry_path, ignore_errors=True)
+        if os.path.isfile(audio_file) and os.path.basename(audio_file) not in stem_files:
+            os.remove(audio_file)
+
+        if content_key:
+            save_song(job_id, job.get("title", "Untitled"), source_type, source_label,
+                      content_key, model, preset, stems_result)
+
         job["stems"] = stems_result
         job["progress"] = 100
         job["status"] = "completed"
         job["message"] = "Stem separation complete!"
 
     except Exception as e:
+        shutil.rmtree(job_dir, ignore_errors=True)
         job["status"] = "error"
         job["error"] = str(e)
         job["message"] = f"Error: {e}"
@@ -218,10 +378,42 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=BASE_DIR, **kwargs)
 
+    def send_json(self, payload, code=200):
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+        self.wfile.write(json.dumps(payload).encode("utf-8"))
+
+    def start_cached_job(self, job_id, cached):
+        JOBS[job_id] = {
+            "id": job_id,
+            "status": "completed",
+            "progress": 100,
+            "message": "Found in your library - no need to separate again.",
+            "title": cached["title"],
+            "stems": cached["stems"],
+            "cached": True,
+        }
+        self.send_json({"job_id": job_id, "cached": True})
+
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
 
-        if parsed.path == "/api/engine":
+        if parsed.path == "/api/library":
+            self.send_json({"songs": list_songs()})
+            return
+
+        elif parsed.path.startswith("/api/library/"):
+            song_id = parsed.path.split("/")[3]
+            song = get_song(song_id) if SONG_ID_RE.match(song_id) else None
+            if song:
+                self.send_json(song)
+            else:
+                self.send_json({"error": "Song not found in library"}, 404)
+            return
+
+        elif parsed.path == "/api/engine":
             dev_info = get_device_info()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
@@ -253,7 +445,7 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
                 filename = parts[4]
                 file_path = os.path.join(OUTPUT_DIR, job_id, filename)
 
-                if os.path.isfile(file_path):
+                if SONG_ID_RE.match(job_id) and filename.endswith(".wav") and os.path.isfile(file_path):
                     self.send_response(200)
                     self.send_header("Content-Type", "audio/wav")
                     self.send_header("Content-Length", str(os.path.getsize(file_path)))
@@ -290,6 +482,12 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
                     self.wfile.write(b'{"error": "No YouTube URL provided"}')
                     return
 
+                content_key = youtube_content_key(youtube_url)
+                cached = find_cached_song(content_key, model, preset)
+                if cached:
+                    self.start_cached_job(job_id, cached)
+                    return
+
                 JOBS[job_id] = {
                     "id": job_id,
                     "status": "processing",
@@ -300,7 +498,7 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
 
                 t = threading.Thread(
                     target=run_separation_job,
-                    args=(job_id, "youtube", youtube_url, model, preset),
+                    args=(job_id, "youtube", youtube_url, model, preset, content_key, youtube_url),
                     daemon=True
                 )
                 t.start()
@@ -343,9 +541,21 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
                     self.wfile.write(b'{"error": "No file payload received"}')
                     return
 
+                content_key = file_content_key(file_bytes)
+                cached = find_cached_song(content_key, model, preset)
+                if cached:
+                    self.start_cached_job(job_id, cached)
+                    return
+
+                original_name = os.path.basename(file_name.replace("\\", "/"))
+                title = os.path.splitext(original_name)[0] or "Untitled"
+                ext = os.path.splitext(original_name)[1].lower()
+                if not re.fullmatch(r"\.[a-z0-9]{1,5}", ext):
+                    ext = ".wav"
+
                 job_dir = os.path.join(OUTPUT_DIR, job_id)
                 os.makedirs(job_dir, exist_ok=True)
-                uploaded_path = os.path.join(job_dir, file_name)
+                uploaded_path = os.path.join(job_dir, "source_upload" + ext)
 
                 with open(uploaded_path, "wb") as f:
                     f.write(file_bytes)
@@ -360,7 +570,7 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
 
                 t = threading.Thread(
                     target=run_separation_job,
-                    args=(job_id, "file", uploaded_path, model, preset),
+                    args=(job_id, "file", uploaded_path, model, preset, content_key, original_name, title),
                     daemon=True
                 )
                 t.start()
@@ -374,6 +584,24 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
 
         self.send_error(404, "Endpoint not found")
 
+    def do_DELETE(self):
+        parsed = urllib.parse.urlparse(self.path)
+        if parsed.path.startswith("/api/library/"):
+            song_id = parsed.path.split("/")[3]
+            if SONG_ID_RE.match(song_id) and delete_song(song_id):
+                self.send_json({"deleted": song_id})
+            else:
+                self.send_json({"error": "Song not found in library"}, 404)
+            return
+        self.send_error(404, "Endpoint not found")
+
+    def do_OPTIONS(self):
+        self.send_response(204)
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.end_headers()
+
 
 class ThreadedServer(socketserver.ThreadingTCPServer):
     allow_reuse_address = True
@@ -381,7 +609,7 @@ class ThreadedServer(socketserver.ThreadingTCPServer):
 
 
 def start_server():
-    server = ThreadedServer(("", PORT), StudioRequestHandler)
+    server = ThreadedServer(("127.0.0.1", PORT), StudioRequestHandler)
     print(f"Stems Studio Server running at http://localhost:{PORT}")
     server.serve_forever()
 

@@ -44,6 +44,9 @@
     <button class="btn btn-create-stems" id="btnCreateStems" title="Split a song into vocals, drums, bass and more">
       ✨ Create Stems
     </button>
+    <button class="btn" id="btnLibrary" title="Open a song you have already split - no waiting">
+      📚 My Library
+    </button>
     <span class="loader-divider">or</span>
     <button class="btn" id="btnImportStems" title="Import stem files you already have">
       📁 Import Stems
@@ -88,6 +91,21 @@
         <button class="btn" id="createStemsCancel">Cancel</button>
         <button class="btn btn-create-stems" id="createStemsGo">✨ Create Stems</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Library Dialog -->
+  <div class="modal-backdrop" id="libraryModal" role="dialog" aria-modal="true" aria-labelledby="libraryTitle">
+    <div class="modal-window library-window">
+      <div class="modal-header">
+        <h2 class="modal-title" id="libraryTitle">My Library</h2>
+        <button class="modal-close-btn" id="libraryClose" aria-label="Close">
+          <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" fill="none" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <input type="text" class="create-text-input" id="librarySearch" placeholder="Search your songs..." style="display:none;">
+      <div class="library-list" id="libraryList"></div>
+      <p class="library-summary" id="librarySummary"></p>
     </div>
   </div>
 

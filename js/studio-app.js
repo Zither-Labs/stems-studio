@@ -410,9 +410,10 @@ document.addEventListener('DOMContentLoaded', () => {
     createStemsMessage.textContent = message;
   }
 
-  async function pollSeparation(jobId, runId) {
+  async function pollSeparation(jobId, runId, skipFirstWait = false) {
     while (runId === createRunId) {
-      await new Promise(resolve => setTimeout(resolve, 900));
+      if (!skipFirstWait) await new Promise(resolve => setTimeout(resolve, 900));
+      skipFirstWait = false;
       if (runId !== createRunId) return null;
 
       const resp = await fetch(`/api/status?job_id=${encodeURIComponent(jobId)}`);
@@ -475,8 +476,9 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       if (!resp.ok) throw new Error(`The stem maker refused the request (${resp.status}).`);
 
-      const { job_id: jobId } = await resp.json();
-      const job = await pollSeparation(jobId, runId);
+      const { job_id: jobId, cached } = await resp.json();
+      if (cached) setCreateProgress(60, 'Already in your library - opening it instantly...');
+      const job = await pollSeparation(jobId, runId, Boolean(cached));
       if (!job) return;
 
       setCreateProgress(97, 'Loading the stems into the mixer...');
@@ -484,7 +486,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
       closeCreateDialog();
       resetCreateDialog();
-      showToast('Stems ready! Press Space to play.', 'success');
+      showToast(
+        cached
+          ? 'Found this song in your library - loaded without re-creating. Press Space to play.'
+          : 'Stems ready and saved to your library! Press Space to play.',
+        'success'
+      );
     } catch (err) {
       console.error(err);
       createStemsForm.style.display = '';
@@ -495,6 +502,149 @@ document.addEventListener('DOMContentLoaded', () => {
       refreshCreateButton();
     }
   }
+
+  // =========================================================================
+  // My Library (songs already split, stored by server.py in SQLite)
+  // =========================================================================
+  const btnLibrary = document.getElementById('btnLibrary');
+  const libraryModal = document.getElementById('libraryModal');
+  const libraryClose = document.getElementById('libraryClose');
+  const libraryList = document.getElementById('libraryList');
+  const librarySearch = document.getElementById('librarySearch');
+  const librarySummary = document.getElementById('librarySummary');
+
+  let librarySongs = [];
+  let libraryOpening = false;
+
+  function formatBytes(bytes) {
+    if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
+    return `${Math.max(1, Math.round(bytes / 1024 ** 2))} MB`;
+  }
+
+  function showLibraryMessage(text, isWarning = false) {
+    libraryList.innerHTML = '';
+    const msg = document.createElement('div');
+    msg.className = `library-empty${isWarning ? ' warn' : ''}`;
+    msg.textContent = text;
+    libraryList.appendChild(msg);
+  }
+
+  function renderLibrary() {
+    const query = librarySearch.value.trim().toLowerCase();
+    const songs = librarySongs.filter(s => s.title.toLowerCase().includes(query));
+
+    librarySearch.style.display = librarySongs.length > 5 ? '' : 'none';
+    librarySummary.textContent = librarySongs.length
+      ? `${librarySongs.length} song${librarySongs.length === 1 ? '' : 's'} saved, using ${formatBytes(librarySongs.reduce((n, s) => n + s.size_bytes, 0))} on this computer.`
+      : '';
+
+    if (!songs.length) {
+      showLibraryMessage(librarySongs.length
+        ? 'No songs match your search.'
+        : 'Nothing here yet. Every song you split with Create Stems is saved here automatically, so you only ever do it once.');
+      return;
+    }
+
+    libraryList.innerHTML = '';
+    for (const song of songs) {
+      const item = document.createElement('div');
+      item.className = 'library-item';
+
+      const main = document.createElement('button');
+      main.type = 'button';
+      main.className = 'library-item-main';
+      main.title = 'Open in the mixer';
+      const title = document.createElement('div');
+      title.className = 'library-item-title';
+      title.textContent = song.title;
+      const meta = document.createElement('div');
+      meta.className = 'library-item-meta';
+      meta.textContent = `${new Date(song.created_at * 1000).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })} · ${song.stem_count} stems · ${formatBytes(song.size_bytes)}`;
+      main.append(title, meta);
+      main.addEventListener('click', () => openLibrarySong(song));
+
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'library-item-delete';
+      del.textContent = 'Delete';
+      del.addEventListener('click', () => deleteLibrarySong(song, del));
+      del.addEventListener('blur', () => {
+        del.classList.remove('confirm');
+        del.textContent = 'Delete';
+      });
+
+      item.append(main, del);
+      libraryList.appendChild(item);
+    }
+  }
+
+  async function refreshLibrary() {
+    showLibraryMessage('Loading your songs...');
+    try {
+      const resp = await fetch('/api/library');
+      if (!resp.ok) throw new Error('not running');
+      librarySongs = (await resp.json()).songs;
+      renderLibrary();
+    } catch (err) {
+      librarySongs = [];
+      librarySummary.textContent = '';
+      showLibraryMessage('The stem maker is not running, so the library cannot be read. Close this app and start it again from the "Stems Studio" shortcut.', true);
+    }
+  }
+
+  function openLibraryDialog() {
+    librarySearch.value = '';
+    libraryModal.classList.add('open');
+    refreshLibrary();
+  }
+
+  function closeLibraryDialog() {
+    libraryModal.classList.remove('open');
+  }
+
+  async function openLibrarySong(song) {
+    if (libraryOpening) return;
+    libraryOpening = true;
+    showLibraryMessage(`Opening "${song.title}"...`);
+    try {
+      const resp = await fetch(`/api/library/${encodeURIComponent(song.id)}`);
+      if (!resp.ok) throw new Error('This song is no longer saved on this computer.');
+      const saved = await resp.json();
+      await loadSeparatedStems(saved.stems);
+      closeLibraryDialog();
+      showToast(`Loaded "${song.title}". Press Space to play.`, 'success');
+    } catch (err) {
+      console.error(err);
+      showToast(`Could not open song: ${err.message}`, 'error');
+      refreshLibrary();
+    } finally {
+      libraryOpening = false;
+    }
+  }
+
+  async function deleteLibrarySong(song, button) {
+    if (!button.classList.contains('confirm')) {
+      button.classList.add('confirm');
+      button.textContent = 'Really delete?';
+      return;
+    }
+    try {
+      const resp = await fetch(`/api/library/${encodeURIComponent(song.id)}`, { method: 'DELETE' });
+      if (!resp.ok && resp.status !== 404) throw new Error(`error ${resp.status}`);
+      librarySongs = librarySongs.filter(s => s.id !== song.id);
+      renderLibrary();
+      showToast(`Deleted "${song.title}" from your library.`, 'info');
+    } catch (err) {
+      showToast(`Could not delete song: ${err.message}`, 'error');
+    }
+  }
+
+  btnLibrary.addEventListener('click', openLibraryDialog);
+  libraryClose.addEventListener('click', closeLibraryDialog);
+  libraryModal.addEventListener('click', (e) => {
+    if (e.target === libraryModal) closeLibraryDialog();
+  });
+  librarySearch.addEventListener('input', renderLibrary);
 
   btnCreateStems.addEventListener('click', openCreateDialog);
   createStemsClose.addEventListener('click', closeCreateDialog);
@@ -859,6 +1009,7 @@ document.addEventListener('DOMContentLoaded', () => {
     } else if (e.code === 'Escape') {
       dropzoneModal.classList.remove('open');
       createStemsModal.classList.remove('open');
+      libraryModal.classList.remove('open');
     }
   });
 

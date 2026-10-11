@@ -1296,6 +1296,104 @@ kbd {
 }
 
 /* ==========================================================================
+   Song Library
+   ========================================================================== */
+
+.library-window {
+  max-width: 560px;
+}
+
+.library-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-height: 55vh;
+  overflow-y: auto;
+  margin-top: 0.75rem;
+}
+
+.library-empty {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  line-height: 1.5;
+  padding: 1.75rem 1rem;
+}
+
+.library-empty.warn {
+  color: #fca5a5;
+}
+
+.library-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.7rem 0.85rem;
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.library-item:hover {
+  border-color: var(--accent-indigo);
+}
+
+.library-item-main {
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 0;
+  text-align: left;
+  color: inherit;
+  font-family: inherit;
+}
+
+.library-item-title {
+  font-size: 0.92rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.library-item-meta {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin-top: 0.15rem;
+}
+
+.library-item-delete {
+  background: none;
+  border: 1px solid transparent;
+  color: var(--text-muted);
+  border-radius: var(--radius-md);
+  padding: 0.35rem 0.5rem;
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-family: inherit;
+}
+
+.library-item-delete:hover {
+  color: #fca5a5;
+  border-color: rgba(239, 68, 68, 0.5);
+}
+
+.library-item-delete.confirm {
+  color: #fff;
+  background: #dc2626;
+  border-color: #dc2626;
+}
+
+.library-summary {
+  margin-top: 0.85rem;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+/* ==========================================================================
    Vocal Training - Compact Sidebar Version
    ========================================================================== */
 
