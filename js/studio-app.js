@@ -352,23 +352,49 @@ document.addEventListener('DOMContentLoaded', () => {
     createStemsGo.disabled = createBusy || !stemMakerReady;
   }
 
+  const RESTART_HINT = 'Close the black Stems Studio window and start the app again from the "Stems Studio" shortcut.';
+
+  // Turns a failed request into a plain-English reason the user can act on.
+  async function explainServerProblem(resp, err) {
+    if (window.location.protocol === 'file:') {
+      return 'This page was opened as a file. Start the app from the "Stems Studio" shortcut, which opens it at http://localhost:8099.';
+    }
+    if (resp) {
+      let detail = '';
+      try { detail = (await resp.json()).error || ''; } catch (e) { /* not JSON */ }
+      if (resp.status === 404) {
+        return `An older copy of the stem maker is still running in the background, so it does not know about this feature. Open Task Manager, end every "python.exe", then start the app again from the shortcut.`;
+      }
+      return `The stem maker hit a problem (error ${resp.status})${detail ? `: ${detail}` : ''}. ${RESTART_HINT}`;
+    }
+    console.error(err);
+    return `Cannot reach the stem maker at ${window.location.host}. ${RESTART_HINT}`;
+  }
+
   async function checkStemMaker() {
     stemMakerReady = false;
     refreshCreateButton();
     createStemsEngineNote.className = 'create-engine-note';
     createStemsEngineNote.textContent = 'Checking the stem maker...';
     try {
-      const resp = await fetch('/api/engine');
-      if (!resp.ok) throw new Error('not running');
+      let resp;
+      try {
+        resp = await fetch('/api/engine');
+      } catch (err) {
+        throw new Error(await explainServerProblem(null, err));
+      }
+      if (!resp.ok) throw new Error(await explainServerProblem(resp));
       const info = await resp.json();
+      if (!info.library) {
+        throw new Error(await explainServerProblem({ status: 404, json: async () => ({}) }));
+      }
       stemMakerReady = true;
       createStemsEngineNote.textContent = info.cuda_available
         ? `Ready. Using your graphics card (${info.device_name}).`
         : 'Ready. Using your CPU, so a song can take several minutes.';
     } catch (err) {
       createStemsEngineNote.className = 'create-engine-note warn';
-      createStemsEngineNote.textContent =
-        'The stem maker is not running. Close this app and start it again from the "Stems Studio" shortcut.';
+      createStemsEngineNote.textContent = err.message;
     }
     refreshCreateButton();
   }
@@ -580,15 +606,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function refreshLibrary() {
     showLibraryMessage('Loading your songs...');
+    let resp = null;
     try {
-      const resp = await fetch('/api/library');
-      if (!resp.ok) throw new Error('not running');
+      try {
+        resp = await fetch('/api/library');
+      } catch (err) {
+        throw new Error(await explainServerProblem(null, err));
+      }
+      if (!resp.ok) throw new Error(await explainServerProblem(resp));
       librarySongs = (await resp.json()).songs;
       renderLibrary();
     } catch (err) {
       librarySongs = [];
       librarySummary.textContent = '';
-      showLibraryMessage('The stem maker is not running, so the library cannot be read. Close this app and start it again from the "Stems Studio" shortcut.', true);
+      showLibraryMessage(err.message, true);
     }
   }
 

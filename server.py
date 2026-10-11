@@ -20,6 +20,7 @@ import subprocess
 import sys
 import threading
 import time
+import traceback
 import urllib.parse
 import uuid
 
@@ -397,7 +398,32 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
         }
         self.send_json({"job_id": job_id, "cached": True})
 
+    def run_guarded(self, handler):
+        """Report server-side crashes to the page instead of silently dropping the connection."""
+        try:
+            handler()
+        except (BrokenPipeError, ConnectionResetError):
+            raise
+        except Exception as exc:
+            traceback.print_exc()
+            if self.path.startswith("/api/"):
+                try:
+                    self.send_json({"error": f"{type(exc).__name__}: {exc}"}, 500)
+                except Exception:
+                    pass
+            else:
+                raise
+
     def do_GET(self):
+        self.run_guarded(self.handle_get)
+
+    def do_POST(self):
+        self.run_guarded(self.handle_post)
+
+    def do_DELETE(self):
+        self.run_guarded(self.handle_delete)
+
+    def handle_get(self):
         parsed = urllib.parse.urlparse(self.path)
 
         if parsed.path == "/api/library":
@@ -414,12 +440,8 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
             return
 
         elif parsed.path == "/api/engine":
-            dev_info = get_device_info()
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Access-Control-Allow-Origin", "*")
-            self.end_headers()
-            self.wfile.write(json.dumps(dev_info).encode("utf-8"))
+            dev_info = dict(get_device_info(), library=True)
+            self.send_json(dev_info)
             return
 
         elif parsed.path == "/api/status":
@@ -460,7 +482,7 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
 
         super().do_GET()
 
-    def do_POST(self):
+    def handle_post(self):
         parsed = urllib.parse.urlparse(self.path)
 
         if parsed.path == "/api/separate":
@@ -584,7 +606,7 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
 
         self.send_error(404, "Endpoint not found")
 
-    def do_DELETE(self):
+    def handle_delete(self):
         parsed = urllib.parse.urlparse(self.path)
         if parsed.path.startswith("/api/library/"):
             song_id = parsed.path.split("/")[3]
