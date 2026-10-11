@@ -1,8 +1,9 @@
 """
-Stems Studio - Unified Local Server & AI Separation Engine
-Serves the web UI and provides /api/separate and /api/status endpoints.
-Supports YouTube URLs and local FLAC / MP3 / WAV files.
-Supports 4-stem and 6-stem (htdemucs_6s) models with Nepali Folk presets!
+Stems Studio - local engine.
+Serves the UI to the app window and provides the separation / library API.
+Normally started by app.py; `python server.py` runs it on its own for development.
+Supports YouTube URLs and local FLAC / MP3 / WAV files, with 4-stem and 6-stem
+(htdemucs_6s) models and Nepali Folk presets.
 """
 
 import contextlib
@@ -14,6 +15,7 @@ import json
 import os
 import re
 import shutil
+import socket
 import socketserver
 import sqlite3
 import subprocess
@@ -21,7 +23,9 @@ import sys
 import threading
 import time
 import traceback
+import urllib.error
 import urllib.parse
+import urllib.request
 import uuid
 
 # Auto-configure bundled ffmpeg
@@ -31,10 +35,49 @@ try:
 except Exception:
     pass
 
+APP_NAME = "stems-studio"
+APP_VERSION = 3
 PORT = 8099
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-OUTPUT_DIR = os.path.join(BASE_DIR, "separated_output")
+
+
+def default_data_dir():
+    """Where the song library lives: outside the code folder, so git never touches it."""
+    override = os.environ.get("STEMS_STUDIO_DATA")
+    if override:
+        return override
+    if os.name == "nt":
+        root = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
+        return os.path.join(root, "StemsStudio")
+    if sys.platform == "darwin":
+        return os.path.expanduser("~/Library/Application Support/StemsStudio")
+    return os.path.join(os.environ.get("XDG_DATA_HOME", os.path.expanduser("~/.local/share")), "stems-studio")
+
+
+DATA_DIR = default_data_dir()
+OUTPUT_DIR = os.path.join(DATA_DIR, "library")
+os.makedirs(DATA_DIR, exist_ok=True)
+
+# Earlier versions kept the library inside the code folder; move it across once.
+_LEGACY_OUTPUT_DIR = os.path.join(BASE_DIR, "separated_output")
+if os.path.isdir(_LEGACY_OUTPUT_DIR) and not os.path.exists(OUTPUT_DIR):
+    try:
+        shutil.move(_LEGACY_OUTPUT_DIR, OUTPUT_DIR)
+    except OSError:
+        pass
 os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+NO_WINDOW = {"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}
+
+
+def cli_python():
+    """A console-capable Python for helper processes (pythonw.exe has no stdout)."""
+    exe = sys.executable
+    if os.name == "nt" and os.path.basename(exe).lower() == "pythonw.exe":
+        candidate = os.path.join(os.path.dirname(exe), "python.exe")
+        if os.path.isfile(candidate):
+            return candidate
+    return exe
 
 DB_PATH = os.path.join(OUTPUT_DIR, "library.db")
 SONG_ID_RE = re.compile(r"^[0-9a-f]{8}$")
@@ -240,12 +283,9 @@ else:
 
 def _detect_device_info():
     try:
-        kwargs = {}
-        if os.name == "nt":
-            kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
         result = subprocess.run(
-            [sys.executable, "-c", _DEVICE_PROBE_SCRIPT],
-            capture_output=True, text=True, timeout=300, **kwargs
+            [cli_python(), "-c", _DEVICE_PROBE_SCRIPT],
+            capture_output=True, text=True, timeout=300, **NO_WINDOW
         )
         info = json.loads(result.stdout.strip().splitlines()[-1])
         if info.get("cuda_available"):
@@ -318,14 +358,15 @@ def run_separation_job(job_id, source_type, source_val, model="htdemucs_6s", pre
         job["progress"] = 35
 
         cmd = [
-            sys.executable, "-m", "demucs.separate",
+            cli_python(), "-m", "demucs.separate",
             "-n", model,
             "-d", device_arg,
             "-o", job_dir,
             audio_file
         ]
 
-        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True)
+        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                   universal_newlines=True, **NO_WINDOW)
 
         recent_output = []
         for line in process.stdout:
@@ -344,7 +385,7 @@ def run_separation_job(job_id, source_type, source_val, model="htdemucs_6s", pre
         if process.returncode != 0:
             tail = " | ".join(recent_output)
             if "No module named" in tail and "demucs" in tail:
-                raise Exception("Demucs is not installed. Close the app and start it again from the shortcut to run first-time setup.")
+                raise Exception("Demucs is not installed. Close Stems Studio and run Install.bat again to finish setup.")
             raise Exception(f"Demucs failed (code {process.returncode}): {tail}")
 
         # Step 3: Collect generated stems
@@ -468,7 +509,13 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
     def handle_get(self):
         parsed = urllib.parse.urlparse(self.path)
 
-        if parsed.path == "/api/library":
+        if parsed.path == "/api/heartbeat":
+            if LIFECYCLE:
+                LIFECYCLE.beat()
+            self.send_json({"ok": True})
+            return
+
+        elif parsed.path == "/api/library":
             self.send_json({"songs": list_songs()})
             return
 
@@ -485,7 +532,7 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
             dev_info = peek_device_info()
             if dev_info is None:
                 dev_info = {"device": "unknown", "device_name": "", "cuda_available": False, "pending": True}
-            self.send_json(dict(dev_info, library=True))
+            self.send_json(dict(dev_info, library=True, app=APP_NAME, version=APP_VERSION))
             return
 
         elif parsed.path == "/api/status":
@@ -528,6 +575,13 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
 
     def handle_post(self):
         parsed = urllib.parse.urlparse(self.path)
+
+        if parsed.path == "/api/closing":
+            if LIFECYCLE:
+                LIFECYCLE.closing()
+            self.send_response(204)
+            self.end_headers()
+            return
 
         if parsed.path == "/api/separate":
             content_type = self.headers.get("Content-Type", "")
@@ -670,15 +724,100 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
 
 
 class ThreadedServer(socketserver.ThreadingTCPServer):
-    allow_reuse_address = True
     daemon_threads = True
+    # On Windows SO_REUSEADDR lets a second program share a port that is already in use,
+    # which silently hands requests to a stale copy. Take the port exclusively instead.
+    allow_reuse_address = os.name != "nt"
+
+    def server_bind(self):
+        if os.name == "nt":
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        super().server_bind()
+
+
+class Lifecycle:
+    """Quits the engine when the app window goes away, but never in the middle of a separation."""
+    CLOSE_GRACE_SECONDS = 4
+    SILENCE_LIMIT_SECONDS = 150
+    NEVER_OPENED_LIMIT_SECONDS = 90
+
+    def __init__(self, httpd):
+        self.httpd = httpd
+        self.started = time.time()
+        self.last_seen = None
+        self.closing_at = None
+
+    def beat(self):
+        self.last_seen = time.time()
+        self.closing_at = None
+
+    def closing(self):
+        self.closing_at = time.time()
+
+    @staticmethod
+    def busy():
+        return any(job.get("status") == "processing" for job in list(JOBS.values()))
+
+    def should_quit(self, now):
+        if self.busy():
+            return False
+        if self.closing_at and now - self.closing_at > self.CLOSE_GRACE_SECONDS:
+            return True
+        if self.last_seen and now - self.last_seen > self.SILENCE_LIMIT_SECONDS:
+            return True
+        return self.last_seen is None and now - self.started > self.NEVER_OPENED_LIMIT_SECONDS
+
+    def watch(self):
+        while not self.should_quit(time.time()):
+            time.sleep(1)
+        self.httpd.shutdown()
+
+
+LIFECYCLE = None
+
+
+def create_server(preferred_port=PORT):
+    """Bind the preferred port, or any free one if something else is using it."""
+    last_error = None
+    for port in (preferred_port, 0):
+        try:
+            return ThreadedServer(("127.0.0.1", port), StudioRequestHandler)
+        except OSError as exc:
+            last_error = exc
+    raise last_error
+
+
+def find_running_instance(port=PORT):
+    """Return the URL of an up-to-date Stems Studio already running on this port, else None."""
+    url = f"http://127.0.0.1:{port}"
+    try:
+        with urllib.request.urlopen(f"{url}/api/engine", timeout=2) as resp:
+            info = json.loads(resp.read().decode("utf-8"))
+        if info.get("app") == APP_NAME and info.get("version") == APP_VERSION:
+            return url
+    except Exception:
+        pass
+    return None
+
+
+def serve(httpd, quit_with_window=True):
+    """Serve until the app window closes (or forever, for development)."""
+    global LIFECYCLE
+    warm_up_device_info()
+    if quit_with_window:
+        LIFECYCLE = Lifecycle(httpd)
+        threading.Thread(target=LIFECYCLE.watch, daemon=True).start()
+    try:
+        httpd.serve_forever()
+    finally:
+        httpd.server_close()
 
 
 def start_server():
-    warm_up_device_info()
-    server = ThreadedServer(("127.0.0.1", PORT), StudioRequestHandler)
-    print(f"Stems Studio is ready at http://127.0.0.1:{PORT}  (keep this window open)")
-    server.serve_forever()
+    """Development entry point: run in a terminal and keep going until Ctrl+C."""
+    httpd = create_server()
+    print(f"Stems Studio engine running at http://127.0.0.1:{httpd.server_address[1]}")
+    serve(httpd, quit_with_window=False)
 
 
 if __name__ == "__main__":

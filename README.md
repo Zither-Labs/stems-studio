@@ -39,10 +39,10 @@ The bar at the top of the screen has four buttons.
 3. Click **"✨ Create Stems"** in the window. A progress bar shows how it is going.
 4. When it finishes, the stems load into the mixer by themselves.
 
-This uses the 6-stem Nepali folk model (`htdemucs_6s`). It needs `server.py` to be running (see below); the window tells you if it is not.
+This uses the 6-stem Nepali folk model (`htdemucs_6s`). The app starts the engine for you; the window tells you if it cannot reach it.
 
 ### 📚 My Library (never split the same song twice)
-Every song you create is saved automatically in a small database on your computer (`separated_output/library.db`, with the stem files beside it). Click **"📚 My Library"** to see them all, open one instantly, or delete the ones you no longer need.
+Every song you create is saved automatically in a small database on your computer (`library.db` in the data folder described below, with the stem files beside it). Click **"📚 My Library"** to see them all, open one instantly, or delete the ones you no longer need.
 
 If you run **Create Stems** on a song that is already in the library, it is opened straight away instead of being processed again. This works for the same audio file even if you renamed it, and for the same YouTube video even if the link looks different. The library is stored only on this computer and is not uploaded to GitHub.
 
@@ -115,21 +115,28 @@ The Vocal Training Studio helps you learn to sing songs by:
 
 ## 💻 Running the App
 
-### 1-Click Launch (Windows)
-Double-click:
-```bat
-Run-Stems-Studio.bat
-```
-The first time, it installs the stem maker into a private `.venv` folder (several minutes; it uses your NVIDIA graphics card if it finds one). After that it just starts the local server and opens **http://127.0.0.1:8099** in your browser. Keep the black window open while you use the app.
+Stems Studio is a local desktop app. It runs entirely on your computer and opens in its own window (Chrome or Edge, with no tabs or address bar). GitHub is only used to keep a backup of the code and its history; the app never updates itself.
 
-> Do not start the app with `python -m http.server`. That only shows the page; **Create Stems** needs `server.py`.
+### Windows: install once
+1. Double-click **`Install.bat`**. It sets up the stem maker (several minutes the first time; it uses your NVIDIA graphics card if it finds one) and puts a **Stems Studio** shortcut on your Desktop and in the Start menu. It is safe to run again whenever something needs repairing.
+2. From then on, just open **Stems Studio** from the shortcut. Closing its window quits the app.
 
-### Command Line
+To get newer code later, run `git pull` in this folder yourself when you want it.
+
+### Mac / Linux / development
 ```bash
 pip install -r separator/requirements.txt
-python server.py
+python app.py
 ```
-Open [http://127.0.0.1:8099](http://127.0.0.1:8099).
+`python server.py` runs only the engine, without opening a window (it keeps running until Ctrl+C).
+
+### Where your songs are kept
+The library and all stems are stored outside the code folder, so git never touches them:
+- Windows: `%LOCALAPPDATA%\StemsStudio`
+- Mac: `~/Library/Application Support/StemsStudio`
+- Linux: `~/.local/share/stems-studio`
+
+If something goes wrong at startup, the details are in `stems-studio.log` in that folder.
 
 ---
 

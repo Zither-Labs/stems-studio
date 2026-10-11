@@ -352,18 +352,18 @@ document.addEventListener('DOMContentLoaded', () => {
     createStemsGo.disabled = createBusy || !stemMakerReady;
   }
 
-  const RESTART_HINT = 'Close the black Stems Studio window and start the app again from the "Stems Studio" shortcut.';
+  const RESTART_HINT = 'Close Stems Studio completely and open it again from its shortcut.';
 
   // Turns a failed request into a plain-English reason the user can act on.
   async function explainServerProblem(resp, err) {
     if (window.location.protocol === 'file:') {
-      return 'This page was opened as a file. Start the app from the "Stems Studio" shortcut, which opens it at http://127.0.0.1:8099.';
+      return 'This page was opened as a file. Open Stems Studio from its shortcut instead.';
     }
     if (resp) {
       let detail = '';
       try { detail = (await resp.json()).error || ''; } catch (e) { /* not JSON */ }
       if (resp.status === 404) {
-        return `An older copy of the stem maker is still running in the background, so it does not know about this feature. Open Task Manager, end every "python.exe", then start the app again from the shortcut.`;
+        return `An older copy of Stems Studio is still running in the background. Close all Stems Studio windows, end every "python.exe" in Task Manager, then open the app again.`;
       }
       return `The stem maker hit a problem (error ${resp.status})${detail ? `: ${detail}` : ''}. ${RESTART_HINT}`;
     }
@@ -564,6 +564,28 @@ document.addEventListener('DOMContentLoaded', () => {
       refreshCreateButton();
     }
   }
+
+  // =========================================================================
+  // Keep-alive: the engine quits shortly after this window closes
+  // =========================================================================
+  let missedHeartbeats = 0;
+  let engineLostShown = false;
+  async function sendHeartbeat() {
+    try {
+      await fetchWithTimeout('/api/heartbeat', {}, 4000);
+      missedHeartbeats = 0;
+      engineLostShown = false;
+    } catch (err) {
+      missedHeartbeats++;
+      if (missedHeartbeats >= 3 && !engineLostShown) {
+        engineLostShown = true;
+        showToast('Stems Studio lost its engine. Close this window and open the app again.', 'error');
+      }
+    }
+  }
+  sendHeartbeat();
+  setInterval(sendHeartbeat, 5000);
+  window.addEventListener('pagehide', () => navigator.sendBeacon('/api/closing'));
 
   // =========================================================================
   // My Library (songs already split, stored by server.py in SQLite)
