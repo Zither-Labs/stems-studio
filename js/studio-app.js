@@ -6,6 +6,12 @@
 
 document.addEventListener('DOMContentLoaded', () => {
   const engine = new AudioEngine();
+
+  // Scrolling pitch highway above the seek bar; it follows the vocal stem by itself.
+  const vocalHighwayCanvas = document.getElementById('vocalHighwayCanvas');
+  if (vocalHighwayCanvas && typeof VocalHighway !== 'undefined') {
+    new VocalHighway({ canvas: vocalHighwayCanvas, engine });
+  }
   let animationFrameId = null;
 
   // DOM Elements - Transport & Master

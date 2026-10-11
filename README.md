@@ -58,6 +58,7 @@ Synthesizes 6 stems in your browser so you can try everything without any downlo
 ## 🎛️ Studio Mixer Features
 
 - **Multi-Track Synchronized Playback:** Sample-accurate Web Audio synchronization across all channels.
+- **Vocal Highway:** Above the seek bar, the sung pitch of the vocal stem scrolls towards a fixed "now" line, like a karaoke game: note bars show which notes are coming, a thin curve shows slides and vibrato, and the readout shows the note and frequency being sung right now (for example `C#4  278 Hz`). It reads the vocal stem by itself when a song loads. Click it to jump to that moment.
 - **Interactive High-DPI Waveforms:** Click-to-seek, drag-to-scrub, real-time playhead, and played-region shading.
 - **Track Mixing Controls:**
   - Tactile glowing **Mute (M)** and **Solo (S)** buttons per channel.

@@ -233,6 +233,10 @@
 
   <!-- Master Timeline & Global Scrubber Ruler -->
   <section class="timeline-overview-deck" aria-label="Timeline Overview">
+    <!-- Vocal highway: the sung pitch scrolls towards the "now" line. Click it to jump. -->
+    <div class="vocal-highway" aria-label="Vocal pitch highway">
+      <canvas id="vocalHighwayCanvas" title="Vocal pitch highway. Click to jump to that moment."></canvas>
+    </div>
     <div class="timeline-ruler">
       <div class="timeline-ticks" id="timelineTicks"></div>
     </div>
@@ -395,6 +399,7 @@
   <script src="js/pitch-detector.js"></script>
   <script src="js/vocal-recorder.js"></script>
   <script src="js/pitch-visualizer.js"></script>
+  <script src="js/vocal-highway.js"></script>
   <script src="js/studio-app.js"></script>
   <script>
     (function () {
