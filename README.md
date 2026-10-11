@@ -120,7 +120,7 @@ Double-click:
 ```bat
 Run-Stems-Studio.bat
 ```
-The first time, it installs the stem maker into a private `.venv` folder (several minutes; it uses your NVIDIA graphics card if it finds one). After that it just starts the local server and opens **http://localhost:8099** in your browser. Keep the black window open while you use the app.
+The first time, it installs the stem maker into a private `.venv` folder (several minutes; it uses your NVIDIA graphics card if it finds one). After that it just starts the local server and opens **http://127.0.0.1:8099** in your browser. Keep the black window open while you use the app.
 
 > Do not start the app with `python -m http.server`. That only shows the page; **Create Stems** needs `server.py`.
 
@@ -129,7 +129,7 @@ The first time, it installs the stem maker into a private `.venv` folder (severa
 pip install -r separator/requirements.txt
 python server.py
 ```
-Open [http://localhost:8099](http://localhost:8099).
+Open [http://127.0.0.1:8099](http://127.0.0.1:8099).
 
 ---
 

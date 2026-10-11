@@ -17,8 +17,44 @@
 
   <!-- Studio Styles -->
   <link rel="stylesheet" href="css/studio.css">
+
+  <!-- Fonts load in the background so a slow or blocked network can never hold up the page -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" media="print" onload="this.media='all'"
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@500;600;700;800&display=swap">
+
+  <style>
+    #appSplash {
+      position: fixed; inset: 0; z-index: 99999;
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1rem;
+      background: #090b10; color: #e5e7eb;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+    #appSplash .splash-title { font-size: 1.4rem; font-weight: 700; letter-spacing: 0.02em; }
+    #appSplash .splash-hint { font-size: 0.85rem; color: #9ca3af; max-width: 28rem; text-align: center; min-height: 2.5em; }
+    #appSplash .splash-spinner {
+      width: 34px; height: 34px; border-radius: 50%;
+      border: 3px solid rgba(255, 255, 255, 0.15); border-top-color: #a855f7;
+      animation: splashSpin 0.9s linear infinite;
+    }
+    @keyframes splashSpin { to { transform: rotate(360deg); } }
+  </style>
 </head>
 <body>
+
+  <!-- Shown until the app has finished starting -->
+  <div id="appSplash" role="status" aria-live="polite">
+    <div class="splash-spinner"></div>
+    <div class="splash-title">Loading Stems Studio...</div>
+    <div class="splash-hint" id="appSplashHint"></div>
+  </div>
+  <script>
+    setTimeout(function () {
+      var hint = document.getElementById('appSplashHint');
+      if (hint) hint.textContent = 'Still loading. If this stays here, check that the black Stems Studio window is still open.';
+    }, 8000);
+  </script>
+  <noscript>Stems Studio needs JavaScript turned on.</noscript>
 
   <!-- Top App Navigation Bar -->
   <header class="studio-header">
@@ -343,5 +379,11 @@
   <script src="js/vocal-recorder.js"></script>
   <script src="js/pitch-visualizer.js"></script>
   <script src="js/studio-app.js"></script>
+  <script>
+    (function () {
+      var splash = document.getElementById('appSplash');
+      if (splash) splash.remove();
+    })();
+  </script>
 </body>
 </html>

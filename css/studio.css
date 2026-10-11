@@ -2,8 +2,6 @@
    Stems Studio - High-End Multi-Track Audio Workstation Design System
    ========================================================================== */
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@500;600;700;800&display=swap');
-
 :root {
   /* Color Palette - Deep Obsidian Dark Studio */
   --bg-core: #090b10;

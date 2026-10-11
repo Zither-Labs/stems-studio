@@ -211,28 +211,48 @@ _device_info_cache = None
 _device_info_lock = threading.Lock()
 
 
+CPU_DEVICE_INFO = {
+    "device": "cpu",
+    "device_name": "CPU",
+    "vram_gb": 0,
+    "cuda_available": False,
+    "cuda_version": None
+}
+
+# Runs in a separate process on purpose: importing PyTorch can freeze its whole process for
+# many seconds, and that must never be the process that is serving the web page.
+_DEVICE_PROBE_SCRIPT = """
+import json
+import torch
+if torch.cuda.is_available():
+    props = torch.cuda.get_device_properties(0)
+    print(json.dumps({
+        "device": "cuda",
+        "device_name": torch.cuda.get_device_name(0),
+        "vram_gb": round(props.total_memory / (1024 ** 3), 1),
+        "cuda_available": True,
+        "cuda_version": getattr(torch.version, "cuda", None),
+    }))
+else:
+    print(json.dumps({"device": "cpu"}))
+"""
+
+
 def _detect_device_info():
     try:
-        import torch
-        if torch.cuda.is_available():
-            dev_name = torch.cuda.get_device_name(0)
-            vram = torch.cuda.get_device_properties(0).total_memory / (1024 ** 3)
-            return {
-                "device": "cuda",
-                "device_name": dev_name,
-                "vram_gb": round(vram, 1),
-                "cuda_available": True,
-                "cuda_version": getattr(torch.version, "cuda", "12.6")
-            }
+        kwargs = {}
+        if os.name == "nt":
+            kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+        result = subprocess.run(
+            [sys.executable, "-c", _DEVICE_PROBE_SCRIPT],
+            capture_output=True, text=True, timeout=300, **kwargs
+        )
+        info = json.loads(result.stdout.strip().splitlines()[-1])
+        if info.get("cuda_available"):
+            return info
     except Exception:
         pass
-    return {
-        "device": "cpu",
-        "device_name": "CPU",
-        "vram_gb": 0,
-        "cuda_available": False,
-        "cuda_version": None
-    }
+    return dict(CPU_DEVICE_INFO)
 
 
 def get_device_info():
@@ -657,7 +677,7 @@ class ThreadedServer(socketserver.ThreadingTCPServer):
 def start_server():
     warm_up_device_info()
     server = ThreadedServer(("127.0.0.1", PORT), StudioRequestHandler)
-    print(f"Stems Studio Server running at http://localhost:{PORT}")
+    print(f"Stems Studio is ready at http://127.0.0.1:{PORT}  (keep this window open)")
     server.serve_forever()
 
 

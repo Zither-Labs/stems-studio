@@ -357,7 +357,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Turns a failed request into a plain-English reason the user can act on.
   async function explainServerProblem(resp, err) {
     if (window.location.protocol === 'file:') {
-      return 'This page was opened as a file. Start the app from the "Stems Studio" shortcut, which opens it at http://localhost:8099.';
+      return 'This page was opened as a file. Start the app from the "Stems Studio" shortcut, which opens it at http://127.0.0.1:8099.';
     }
     if (resp) {
       let detail = '';

@@ -58,10 +58,10 @@ goto run
 rem Stop any older copy still holding port 8099 so the new server code is the one that runs.
 for /f "tokens=5" %%p in ('netstat -ano ^| findstr /r /c:":8099 .*LISTENING"') do taskkill /f /pid %%p >nul 2>nul
 
-echo Starting Stems Studio at http://localhost:8099
+echo Starting Stems Studio at http://127.0.0.1:8099
 echo Keep this window open while you use the app. Close it to quit.
 echo.
-start "" cmd /c "timeout /t 3 /nobreak >nul & start http://localhost:8099"
+start "" cmd /c "timeout /t 3 /nobreak >nul & start http://127.0.0.1:8099"
 "%PY%" "%~dp0server.py"
 echo.
 echo Stems Studio has stopped.
