@@ -1,0 +1,3 @@
+# Optional: the pitch detector for the vocal highway. If this cannot be installed, the app
+# still works and the highway uses a simpler detector built into the page.
+swift-f0[audio]

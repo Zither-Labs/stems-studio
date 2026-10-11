@@ -1326,6 +1326,11 @@ kbd {
   accent-color: var(--accent-indigo);
 }
 
+.create-folk-toggle.disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .create-option-hint {
   margin-top: 0.6rem;
   font-size: 0.72rem;

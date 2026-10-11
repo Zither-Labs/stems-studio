@@ -9,8 +9,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Scrolling pitch highway above the seek bar; it follows the vocal stem by itself.
   const vocalHighwayCanvas = document.getElementById('vocalHighwayCanvas');
+  let vocalHighway = null;
   if (vocalHighwayCanvas && typeof VocalHighway !== 'undefined') {
-    new VocalHighway({ canvas: vocalHighwayCanvas, engine });
+    vocalHighway = new VocalHighway({ canvas: vocalHighwayCanvas, engine });
   }
   let animationFrameId = null;
 
@@ -298,6 +299,7 @@ document.addEventListener('DOMContentLoaded', () => {
       await engine.resume();
       const demoStems = await DemoStemGenerator.generateDemoStems(engine.ctx, is6Stems);
 
+      if (vocalHighway) vocalHighway.pitchUrl = null;   // the demo has no saved pitch track
       engine.tracks.clear();
       renderHiddenStemsBar([], false);
 
@@ -544,11 +546,20 @@ document.addEventListener('DOMContentLoaded', () => {
     engine.seek(0);
     engine.tracks.clear();
 
+    // The vocal highway asks the engine for the pitch of this song's vocal stem.
+    if (vocalHighway) {
+      const vocalStem = shown.find(stem => stem.stemType === 'vocal');
+      const match = vocalStem && /^\/api\/stems\/([0-9a-f]{8})\//.exec(vocalStem.url);
+      vocalHighway.pitchUrl = match ? `/api/pitch/${match[1]}` : null;
+    }
+
     for (const stem of shown) {
       const audioResp = await fetch(stem.url);
       const decoded = await engine.ctx.decodeAudioData(await audioResp.arrayBuffer());
       // Karaoke, Acapella, Analyze and Compare look tracks up by type (e.g. "vocal").
-      const trackId = stem.stemType && stem.stemType !== 'custom' ? stem.stemType : stem.id;
+      // The two halves of a split guitar share a type, so they keep their own ids.
+      const keepOwnId = stem.id === 'guitar_lead' || stem.id === 'guitar_rhythm';
+      const trackId = !keepOwnId && stem.stemType && stem.stemType !== 'custom' ? stem.stemType : stem.id;
       engine.addTrack(trackId, stem.name, stem.stemType, decoded);
     }
 
@@ -564,10 +575,23 @@ document.addEventListener('DOMContentLoaded', () => {
   function getCreateOptions() {
     const checked = document.querySelector('input[name="createStemCount"]:checked');
     const folk = document.getElementById('createFolkNames');
+    const split = document.getElementById('createGuitarSplit');
+    const model = checked && checked.value === '4' ? 'htdemucs' : 'htdemucs_6s';
     return {
-      model: checked && checked.value === '4' ? 'htdemucs' : 'htdemucs_6s',
-      preset: folk && folk.checked ? 'nepali_folk' : 'standard'
+      model,
+      preset: folk && folk.checked ? 'nepali_folk' : 'standard',
+      guitarSplit: model === 'htdemucs_6s' && Boolean(split && split.checked)
     };
+  }
+
+  // Splitting the guitar only makes sense when there is a guitar stem (6 stems).
+  function syncGuitarSplitAvailability() {
+    const split = document.getElementById('createGuitarSplit');
+    if (!split) return;
+    const sixStems = getCreateOptions().model === 'htdemucs_6s';
+    split.disabled = !sixStems;
+    const label = split.closest('label');
+    if (label) label.classList.toggle('disabled', !sixStems);
   }
 
   function restoreCreateOptions() {
@@ -577,19 +601,30 @@ document.addEventListener('DOMContentLoaded', () => {
       if (radio) radio.checked = true;
       const folk = document.getElementById('createFolkNames');
       if (folk) folk.checked = saved.folk === true;
+      const split = document.getElementById('createGuitarSplit');
+      if (split) split.checked = saved.guitarSplit === true;
     } catch (err) { /* private mode or corrupt value: keep the defaults */ }
   }
 
   function saveCreateOptions() {
     const { model, preset } = getCreateOptions();
+    const split = document.getElementById('createGuitarSplit');
     try {
-      localStorage.setItem(CREATE_OPTIONS_KEY, JSON.stringify({ stems: model === 'htdemucs' ? 4 : 6, folk: preset === 'nepali_folk' }));
+      localStorage.setItem(CREATE_OPTIONS_KEY, JSON.stringify({
+        stems: model === 'htdemucs' ? 4 : 6,
+        folk: preset === 'nepali_folk',
+        guitarSplit: Boolean(split && split.checked)
+      }));
     } catch (err) { /* ignore */ }
   }
 
   restoreCreateOptions();
-  document.querySelectorAll('input[name="createStemCount"], #createFolkNames')
-    .forEach(el => el.addEventListener('change', saveCreateOptions));
+  syncGuitarSplitAvailability();
+  document.querySelectorAll('input[name="createStemCount"], #createFolkNames, #createGuitarSplit')
+    .forEach(el => el.addEventListener('change', () => {
+      syncGuitarSplitAvailability();
+      saveCreateOptions();
+    }));
 
   async function startCreateStems() {
     const url = createStemsUrl.value.trim();
@@ -612,12 +647,13 @@ document.addEventListener('DOMContentLoaded', () => {
         formData.append('file', createFileChoice);
         formData.append('model', options.model);
         formData.append('preset', options.preset);
+        formData.append('guitar_split', options.guitarSplit ? '1' : '0');
         resp = await fetch('/api/separate', { method: 'POST', body: formData });
       } else {
         resp = await fetch('/api/separate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ youtube_url: url, model: options.model, preset: options.preset })
+          body: JSON.stringify({ youtube_url: url, model: options.model, preset: options.preset, guitar_split: options.guitarSplit })
         });
       }
       if (!resp.ok) throw new Error(`The stem maker refused the request (${resp.status}).`);

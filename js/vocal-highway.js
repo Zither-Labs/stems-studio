@@ -93,6 +93,7 @@ class VocalHighway {
     this.maxMidi = 72;
     this.analysisId = 0;
     this.worker = null;
+    this.pitchUrl = null;      // set by the app: where the server keeps this song's pitch track
     this.lastKey = '';
     this.width = 0;
     this.height = 0;
@@ -159,12 +160,32 @@ class VocalHighway {
     this.buffer = buffer;
     this.notes = [];
     this.midi = null;
+    const url = this.pitchUrl;
+    this.pitchUrl = null;   // used once: a later song must not reuse it
     if (!buffer) {
       this.analysisId++;
       this.state = 'idle';
       return;
     }
-    this.analyze(buffer);
+    if (url) this.fetchServerPitch(buffer, url);
+    else this.analyze(buffer);
+  }
+
+  // The engine (server.py) finds the pitch with a neural detector and cleans it up. If it is
+  // not available, the browser falls back to its own, simpler analysis.
+  async fetchServerPitch(buffer, url) {
+    this.state = 'analyzing';
+    const id = ++this.analysisId;
+    try {
+      const resp = await fetch(url);
+      if (!resp.ok) throw new Error(`pitch request failed (${resp.status})`);
+      const data = await resp.json();
+      if (id !== this.analysisId) return;
+      this.finishAnalysis({ midi: Float32Array.from(data.midi), t0: data.t0, dt: data.dt }, true);
+    } catch (err) {
+      console.warn('Server pitch unavailable, analysing in the browser instead:', err);
+      if (id === this.analysisId && buffer === this.buffer) this.analyze(buffer);
+    }
   }
 
   // --- pitch analysis -------------------------------------------------------------
@@ -211,8 +232,9 @@ class VocalHighway {
     }
   }
 
-  finishAnalysis({ midi, t0, dt }) {
-    const smooth = this.medianSmooth(midi);
+  finishAnalysis({ midi, t0, dt }, alreadyCleaned = false) {
+    // The server's track has had octave errors, breaths and stray blips removed already.
+    const smooth = alreadyCleaned ? midi : this.medianSmooth(midi);
     this.midi = smooth;
     this.t0 = t0;
     this.dt = dt;
@@ -254,16 +276,17 @@ class VocalHighway {
   buildNotes(midi, t0, dt) {
     const notes = [];
     const n = midi.length;
-    const minRun = 7;   // about 0.16 s: shorter blips are breaths and bleed, not singing
+    const minRun = Math.ceil(0.15 / dt);          // shorter blips are breaths and bleed, not singing
+    const bridge = Math.max(1, Math.round(0.045 / dt));
     let i = 0;
     while (i < n) {
       if (!midi[i]) { i++; continue; }
-      // A sung phrase: voiced frames, bridging gaps of up to 2 frames.
+      // A sung phrase: voiced frames, bridging very short gaps.
       let j = i;
       let last = i;
       while (j < n) {
         if (midi[j]) { last = j; j++; }
-        else if (j - last <= 2) j++;
+        else if (j - last <= bridge) j++;
         else break;
       }
       if (last - i + 1 >= minRun) this.splitPhrase(midi, i, last, notes, t0, dt);
@@ -273,6 +296,7 @@ class VocalHighway {
   }
 
   splitPhrase(midi, from, to, notes, t0, dt) {
+    const bridge = Math.max(1, Math.round(0.045 / dt));
     const frames = [];
     let held = null;
     for (let k = from; k <= to; k++) {
@@ -286,12 +310,12 @@ class VocalHighway {
     let group = [frames[0]];
     for (let f = 1; f < frames.length; f++) {
       const prev = group[group.length - 1];
-      if (frames[f].note === prev.note && frames[f].k - prev.k <= 3) group.push(frames[f]);
+      if (frames[f].note === prev.note && frames[f].k - prev.k <= bridge + 1) group.push(frames[f]);
       else { groups.push(group); group = [frames[f]]; }
     }
     groups.push(group);
     for (const g of groups) {
-      if (g.length < 3 && groups.length > 1) continue;   // too short to be a note
+      if (g.length < Math.ceil(0.05 / dt) && groups.length > 1) continue;   // too short to be a note
       notes.push({
         start: t0 + g[0].k * dt,
         end: t0 + (g[g.length - 1].k + 1) * dt,

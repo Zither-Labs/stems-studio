@@ -37,6 +37,7 @@ The bar at the top of the screen has four buttons.
 1. Click **"✨ Create Stems"**.
 2. Choose a song file (MP3 / WAV / FLAC / M4A), or paste a YouTube link.
 3. Choose **4 stems** (Vocals, Drums, Bass, Other: faster and cleanest) or **6 stems** (also splits out Guitar and Piano). Tick **Nepali folk music** only if the song is folk: that switches the lane names to Madal, Sarangi, Harmonium and so on. The model sorts sounds into groups and cannot tell a madal from a drum kit, so standard names (Vocals, Drums, Bass, Guitar, Piano, Other) are used unless you tick the box. Your choices are remembered.
+   - With 6 stems you can also tick **Split the guitar into Lead and Rhythm** (experimental). No free model can reliably tell lead from rhythm, so this guesses by stereo position: guitar in the middle of the mix becomes *Lead Guitar (center)*, guitar panned left and right becomes *Rhythm Guitar (sides)*. It works well on records mixed that way (a centred lead over double-tracked, panned rhythm guitars). If a song's guitars are all in the middle or all spread wide, one of the two stems will be empty or the split will not match the real roles.
 4. Click **"✨ Create Stems"** in the window. A progress bar shows how it is going.
 5. When it finishes, the stems load into the mixer by themselves, with **Vocals on top**. Stems that have nothing in them (for example Piano in a song with no piano) are hidden, and a note under the mixer lets you show them anyway.
 
@@ -58,7 +59,7 @@ Synthesizes 6 stems in your browser so you can try everything without any downlo
 ## 🎛️ Studio Mixer Features
 
 - **Multi-Track Synchronized Playback:** Sample-accurate Web Audio synchronization across all channels.
-- **Vocal Highway:** Above the seek bar, the sung pitch of the vocal stem scrolls towards a fixed "now" line, like a karaoke game: note bars show which notes are coming, a thin curve shows slides and vibrato, and the readout shows the note and frequency being sung right now (for example `C#4  278 Hz`). It reads the vocal stem by itself when a song loads. Click it to jump to that moment.
+- **Vocal Highway:** Above the seek bar, the sung pitch of the vocal stem scrolls towards a fixed "now" line, like a karaoke game: note bars show which notes are coming, a thin curve shows slides and vibrato, and the readout shows the note and frequency being sung right now (for example `C#4  278 Hz`). It reads the vocal stem by itself when a song loads. Click it to jump to that moment. The pitch comes from [SwiftF0](https://github.com/lars76/swift-f0), a small neural pitch detector that runs on the CPU, followed by a clean-up that removes breaths and bleed, repairs octave errors and drops stray blips. It follows one voice at a time, so doubled vocals or harmonies can still confuse it. If SwiftF0 cannot be installed, the page falls back to a simpler built-in detector.
 - **Interactive High-DPI Waveforms:** Click-to-seek, drag-to-scrub, real-time playhead, and played-region shading.
 - **Track Mixing Controls:**
   - Tactile glowing **Mute (M)** and **Solo (S)** buttons per channel.

@@ -64,10 +64,17 @@ echo No NVIDIA graphics card found. The stem maker will run on the CPU (slower).
 
 :check_parts
 "%PY%" -c "import demucs, yt_dlp, static_ffmpeg, soundfile, numpy" >nul 2>nul
-if not errorlevel 1 goto make_shortcut
+if not errorlevel 1 goto pitch_parts
 echo Step 3 of 4: installing the stem maker. This can take several minutes...
 "%PY%" -m pip install -r "%~dp0separator\requirements.txt"
 if errorlevel 1 goto fail_pip
+
+:pitch_parts
+"%PY%" -c "import swift_f0, soxr" >nul 2>nul
+if not errorlevel 1 goto make_shortcut
+echo Installing the vocal pitch detector...
+"%PY%" -m pip install -r "%~dp0separator\requirements-pitch.txt"
+if errorlevel 1 echo   (Could not install it. The app still works; the vocal highway will use a simpler detector.)
 
 :make_shortcut
 echo Step 4 of 4: creating the Stems Studio shortcut...

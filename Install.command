@@ -93,6 +93,13 @@ if ! "$VENV_PY" -c "import demucs, yt_dlp, static_ffmpeg, soundfile, numpy" >/de
         || fail "The install did not finish. Please copy the messages above and send them over."
 fi
 
+# The pitch detector for the vocal highway is optional: without it the page uses a simpler one.
+if ! "$VENV_PY" -c "import swift_f0, soxr" >/dev/null 2>&1; then
+    echo "Installing the vocal pitch detector..."
+    "$VENV_PY" -m pip install -r "$ROOT/separator/requirements-pitch.txt" \
+        || echo "  (Could not install it. The app still works; the vocal highway will use a simpler detector.)"
+fi
+
 # --- Step 4: launcher --------------------------------------------------------
 echo "Step 4 of 4: creating the Stems Studio launcher..."
 if [ "$OS" = "Darwin" ]; then

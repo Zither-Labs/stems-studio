@@ -81,6 +81,7 @@ def cli_python():
 
 DB_PATH = os.path.join(OUTPUT_DIR, "library.db")
 SONG_ID_RE = re.compile(r"^[0-9a-f]{8}$")
+PITCH_LOCK = threading.Lock()
 YOUTUBE_ID_RE = re.compile(r"(?:v=|youtu\.be/|shorts/|embed/|live/)([A-Za-z0-9_-]{11})")
 
 
@@ -258,19 +259,38 @@ NEPALI_FOLK_4S_STEM_MAP = {
     "other": {"name": "Sarangi, Bansuri & Others", "type": "other", "desc": "Folk Fiddle, Flute, Harmonium, Plucked Strings"}
 }
 
-STEM_ORDER = ["vocals", "drums", "bass", "guitar", "piano", "other"]
+# Experimental: the guitar stem split by stereo position (see separator/guitar_split.py).
+GUITAR_SPLIT_MAP = {
+    "guitar_lead": {"name": "Lead Guitar (center)", "type": "guitar",
+                    "desc": "Guitar parts sitting in the middle of the stereo picture, usually the lead"},
+    "guitar_rhythm": {"name": "Rhythm Guitar (sides)", "type": "guitar",
+                      "desc": "Guitar parts panned left and right, usually the rhythm guitars"},
+}
+
+STEM_ORDER = ["vocals", "drums", "bass", "guitar", "guitar_lead", "guitar_rhythm", "piano", "other"]
 
 VALID_MODELS = ("htdemucs", "htdemucs_6s")
 VALID_PRESETS = ("standard", "nepali_folk")
+GUITAR_SPLIT_SUFFIX = "+gsplit"
 
 
-def clean_choices(model, preset):
-    """Only accept known model / naming choices; anything else falls back to the defaults."""
+def clean_choices(model, preset, split_guitar=False):
+    """Only accept known model / naming choices; anything else falls back to the defaults.
+
+    The guitar split is remembered as a suffix on the naming choice, so a song made with it
+    and the same song made without it are kept as two different library entries.
+    """
     if model not in VALID_MODELS:
         model = "htdemucs_6s"
     if preset not in VALID_PRESETS:
         preset = "standard"
+    if split_guitar and model == "htdemucs_6s":
+        preset += GUITAR_SPLIT_SUFFIX
     return model, preset
+
+
+def truthy(value):
+    return str(value).strip().lower() in ("1", "true", "yes", "on")
 
 
 # A stem counts as "nothing in it" when it is practically silent, or carries under 1% of the
@@ -512,6 +532,25 @@ def run_separation_job(job_id, source_type, source_val, model="htdemucs_6s", pre
         if not stem_files:
             raise Exception("No stem audio files were generated.")
 
+        library_preset = preset   # what the library remembers (includes the guitar-split suffix)
+        split_guitar = preset.endswith(GUITAR_SPLIT_SUFFIX)
+        preset = preset[:-len(GUITAR_SPLIT_SUFFIX)] if split_guitar else preset
+
+        if split_guitar and "guitar.wav" in stem_files:
+            job["message"] = "Splitting the guitar into lead and rhythm (by stereo position)..."
+            job["progress"] = 93
+            try:
+                sys.path.insert(0, os.path.join(BASE_DIR, "separator"))
+                import guitar_split
+                guitar_split.split_file(
+                    os.path.join(stems_source_dir, "guitar.wav"),
+                    os.path.join(stems_source_dir, "guitar_lead.wav"),
+                    os.path.join(stems_source_dir, "guitar_rhythm.wav"))
+                stem_files = [f for f in stem_files if f != "guitar.wav"] + ["guitar_lead.wav", "guitar_rhythm.wav"]
+            except Exception:
+                # Keep the ordinary single guitar stem rather than failing the whole song.
+                traceback.print_exc()
+
         # Pick mapping dictionary
         if preset == "nepali_folk":
             mapping = NEPALI_FOLK_STEM_MAP if model == "htdemucs_6s" else NEPALI_FOLK_4S_STEM_MAP
@@ -520,6 +559,7 @@ def run_separation_job(job_id, source_type, source_val, model="htdemucs_6s", pre
         else:
             mapping = STANDARD_4S_STEM_MAP
 
+        mapping = dict(mapping, **GUITAR_SPLIT_MAP)
         empty_files = find_empty_stems(stems_source_dir, stem_files)
 
         stems_result = []
@@ -557,7 +597,7 @@ def run_separation_job(job_id, source_type, source_val, model="htdemucs_6s", pre
 
         if content_key:
             save_song(job_id, job.get("title", "Untitled"), source_type, source_label,
-                      content_key, model, preset, stems_result)
+                      content_key, model, library_preset, stems_result)
 
         job["stems"] = stems_result
         job["progress"] = 100
@@ -662,6 +702,24 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
                 self.wfile.write(json.dumps({"status": "not_found"}).encode("utf-8"))
             return
 
+        elif parsed.path.startswith("/api/pitch/"):
+            # The sung pitch of a song's vocal stem, for the vocal highway.
+            song_id = parsed.path.split("/")[3]
+            wav_path = os.path.join(OUTPUT_DIR, song_id, "vocals.wav")
+            if not SONG_ID_RE.match(song_id) or not os.path.isfile(wav_path):
+                self.send_json({"error": "No vocal stem found for this song"}, 404)
+                return
+            try:
+                sys.path.insert(0, os.path.join(BASE_DIR, "separator"))
+                import pitch_track
+            except ImportError as exc:
+                self.send_json({"error": f"Pitch tracker is not installed: {exc}"}, 501)
+                return
+            with PITCH_LOCK:   # one analysis at a time; a second request waits and then reads the saved result
+                result = pitch_track.cached_analysis(wav_path, os.path.join(OUTPUT_DIR, song_id, "vocals.pitch.json"))
+            self.send_json({"t0": result["t0"], "dt": result["dt"], "midi": result["midi"]})
+            return
+
         elif parsed.path.startswith("/api/stems/"):
             parts = parsed.path.split("/")
             if len(parts) >= 5:
@@ -703,7 +761,8 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
                 data = json.loads(body)
 
                 youtube_url = data.get("youtube_url", "").strip()
-                model, preset = clean_choices(data.get("model"), data.get("preset"))
+                model, preset = clean_choices(data.get("model"), data.get("preset"),
+                                              truthy(data.get("guitar_split", False)))
 
                 if not youtube_url:
                     self.send_response(400)
@@ -747,6 +806,7 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
 
                 model = "htdemucs_6s"
                 preset = "standard"
+                guitar_split = False
                 file_bytes = None
                 file_name = "uploaded_audio.wav"
 
@@ -757,13 +817,15 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
                             model = part.get_payload(decode=True).decode("utf-8").strip()
                         elif 'name="preset"' in cd:
                             preset = part.get_payload(decode=True).decode("utf-8").strip()
+                        elif 'name="guitar_split"' in cd:
+                            guitar_split = truthy(part.get_payload(decode=True).decode("utf-8"))
                         elif 'name="file"' in cd:
                             fname = part.get_filename()
                             if fname:
                                 file_name = fname
                             file_bytes = part.get_payload(decode=True)
 
-                model, preset = clean_choices(model, preset)
+                model, preset = clean_choices(model, preset, guitar_split)
 
                 if not file_bytes:
                     self.send_response(400)
