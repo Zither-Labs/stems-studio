@@ -13,10 +13,48 @@
   <meta property="og:description" content="Interactive multi-track audio stem mixer, pitch & tempo control, and export studio.">
   <meta property="og:type" content="website">
 
+  <link rel="icon" href="data:,">
+
   <!-- Studio Styles -->
   <link rel="stylesheet" href="css/studio.css">
+
+  <!-- Fonts load in the background so a slow or blocked network can never hold up the page -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" media="print" onload="this.media='all'"
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@500;600;700;800&display=swap">
+
+  <style>
+    #appSplash {
+      position: fixed; inset: 0; z-index: 99999;
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1rem;
+      background: #090b10; color: #e5e7eb;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+    #appSplash .splash-title { font-size: 1.4rem; font-weight: 700; letter-spacing: 0.02em; }
+    #appSplash .splash-hint { font-size: 0.85rem; color: #9ca3af; max-width: 28rem; text-align: center; min-height: 2.5em; }
+    #appSplash .splash-spinner {
+      width: 34px; height: 34px; border-radius: 50%;
+      border: 3px solid rgba(255, 255, 255, 0.15); border-top-color: #a855f7;
+      animation: splashSpin 0.9s linear infinite;
+    }
+    @keyframes splashSpin { to { transform: rotate(360deg); } }
+  </style>
 </head>
 <body>
+
+  <!-- Shown until the app has finished starting -->
+  <div id="appSplash" role="status" aria-live="polite">
+    <div class="splash-spinner"></div>
+    <div class="splash-title">Loading Stems Studio...</div>
+    <div class="splash-hint" id="appSplashHint"></div>
+  </div>
+  <script>
+    setTimeout(function () {
+      var hint = document.getElementById('appSplashHint');
+      if (hint) hint.textContent = 'Still loading. If this stays here, close Stems Studio and open it again from its shortcut.';
+    }, 8000);
+  </script>
+  <noscript>Stems Studio needs JavaScript turned on.</noscript>
 
   <!-- Top App Navigation Bar -->
   <header class="studio-header">
@@ -31,136 +69,81 @@
     </div>
 
     <div class="header-actions">
-      <button class="btn btn-accent" id="btnLoadDemo" title="Generate and load 4 synchronized multi-track demo stems">
-        <svg viewBox="0 0 24 24"><path d="M5 3l14 9-14 9V3z"/></svg>
-        Load Studio Demo
-      </button>
-
-      <button class="btn btn-primary" id="btnImportStems" title="Import custom stem files or drop audios">
-        <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
-        Import Stems
-      </button>
-
-      <button class="btn" id="btnSaveSession" title="Save session mix parameters">
-        <svg viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2zM17 21v-8H7v8M7 3v5h8"/></svg>
-        Save
-      </button>
-
-      <button class="btn" id="btnLoadSession" title="Restore saved session file">
-        <svg viewBox="0 0 24 24"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
-        Load
-      </button>
+      <button class="btn" id="btnSaveSession" title="Save session">💾 Save</button>
+      <button class="btn" id="btnLoadSession" title="Load session">📂 Load</button>
       <input type="file" id="sessionFileInput" accept=".json" style="display:none;">
     </div>
   </header>
 
-  <!-- UNMISSABLE SONG INTAKE & STEM SEPARATOR HERO DECK -->
-  <section class="intake-hero-deck" aria-label="Song Source and Stem Separator">
-    <div class="intake-card">
-      <div class="intake-header-row">
-        <div class="intake-title-wrap">
-          <div class="intake-title">
-            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--accent-indigo);">
-              <path d="M9 19V6l12-3v13M9 10l12-3M9 19a3 3 0 11-6 0 3 3 0 016 0zm12-3a3 3 0 11-6 0 3 3 0 016 0z"/>
-            </svg>
-            Song Source &amp; Stem Separator
-          </div>
-          <span class="intake-subtitle">Paste a YouTube link or upload your own song (FLAC / MP3 / WAV)</span>
-        </div>
+  <!-- Simple Song Loader -->
+  <section class="song-loader-simple">
+    <button class="btn btn-create-stems" id="btnCreateStems" title="Split a song into vocals, drums, bass and more">
+      ✨ Create Stems
+    </button>
+    <button class="btn" id="btnLibrary" title="Open a song you have already split - no waiting">
+      📚 My Library
+    </button>
+    <span class="loader-divider">or</span>
+    <button class="btn" id="btnImportStems" title="Import stem files you already have">
+      📁 Import Stems
+    </button>
+    <button class="btn" id="btnLoadDemo" title="Load demo audio to try the app">
+      ▶ Demo
+    </button>
+  </section>
 
-        <!-- Input Source Tabs -->
-        <div class="intake-tabs-bar" role="tablist">
-          <button class="intake-tab-btn active" id="tabBtnYoutube" role="tab" aria-selected="true">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="#ff0000"><path d="M21.58 7.19c-.23-.86-.91-1.54-1.77-1.77C18.25 5 12 5 12 5s-6.25 0-7.81.42c-.86.23-1.54.91-1.77 1.77C2 8.75 2 12 2 12s0 3.25.42 4.81c.23.86.91 1.54 1.77 1.77C5.75 19 12 19 12 19s6.25 0 7.81-.42c.86-.23 1.54-.91 1.77-1.77C22 15.25 22 12 22 12s0-3.25-.42-4.81zM9.75 15.02V8.98L15 12l-5.25 3.02z"/></svg>
-            YouTube Link
-          </button>
-          <button class="intake-tab-btn" id="tabBtnUpload" role="tab" aria-selected="false">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
-            Upload File (FLAC/MP3)
-          </button>
-          <button class="intake-tab-btn" id="tabBtnDemo" role="tab" aria-selected="false">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/><path d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-            Built-in Demo
-          </button>
-        </div>
-      </div>
-
-      <!-- Model & Preset Selector -->
-      <div class="model-preset-row">
-        <span style="font-size:0.75rem; font-weight:700; color:var(--text-muted); text-transform:uppercase;">Stem Profile:</span>
-        <button class="preset-pill nepali-active" id="modelPillNepali" data-model="htdemucs_6s" data-preset="nepali_folk" title="Separates into 6 stems: Vocals, Madal/Percussion, Sarangi/Bansuri Lead, Harmonium, Acoustic Pluck, Bass">
-          🏔️ <strong>6 Stems: Nepali Folk &amp; Acoustic</strong> (Madal, Sarangi, Flute, Harmonium, Pluck, Bass)
-        </button>
-        <button class="preset-pill" id="modelPillStd6s" data-model="htdemucs_6s" data-preset="standard_6s" title="Standard 6 stems: Vocals, Drums, Bass, Guitar, Piano, Other">
-          🎸 <strong>6 Stems: Standard</strong> (Vocals, Drums, Bass, Guitar, Piano, Other)
-        </button>
-        <button class="preset-pill" id="modelPillStd4s" data-model="htdemucs" data-preset="standard_4s" title="Standard 4 stems: Vocals, Drums, Bass, Other">
-          🥁 <strong>4 Stems: Studio</strong> (Vocals, Drums, Bass, Other)
-        </button>
-
-        <div class="gpu-engine-badge" id="gpuEngineBadge" title="AI Acceleration Hardware">
-          <span class="gpu-indicator-dot"></span>
-          <span id="gpuBadgeText">⚡ Checking GPU Engine...</span>
-        </div>
-      </div>
-
-      <!-- Form Pane: YouTube URL -->
-      <div class="intake-form-pane" id="paneYoutube">
-        <div class="youtube-input-wrap">
-          <svg viewBox="0 0 24 24"><path d="M21.58 7.19c-.23-.86-.91-1.54-1.77-1.77C18.25 5 12 5 12 5s-6.25 0-7.81.42c-.86.23-1.54.91-1.77 1.77C2 8.75 2 12 2 12s0 3.25.42 4.81c.23.86.91 1.54 1.77 1.77C5.75 19 12 19 12 19s6.25 0 7.81-.42c.86-.23 1.54-.91 1.77-1.77C22 15.25 22 12 22 12s0-3.25-.42-4.81zM9.75 15.02V8.98L15 12l-5.25 3.02z"/></svg>
-          <input type="text" class="studio-text-input" id="inputYoutubeUrl" placeholder="Paste YouTube link here (e.g. https://www.youtube.com/watch?v=... or share link)...">
-        </div>
-        <button class="btn-separate-cta" id="btnStartSeparationYoutube">
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
-          Separate Stems &amp; Load Mixer
+  <!-- Create Stems Dialog -->
+  <div class="modal-backdrop" id="createStemsModal" role="dialog" aria-modal="true" aria-labelledby="createStemsTitle">
+    <div class="modal-window create-stems-window">
+      <div class="modal-header">
+        <h2 class="modal-title" id="createStemsTitle">Create Stems</h2>
+        <button class="modal-close-btn" id="createStemsClose" aria-label="Close">
+          <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" fill="none" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
         </button>
       </div>
 
-      <!-- Form Pane: File Upload (FLAC, MP3, WAV) -->
-      <div class="intake-form-pane" id="paneUpload" style="display:none;">
-        <div class="file-upload-strip" id="fileUploadStrip">
-          <div class="upload-strip-info">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 19V6l12-3v13M9 10l12-3M9 19a3 3 0 11-6 0 3 3 0 016 0zm12-3a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
-            <div>
-              <strong id="uploadFileName">Choose or drag a song file (.flac, .mp3, .wav)</strong>
-              <div style="font-size:0.75rem; color:var(--text-muted);">Audio will be sent to the local Demucs engine for separation</div>
-            </div>
-          </div>
-          <button class="btn" id="btnBrowseSingleFile" type="button">Browse File</button>
+      <div id="createStemsForm">
+        <div class="dropzone-box create-drop" id="createStemsDrop">
+          <strong id="createStemsFileName">Click to choose a song, or drop it here</strong>
+          <p>MP3, WAV, FLAC, M4A</p>
         </div>
-        <input type="file" id="inputSingleAudioFile" accept=".flac,.mp3,.wav,.m4a,.aac,.ogg" style="display:none;">
-        <button class="btn-separate-cta" id="btnStartSeparationFile" disabled>
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
-          Separate Stems &amp; Load Mixer
-        </button>
+        <input type="file" id="createStemsFile" accept=".flac,.mp3,.wav,.m4a,.aac,.ogg" style="display:none;">
+
+        <div class="create-or">or paste a YouTube link</div>
+        <input type="text" class="create-text-input" id="createStemsUrl" placeholder="https://www.youtube.com/watch?v=...">
+
+        <p class="create-engine-note" id="createStemsEngineNote">Checking the stem maker...</p>
       </div>
 
-      <!-- Form Pane: Built-in Demo -->
-      <div class="intake-form-pane" id="paneDemo" style="display:none;">
-        <p style="color:var(--text-secondary); font-size:0.85rem; flex:1;">
-          Load our procedural 6-stem acoustic demonstration (includes synthesized Sarangi/Flute lead, Harmonium drone, Madal percussion, Acoustic plucks, and Vocals) directly inside the browser with no download required.
-        </p>
-        <button class="btn-separate-cta" id="btnLoad6StemDemo">
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M5 3l14 9-14 9V3z"/></svg>
-          Load 6-Stem Folk Demo
-        </button>
+      <div class="create-progress" id="createStemsProgress" style="display:none;">
+        <div class="create-progress-text">
+          <span id="createStemsMessage">Starting...</span>
+          <span id="createStemsPercent">0%</span>
+        </div>
+        <div class="create-progress-track"><div class="create-progress-fill" id="createStemsFill"></div></div>
       </div>
 
-      <!-- Live Separation Progress Card -->
-      <div class="separation-progress-card" id="separationProgressCard">
-        <div class="progress-header-row">
-          <div class="progress-step-text">
-            <div class="pulse-indicator"></div>
-            <span id="progressMessage">Preparing neural stem separation...</span>
-          </div>
-          <span class="progress-percent-text" id="progressPercent">0%</span>
-        </div>
-        <div class="separation-bar-track">
-          <div class="separation-bar-fill" id="progressBarFill"></div>
-        </div>
+      <div class="create-actions">
+        <button class="btn" id="createStemsCancel">Cancel</button>
+        <button class="btn btn-create-stems" id="createStemsGo">✨ Create Stems</button>
       </div>
     </div>
-  </section>
+  </div>
+
+  <!-- Library Dialog -->
+  <div class="modal-backdrop" id="libraryModal" role="dialog" aria-modal="true" aria-labelledby="libraryTitle">
+    <div class="modal-window library-window">
+      <div class="modal-header">
+        <h2 class="modal-title" id="libraryTitle">My Library</h2>
+        <button class="modal-close-btn" id="libraryClose" aria-label="Close">
+          <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" fill="none" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <input type="text" class="create-text-input" id="librarySearch" placeholder="Search your songs..." style="display:none;">
+      <div class="library-list" id="libraryList"></div>
+      <p class="library-summary" id="librarySummary"></p>
+    </div>
+  </div>
 
   <!-- Master Transport Dock -->
   <section class="transport-dock" aria-label="Transport Controls">
@@ -250,13 +233,67 @@
       <!-- Generated via studio-app.js -->
     </section>
 
-    <!-- Right Sidebar Deck: Master Output & Export -->
-    <aside class="studio-sidebar" aria-label="Master Output and Studio Tools">
-      <!-- Master Channel Strip Panel -->
+    <!-- Right Sidebar Deck: Vocal Training & Controls -->
+    <aside class="studio-sidebar" aria-label="Vocal Training and Controls">
+      
+      <!-- Compact Vocal Training Panel -->
+      <div class="sidebar-panel vocal-training-panel">
+        <h2 class="panel-title">
+          🎤 Vocal Training
+          <button class="btn btn-sm" id="btnAnalyzeVocals" title="Analyze vocal pitch">Analyze</button>
+        </h2>
+        
+        <!-- Mic Setup Row -->
+        <div class="compact-mic-row">
+          <button class="btn btn-sm btn-mic-setup" id="btnSetupMic">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3zM19 10v2a7 7 0 01-14 0v-2"/>
+            </svg>
+            <span id="micSetupText">Mic</span>
+          </button>
+          <div class="mic-meter-mini">
+            <div class="mic-meter-fill" id="micMeterFill"></div>
+          </div>
+          <label class="monitor-mini" title="Monitor">
+            <input type="checkbox" id="micMonitorToggle">
+            🎧
+          </label>
+        </div>
+
+        <!-- Record Controls -->
+        <div class="compact-record-row">
+          <button class="btn-record-mini" id="btnRecord" disabled>
+            <div class="record-icon"></div>
+          </button>
+          <button class="btn btn-sm" id="btnStopRecording" disabled>⏹</button>
+          <span class="timer-mini" id="recordingTimer">
+            <span id="recordingTimeDisplay">0:00</span>
+          </span>
+          <button class="btn btn-sm" id="btnClearRecording" disabled>🗑</button>
+          <button class="btn btn-sm" id="btnDownloadRecording" disabled>💾</button>
+        </div>
+
+        <!-- Current Pitch Display -->
+        <div class="pitch-display-mini">
+          <canvas id="pitchNoteCanvas" class="pitch-canvas-mini"></canvas>
+          <div class="pitch-stats-mini">
+            <div><span class="label">Target:</span> <span id="targetNoteDisplay">—</span></div>
+            <div><span class="label">You:</span> <span id="yourNoteDisplay">—</span></div>
+            <div><span class="label">Accuracy:</span> <span id="accuracyDisplay">—</span></div>
+          </div>
+        </div>
+
+        <!-- Compare Toggle -->
+        <div class="compare-toggle-row">
+          <button class="source-btn-mini active" id="btnSourceOriginal" data-source="original">Original</button>
+          <button class="source-btn-mini" id="btnSourceUser" data-source="user">Mine</button>
+          <button class="source-btn-mini" id="btnSourceBoth" data-source="both">Both</button>
+        </div>
+      </div>
+
+      <!-- Master Output (Compact) -->
       <div class="sidebar-panel">
         <h2 class="panel-title">Master Output</h2>
-
-        <!-- Stereo Output Meters -->
         <div class="master-vu-deck" aria-label="Master Stereo VU Meters">
           <div class="channel-meter-row">
             <span class="channel-lbl">L</span>
@@ -271,62 +308,34 @@
             </div>
           </div>
         </div>
-
-        <!-- Master Volume Fader -->
         <div class="master-fader-control">
           <div class="slider-row">
-            <span class="slider-label">Master</span>
+            <span class="slider-label">Vol</span>
             <input type="range" class="studio-slider" id="masterFader" min="0" max="1.5" step="0.01" value="1.0">
-            <span class="slider-readout" id="masterFaderVal">0.0 dB</span>
+            <span class="slider-readout" id="masterFaderVal">0 dB</span>
           </div>
         </div>
       </div>
 
-      <!-- Export Studio Panel -->
+      <!-- Export (Compact) -->
       <div class="sidebar-panel">
-        <h2 class="panel-title">Export Mixdown</h2>
-        <div class="export-actions-grid">
-          <button class="btn btn-accent export-btn" id="btnExportMix" title="Export full mixdown with current volume and pan settings">
-            <svg viewBox="0 0 24 24"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
-            <div>
-              <span>Export Full Mix (.wav)</span>
-              <span class="export-btn-desc">High-res 44.1kHz 16-bit PCM</span>
-            </div>
-          </button>
-
-          <button class="btn export-btn" id="btnExportKaraoke" title="Export backing track with vocals muted">
-            <svg viewBox="0 0 24 24"><path d="M9 19V6l12-3v13M9 10l12-3"/></svg>
-            <div>
-              <span>Export Backing Track (.wav)</span>
-              <span class="export-btn-desc">Karaoke (Vocals Muted)</span>
-            </div>
-          </button>
-
-          <button class="btn export-btn" id="btnExportAcapella" title="Export solo vocal track">
-            <svg viewBox="0 0 24 24"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3zM19 10v2a7 7 0 01-14 0v-2M12 19v4M8 23h8"/></svg>
-            <div>
-              <span>Export Acapella (.wav)</span>
-              <span class="export-btn-desc">Isolated Vocal Stem</span>
-            </div>
-          </button>
-
-          <label style="display:flex; align-items:center; gap:0.5rem; font-size:0.75rem; color:var(--text-secondary); cursor:pointer; margin-top:4px;">
-            <input type="checkbox" id="exportLoopOnly" style="accent-color: var(--accent-indigo);">
-            Export Active Loop Region Only
-          </label>
+        <h2 class="panel-title">Export</h2>
+        <div class="export-btns-compact">
+          <button class="btn btn-sm btn-accent" id="btnExportMix">Full Mix</button>
+          <button class="btn btn-sm" id="btnExportKaraoke">Karaoke</button>
+          <button class="btn btn-sm" id="btnExportAcapella">Vocals</button>
         </div>
+        <label class="export-loop-label">
+          <input type="checkbox" id="exportLoopOnly">
+          Loop region only
+        </label>
       </div>
 
-      <!-- Quick Shortcuts Panel -->
-      <div class="sidebar-panel">
-        <h2 class="panel-title">Studio Shortcuts</h2>
-        <div class="shortcuts-list">
-          <div class="shortcut-row"><span>Play / Pause</span> <kbd>Space</kbd></div>
-          <div class="shortcut-row"><span>Return to 0:00</span> <kbd>Enter</kbd></div>
-          <div class="shortcut-row"><span>Toggle Loop</span> <kbd>L</kbd></div>
-          <div class="shortcut-row"><span>Karaoke Toggle</span> <kbd>K</kbd></div>
-          <div class="shortcut-row"><span>Seek to Position</span> <kbd>Click Waveform</kbd></div>
-        </div>
+      <!-- Shortcuts (Minimal) -->
+      <div class="sidebar-panel shortcuts-mini">
+        <span><kbd>Space</kbd> Play</span>
+        <span><kbd>K</kbd> Karaoke</span>
+        <span><kbd>L</kbd> Loop</span>
       </div>
     </aside>
   </main>
@@ -366,6 +375,15 @@
   <script src="js/waveform-renderer.js"></script>
   <script src="js/demo-generator.js"></script>
   <script src="js/export-engine.js"></script>
+  <script src="js/pitch-detector.js"></script>
+  <script src="js/vocal-recorder.js"></script>
+  <script src="js/pitch-visualizer.js"></script>
   <script src="js/studio-app.js"></script>
+  <script>
+    (function () {
+      var splash = document.getElementById('appSplash');
+      if (splash) splash.remove();
+    })();
+  </script>
 </body>
 </html>

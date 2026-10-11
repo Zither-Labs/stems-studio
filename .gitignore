@@ -17,3 +17,6 @@ Thumbs.db
 *.wav.tmp
 temp_stems/
 output/
+
+# Stems created by the app (large audio files)
+separated_output/

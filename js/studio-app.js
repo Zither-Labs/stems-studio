@@ -36,34 +36,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const masterMeterL = document.getElementById('masterMeterL');
   const masterMeterR = document.getElementById('masterMeterR');
 
-  // Intake Hero Elements
-  const tabBtnYoutube = document.getElementById('tabBtnYoutube');
-  const tabBtnUpload = document.getElementById('tabBtnUpload');
-  const tabBtnDemo = document.getElementById('tabBtnDemo');
-  const paneYoutube = document.getElementById('paneYoutube');
-  const paneUpload = document.getElementById('paneUpload');
-  const paneDemo = document.getElementById('paneDemo');
-
-  const inputYoutubeUrl = document.getElementById('inputYoutubeUrl');
-  const btnStartSeparationYoutube = document.getElementById('btnStartSeparationYoutube');
-
-  const fileUploadStrip = document.getElementById('fileUploadStrip');
-  const uploadFileName = document.getElementById('uploadFileName');
-  const btnBrowseSingleFile = document.getElementById('btnBrowseSingleFile');
-  const inputSingleAudioFile = document.getElementById('inputSingleAudioFile');
-  const btnStartSeparationFile = document.getElementById('btnStartSeparationFile');
-
-  const btnLoad6StemDemo = document.getElementById('btnLoad6StemDemo');
+  // Simple loader
   const btnLoadDemo = document.getElementById('btnLoadDemo');
-
-  const modelPillNepali = document.getElementById('modelPillNepali');
-  const modelPillStd6s = document.getElementById('modelPillStd6s');
-  const modelPillStd4s = document.getElementById('modelPillStd4s');
-
-  const separationProgressCard = document.getElementById('separationProgressCard');
-  const progressMessage = document.getElementById('progressMessage');
-  const progressPercent = document.getElementById('progressPercent');
-  const progressBarFill = document.getElementById('progressBarFill');
 
   // Presets & Modal
   const btnPresetKaraoke = document.getElementById('btnPresetKaraoke');
@@ -86,10 +60,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnLoadSession = document.getElementById('btnLoadSession');
   const sessionFileInput = document.getElementById('sessionFileInput');
 
-  // State: Current Model & Preset Selection
-  let currentModel = 'htdemucs_6s';
-  let currentPreset = 'nepali_folk';
-  let selectedUploadFile = null;
 
   // Default 6-Stem Nepali Folk Definition
   const nepaliFolkTrackDefs = [
@@ -309,212 +279,12 @@ document.addEventListener('DOMContentLoaded', () => {
     animationFrameId = requestAnimationFrame(update);
   }
 
-  // =========================================================================
-  // Intake Tabs & Model Selection
-  // =========================================================================
-  function switchIntakeTab(activeTab) {
-    tabBtnYoutube.classList.toggle('active', activeTab === 'youtube');
-    tabBtnUpload.classList.toggle('active', activeTab === 'upload');
-    tabBtnDemo.classList.toggle('active', activeTab === 'demo');
-
-    paneYoutube.style.display = activeTab === 'youtube' ? 'flex' : 'none';
-    paneUpload.style.display = activeTab === 'upload' ? 'flex' : 'none';
-    paneDemo.style.display = activeTab === 'demo' ? 'flex' : 'none';
-  }
-
-  tabBtnYoutube.addEventListener('click', () => switchIntakeTab('youtube'));
-  tabBtnUpload.addEventListener('click', () => switchIntakeTab('upload'));
-  tabBtnDemo.addEventListener('click', () => switchIntakeTab('demo'));
-
-  // Stem Profile Pills
-  function selectStemProfile(model, preset) {
-    currentModel = model;
-    currentPreset = preset;
-
-    modelPillNepali.className = `preset-pill ${preset === 'nepali_folk' ? 'nepali-active' : ''}`;
-    modelPillStd6s.className = `preset-pill ${preset === 'standard_6s' ? 'active' : ''}`;
-    modelPillStd4s.className = `preset-pill ${preset === 'standard_4s' ? 'active' : ''}`;
-
-    if (preset === 'nepali_folk') {
-      showToast('Selected: 6 Stems (Nepali Folk & Acoustic: Madal, Sarangi, Flute, Harmonium, Pluck, Bass)', 'info');
-    } else if (preset === 'standard_6s') {
-      showToast('Selected: 6 Stems Standard (Vocals, Drums, Bass, Guitar, Piano, Other)', 'info');
-    } else {
-      showToast('Selected: 4 Stems Standard (Vocals, Drums, Bass, Other)', 'info');
-    }
-  }
-
-  modelPillNepali.addEventListener('click', () => selectStemProfile('htdemucs_6s', 'nepali_folk'));
-  modelPillStd6s.addEventListener('click', () => selectStemProfile('htdemucs_6s', 'standard_6s'));
-  modelPillStd4s.addEventListener('click', () => selectStemProfile('htdemucs', 'standard_4s'));
-
-  // File Upload Handlers
-  btnBrowseSingleFile.addEventListener('click', () => inputSingleAudioFile.click());
-  fileUploadStrip.addEventListener('click', (e) => {
-    if (e.target !== btnBrowseSingleFile) inputSingleAudioFile.click();
-  });
-
-  inputSingleAudioFile.addEventListener('change', (e) => {
-    if (e.target.files && e.target.files.length > 0) {
-      selectedUploadFile = e.target.files[0];
-      uploadFileName.textContent = `${selectedUploadFile.name} (${(selectedUploadFile.size / (1024 * 1024)).toFixed(1)} MB)`;
-      btnStartSeparationFile.disabled = false;
-      showToast(`Selected "${selectedUploadFile.name}"`, 'success');
-    }
-  });
-
-  fileUploadStrip.addEventListener('dragover', (e) => {
-    e.preventDefault();
-    fileUploadStrip.classList.add('drag-over');
-  });
-
-  fileUploadStrip.addEventListener('dragleave', () => fileUploadStrip.classList.remove('drag-over'));
-
-  fileUploadStrip.addEventListener('drop', (e) => {
-    e.preventDefault();
-    fileUploadStrip.classList.remove('drag-over');
-    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      selectedUploadFile = e.dataTransfer.files[0];
-      uploadFileName.textContent = `${selectedUploadFile.name} (${(selectedUploadFile.size / (1024 * 1024)).toFixed(1)} MB)`;
-      btnStartSeparationFile.disabled = false;
-      showToast(`Selected "${selectedUploadFile.name}"`, 'success');
-    }
-  });
-
-  // =========================================================================
-  // AI Stem Separation Backend Integration
-  // =========================================================================
-  async function triggerSeparation(payload, isFormData = false) {
-    separationProgressCard.style.display = 'block';
-    progressPercent.textContent = '5%';
-    progressBarFill.style.width = '5%';
-    progressMessage.textContent = 'Contacting Stems Studio neural separation engine...';
-
-    btnStartSeparationYoutube.disabled = true;
-    btnStartSeparationFile.disabled = true;
-
-    try {
-      const headers = isFormData ? {} : { 'Content-Type': 'application/json' };
-      const body = isFormData ? payload : JSON.stringify(payload);
-
-      const resp = await fetch('/api/separate', {
-        method: 'POST',
-        headers,
-        body
-      });
-
-      if (!resp.ok) {
-        throw new Error(`Server returned error ${resp.status}`);
-      }
-
-      const initData = await resp.json();
-      const jobId = initData.job_id;
-
-      // Poll job progress
-      await pollJobStatus(jobId);
-
-    } catch (err) {
-      console.error(err);
-      progressMessage.textContent = `Error: ${err.message}. Make sure server.py or Run-Stems-Studio.bat is running!`;
-      progressBarFill.style.background = '#ef4444';
-      showToast(`Separation failed: ${err.message}`, 'error');
-    } finally {
-      btnStartSeparationYoutube.disabled = false;
-      btnStartSeparationFile.disabled = selectedUploadFile === null;
-    }
-  }
-
-  async function pollJobStatus(jobId) {
-    const pollInterval = setInterval(async () => {
-      try {
-        const resp = await fetch(`/api/status?job_id=${jobId}`);
-        const data = await resp.json();
-
-        if (data.status === 'processing') {
-          progressPercent.textContent = `${data.progress}%`;
-          progressBarFill.style.width = `${data.progress}%`;
-          progressMessage.textContent = data.message || 'Separating audio stems...';
-        } else if (data.status === 'completed') {
-          clearInterval(pollInterval);
-          progressPercent.textContent = '100%';
-          progressBarFill.style.width = '100%';
-          progressMessage.textContent = 'Separation complete! Decoding and loading audio tracks...';
-
-          await loadSeparatedStemsIntoMixer(data.stems);
-          setTimeout(() => {
-            separationProgressCard.style.display = 'none';
-          }, 4000);
-        } else if (data.status === 'error') {
-          clearInterval(pollInterval);
-          progressMessage.textContent = `Separation failed: ${data.error}`;
-          progressBarFill.style.background = '#ef4444';
-          showToast(`Error: ${data.error}`, 'error');
-        }
-      } catch (e) {
-        console.error('Polling error', e);
-      }
-    }, 800);
-  }
-
-  async function loadSeparatedStemsIntoMixer(stemsList) {
-    await engine.resume();
-    engine.tracks.clear();
-
-    for (const stem of stemsList) {
-      try {
-        const audioResp = await fetch(stem.url);
-        const arrayBuf = await audioResp.arrayBuffer();
-        const decodedBuf = await engine.ctx.decodeAudioData(arrayBuf);
-
-        engine.addTrack(stem.id, stem.name, stem.stemType, decodedBuf);
-      } catch (err) {
-        console.error(`Error loading stem ${stem.name}`, err);
-      }
-    }
-
-    renderAllTrackCards();
-    document.querySelectorAll('.track-empty-state').forEach(el => el.style.display = 'none');
-    redrawAllWaveforms();
-    showToast('All separated stems loaded successfully into mixer!', 'success');
-
-    // Auto-start playback
-    await engine.play();
-  }
-
-  // Trigger from YouTube
-  btnStartSeparationYoutube.addEventListener('click', () => {
-    const url = inputYoutubeUrl.value.trim();
-    if (!url) {
-      showToast('Please enter a YouTube video URL.', 'error');
-      inputYoutubeUrl.focus();
-      return;
-    }
-    triggerSeparation({
-      youtube_url: url,
-      model: currentModel,
-      preset: currentPreset
-    });
-  });
-
-  // Trigger from Single Audio File
-  btnStartSeparationFile.addEventListener('click', () => {
-    if (!selectedUploadFile) {
-      showToast('Please choose an audio file first.', 'error');
-      return;
-    }
-    const formData = new FormData();
-    formData.append('file', selectedUploadFile);
-    formData.append('model', currentModel);
-    formData.append('preset', currentPreset);
-    triggerSeparation(formData, true);
-  });
 
   // =========================================================================
   // Procedural Demo Stems
   // =========================================================================
   async function loadDemoStems(is6Stems = true) {
     showToast(`Synthesizing ${is6Stems ? '6-Stem Nepali Folk' : '4-Stem'} demo audio...`, 'info');
-    btnLoad6StemDemo.disabled = true;
     btnLoadDemo.disabled = true;
 
     try {
@@ -545,13 +315,458 @@ document.addEventListener('DOMContentLoaded', () => {
       console.error(err);
       showToast('Error generating demo stems: ' + err.message, 'error');
     } finally {
-      btnLoad6StemDemo.disabled = false;
       btnLoadDemo.disabled = false;
     }
   }
 
-  btnLoad6StemDemo.addEventListener('click', () => loadDemoStems(true));
-  btnLoadDemo.addEventListener('click', () => loadDemoStems(true));
+  if (btnLoadDemo) {
+    btnLoadDemo.addEventListener('click', () => loadDemoStems(true));
+  }
+
+  // =========================================================================
+  // Create Stems (talks to server.py, which runs Demucs)
+  // =========================================================================
+  const btnCreateStems = document.getElementById('btnCreateStems');
+  const createStemsModal = document.getElementById('createStemsModal');
+  const createStemsClose = document.getElementById('createStemsClose');
+  const createStemsCancel = document.getElementById('createStemsCancel');
+  const createStemsGo = document.getElementById('createStemsGo');
+  const createStemsForm = document.getElementById('createStemsForm');
+  const createStemsDrop = document.getElementById('createStemsDrop');
+  const createStemsFile = document.getElementById('createStemsFile');
+  const createStemsFileName = document.getElementById('createStemsFileName');
+  const createStemsUrl = document.getElementById('createStemsUrl');
+  const createStemsEngineNote = document.getElementById('createStemsEngineNote');
+  const createStemsProgress = document.getElementById('createStemsProgress');
+  const createStemsMessage = document.getElementById('createStemsMessage');
+  const createStemsPercent = document.getElementById('createStemsPercent');
+  const createStemsFill = document.getElementById('createStemsFill');
+
+  const CREATE_DEFAULT_LABEL = 'Click to choose a song, or drop it here';
+  let createFileChoice = null;
+  let createBusy = false;
+  let stemMakerReady = false;
+  let createRunId = 0;
+
+  function refreshCreateButton() {
+    createStemsGo.disabled = createBusy || !stemMakerReady;
+  }
+
+  const RESTART_HINT = 'Close Stems Studio completely and open it again from its shortcut.';
+
+  // Turns a failed request into a plain-English reason the user can act on.
+  async function explainServerProblem(resp, err) {
+    if (window.location.protocol === 'file:') {
+      return 'This page was opened as a file. Open Stems Studio from its shortcut instead.';
+    }
+    if (resp) {
+      let detail = '';
+      try { detail = (await resp.json()).error || ''; } catch (e) { /* not JSON */ }
+      if (resp.status === 404) {
+        return `An older copy of Stems Studio is still running in the background. Close all Stems Studio windows, end every "python.exe" in Task Manager, then open the app again.`;
+      }
+      return `The stem maker hit a problem (error ${resp.status})${detail ? `: ${detail}` : ''}. ${RESTART_HINT}`;
+    }
+    console.error(err);
+    if (err && err.name === 'AbortError') {
+      return `The stem maker is not answering. If it only just started, wait a few seconds and try again. Otherwise: ${RESTART_HINT}`;
+    }
+    return `Cannot reach the stem maker at ${window.location.host}. ${RESTART_HINT}`;
+  }
+
+  // Never leave the page waiting forever on a server that is not answering.
+  async function fetchWithTimeout(url, options = {}, timeoutMs = 8000) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(url, { ...options, signal: controller.signal });
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  let stemMakerCheckId = 0;
+
+  async function checkStemMaker(quiet = false) {
+    const checkId = ++stemMakerCheckId;
+    if (!quiet) {
+      stemMakerReady = false;
+      refreshCreateButton();
+      createStemsEngineNote.className = 'create-engine-note';
+      createStemsEngineNote.textContent = 'Checking the stem maker...';
+    }
+    let recheckSoon = false;
+    try {
+      let resp;
+      try {
+        resp = await fetchWithTimeout('/api/engine');
+      } catch (err) {
+        throw new Error(await explainServerProblem(null, err));
+      }
+      if (!resp.ok) throw new Error(await explainServerProblem(resp));
+      const info = await resp.json();
+      if (!info.library) {
+        throw new Error(await explainServerProblem({ status: 404, json: async () => ({}) }));
+      }
+      if (checkId !== stemMakerCheckId) return;
+      stemMakerReady = true;
+      if (info.pending) {
+        // The server is still loading its AI engine; you can already start.
+        createStemsEngineNote.textContent = 'Ready. Still checking for your graphics card in the background...';
+        recheckSoon = true;
+      } else {
+        createStemsEngineNote.textContent = info.cuda_available
+          ? `Ready. Using your graphics card (${info.device_name}).`
+          : 'Ready. Using your CPU, so a song can take several minutes.';
+      }
+    } catch (err) {
+      if (checkId !== stemMakerCheckId) return;
+      stemMakerReady = false;
+      createStemsEngineNote.className = 'create-engine-note warn';
+      createStemsEngineNote.textContent = err.message;
+    }
+    refreshCreateButton();
+    if (recheckSoon) {
+      setTimeout(() => {
+        if (checkId === stemMakerCheckId && createStemsModal.classList.contains('open')) {
+          checkStemMaker(true);
+        }
+      }, 2000);
+    }
+  }
+
+  function resetCreateDialog() {
+    createFileChoice = null;
+    createStemsFile.value = '';
+    createStemsFileName.textContent = CREATE_DEFAULT_LABEL;
+    createStemsUrl.value = '';
+    createStemsForm.style.display = '';
+    createStemsProgress.style.display = 'none';
+    createStemsFill.style.background = '';
+    createStemsFill.style.width = '0%';
+    createStemsPercent.textContent = '0%';
+  }
+
+  function openCreateDialog() {
+    if (!createBusy) resetCreateDialog();
+    createStemsModal.classList.add('open');
+    checkStemMaker();
+  }
+
+  function closeCreateDialog() {
+    createStemsModal.classList.remove('open');
+  }
+
+  function chooseCreateFile(file) {
+    if (!file) return;
+    createFileChoice = file;
+    createStemsFileName.textContent = `${file.name} (${(file.size / (1024 * 1024)).toFixed(1)} MB)`;
+    createStemsUrl.value = '';
+  }
+
+  function setCreateProgress(percent, message, isError = false) {
+    createStemsProgress.style.display = 'block';
+    createStemsFill.style.width = `${percent}%`;
+    createStemsFill.style.background = isError ? '#ef4444' : '';
+    createStemsPercent.textContent = isError ? '' : `${percent}%`;
+    createStemsMessage.textContent = message;
+  }
+
+  async function pollSeparation(jobId, runId, skipFirstWait = false) {
+    while (runId === createRunId) {
+      if (!skipFirstWait) await new Promise(resolve => setTimeout(resolve, 900));
+      skipFirstWait = false;
+      if (runId !== createRunId) return null;
+
+      const resp = await fetch(`/api/status?job_id=${encodeURIComponent(jobId)}`);
+      const job = await resp.json();
+
+      if (job.status === 'completed') return job;
+      if (job.status === 'error') throw new Error(job.error || 'Separation failed.');
+      if (job.status === 'not_found') throw new Error('The stem maker restarted. Please try again.');
+      setCreateProgress(job.progress || 0, job.message || 'Working...');
+    }
+    return null;
+  }
+
+  async function loadSeparatedStems(stems) {
+    await engine.resume();
+    engine.pause();
+    engine.seek(0);
+    engine.tracks.clear();
+
+    for (const stem of stems) {
+      const audioResp = await fetch(stem.url);
+      const decoded = await engine.ctx.decodeAudioData(await audioResp.arrayBuffer());
+      // Karaoke, Acapella, Analyze and Compare look tracks up by type (e.g. "vocal").
+      const trackId = stem.stemType && stem.stemType !== 'custom' ? stem.stemType : stem.id;
+      engine.addTrack(trackId, stem.name, stem.stemType, decoded);
+    }
+
+    renderAllTrackCards();
+    document.querySelectorAll('.track-empty-state').forEach(el => { el.style.display = 'none'; });
+    redrawAllWaveforms();
+  }
+
+  async function startCreateStems() {
+    const url = createStemsUrl.value.trim();
+    if (!createFileChoice && !url) {
+      showToast('Choose a song file or paste a YouTube link first.', 'error');
+      return;
+    }
+
+    createBusy = true;
+    const runId = ++createRunId;
+    refreshCreateButton();
+    createStemsForm.style.display = 'none';
+    setCreateProgress(3, 'Sending your song to the stem maker...');
+
+    try {
+      let resp;
+      if (createFileChoice) {
+        const formData = new FormData();
+        formData.append('file', createFileChoice);
+        formData.append('model', 'htdemucs_6s');
+        formData.append('preset', 'nepali_folk');
+        resp = await fetch('/api/separate', { method: 'POST', body: formData });
+      } else {
+        resp = await fetch('/api/separate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ youtube_url: url, model: 'htdemucs_6s', preset: 'nepali_folk' })
+        });
+      }
+      if (!resp.ok) throw new Error(`The stem maker refused the request (${resp.status}).`);
+
+      const { job_id: jobId, cached } = await resp.json();
+      if (cached) setCreateProgress(60, 'Already in your library - opening it instantly...');
+      const job = await pollSeparation(jobId, runId, Boolean(cached));
+      if (!job) return;
+
+      setCreateProgress(97, 'Loading the stems into the mixer...');
+      await loadSeparatedStems(job.stems);
+
+      closeCreateDialog();
+      resetCreateDialog();
+      showToast(
+        cached
+          ? 'Found this song in your library - loaded without re-creating. Press Space to play.'
+          : 'Stems ready and saved to your library! Press Space to play.',
+        'success'
+      );
+    } catch (err) {
+      console.error(err);
+      createStemsForm.style.display = '';
+      setCreateProgress(100, err.message, true);
+      showToast(`Could not create stems: ${err.message}`, 'error');
+    } finally {
+      if (runId === createRunId) createBusy = false;
+      refreshCreateButton();
+    }
+  }
+
+  // =========================================================================
+  // Keep-alive: the engine quits shortly after this window closes
+  // =========================================================================
+  let missedHeartbeats = 0;
+  let engineLostShown = false;
+  async function sendHeartbeat() {
+    try {
+      await fetchWithTimeout('/api/heartbeat', {}, 4000);
+      missedHeartbeats = 0;
+      engineLostShown = false;
+    } catch (err) {
+      missedHeartbeats++;
+      if (missedHeartbeats >= 3 && !engineLostShown) {
+        engineLostShown = true;
+        showToast('Stems Studio lost its engine. Close this window and open the app again.', 'error');
+      }
+    }
+  }
+  sendHeartbeat();
+  setInterval(sendHeartbeat, 5000);
+  window.addEventListener('pagehide', () => navigator.sendBeacon('/api/closing'));
+
+  // =========================================================================
+  // My Library (songs already split, stored by server.py in SQLite)
+  // =========================================================================
+  const btnLibrary = document.getElementById('btnLibrary');
+  const libraryModal = document.getElementById('libraryModal');
+  const libraryClose = document.getElementById('libraryClose');
+  const libraryList = document.getElementById('libraryList');
+  const librarySearch = document.getElementById('librarySearch');
+  const librarySummary = document.getElementById('librarySummary');
+
+  let librarySongs = [];
+  let libraryOpening = false;
+
+  function formatBytes(bytes) {
+    if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
+    return `${Math.max(1, Math.round(bytes / 1024 ** 2))} MB`;
+  }
+
+  function showLibraryMessage(text, isWarning = false) {
+    libraryList.innerHTML = '';
+    const msg = document.createElement('div');
+    msg.className = `library-empty${isWarning ? ' warn' : ''}`;
+    msg.textContent = text;
+    libraryList.appendChild(msg);
+  }
+
+  function renderLibrary() {
+    const query = librarySearch.value.trim().toLowerCase();
+    const songs = librarySongs.filter(s => s.title.toLowerCase().includes(query));
+
+    librarySearch.style.display = librarySongs.length > 5 ? '' : 'none';
+    librarySummary.textContent = librarySongs.length
+      ? `${librarySongs.length} song${librarySongs.length === 1 ? '' : 's'} saved, using ${formatBytes(librarySongs.reduce((n, s) => n + s.size_bytes, 0))} on this computer.`
+      : '';
+
+    if (!songs.length) {
+      showLibraryMessage(librarySongs.length
+        ? 'No songs match your search.'
+        : 'Nothing here yet. Every song you split with Create Stems is saved here automatically, so you only ever do it once.');
+      return;
+    }
+
+    libraryList.innerHTML = '';
+    for (const song of songs) {
+      const item = document.createElement('div');
+      item.className = 'library-item';
+
+      const main = document.createElement('button');
+      main.type = 'button';
+      main.className = 'library-item-main';
+      main.title = 'Open in the mixer';
+      const title = document.createElement('div');
+      title.className = 'library-item-title';
+      title.textContent = song.title;
+      const meta = document.createElement('div');
+      meta.className = 'library-item-meta';
+      meta.textContent = `${new Date(song.created_at * 1000).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })} · ${song.stem_count} stems · ${formatBytes(song.size_bytes)}`;
+      main.append(title, meta);
+      main.addEventListener('click', () => openLibrarySong(song));
+
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'library-item-delete';
+      del.textContent = 'Delete';
+      del.addEventListener('click', () => deleteLibrarySong(song, del));
+      del.addEventListener('blur', () => {
+        del.classList.remove('confirm');
+        del.textContent = 'Delete';
+      });
+
+      item.append(main, del);
+      libraryList.appendChild(item);
+    }
+  }
+
+  async function refreshLibrary() {
+    showLibraryMessage('Loading your songs...');
+    let resp = null;
+    try {
+      try {
+        resp = await fetchWithTimeout('/api/library');
+      } catch (err) {
+        throw new Error(await explainServerProblem(null, err));
+      }
+      if (!resp.ok) throw new Error(await explainServerProblem(resp));
+      librarySongs = (await resp.json()).songs;
+      renderLibrary();
+    } catch (err) {
+      librarySongs = [];
+      librarySummary.textContent = '';
+      showLibraryMessage(err.message, true);
+    }
+  }
+
+  function openLibraryDialog() {
+    librarySearch.value = '';
+    libraryModal.classList.add('open');
+    refreshLibrary();
+  }
+
+  function closeLibraryDialog() {
+    libraryModal.classList.remove('open');
+  }
+
+  async function openLibrarySong(song) {
+    if (libraryOpening) return;
+    libraryOpening = true;
+    showLibraryMessage(`Opening "${song.title}"...`);
+    try {
+      const resp = await fetch(`/api/library/${encodeURIComponent(song.id)}`);
+      if (!resp.ok) throw new Error('This song is no longer saved on this computer.');
+      const saved = await resp.json();
+      await loadSeparatedStems(saved.stems);
+      closeLibraryDialog();
+      showToast(`Loaded "${song.title}". Press Space to play.`, 'success');
+    } catch (err) {
+      console.error(err);
+      showToast(`Could not open song: ${err.message}`, 'error');
+      refreshLibrary();
+    } finally {
+      libraryOpening = false;
+    }
+  }
+
+  async function deleteLibrarySong(song, button) {
+    if (!button.classList.contains('confirm')) {
+      button.classList.add('confirm');
+      button.textContent = 'Really delete?';
+      return;
+    }
+    try {
+      const resp = await fetch(`/api/library/${encodeURIComponent(song.id)}`, { method: 'DELETE' });
+      if (!resp.ok && resp.status !== 404) throw new Error(`error ${resp.status}`);
+      librarySongs = librarySongs.filter(s => s.id !== song.id);
+      renderLibrary();
+      showToast(`Deleted "${song.title}" from your library.`, 'info');
+    } catch (err) {
+      showToast(`Could not delete song: ${err.message}`, 'error');
+    }
+  }
+
+  btnLibrary.addEventListener('click', openLibraryDialog);
+  libraryClose.addEventListener('click', closeLibraryDialog);
+  libraryModal.addEventListener('click', (e) => {
+    if (e.target === libraryModal) closeLibraryDialog();
+  });
+  librarySearch.addEventListener('input', renderLibrary);
+
+  btnCreateStems.addEventListener('click', openCreateDialog);
+  createStemsClose.addEventListener('click', closeCreateDialog);
+  createStemsCancel.addEventListener('click', () => {
+    if (createBusy) createRunId++;
+    createBusy = false;
+    closeCreateDialog();
+    resetCreateDialog();
+    refreshCreateButton();
+  });
+  createStemsModal.addEventListener('click', (e) => {
+    if (e.target === createStemsModal) closeCreateDialog();
+  });
+  createStemsGo.addEventListener('click', startCreateStems);
+  createStemsDrop.addEventListener('click', () => createStemsFile.click());
+  createStemsFile.addEventListener('change', (e) => chooseCreateFile(e.target.files[0]));
+  createStemsDrop.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    createStemsDrop.classList.add('drag-over');
+  });
+  createStemsDrop.addEventListener('dragleave', () => createStemsDrop.classList.remove('drag-over'));
+  createStemsDrop.addEventListener('drop', (e) => {
+    e.preventDefault();
+    createStemsDrop.classList.remove('drag-over');
+    chooseCreateFile(e.dataTransfer.files[0]);
+  });
+  createStemsUrl.addEventListener('input', () => {
+    if (createStemsUrl.value.trim()) {
+      createFileChoice = null;
+      createStemsFile.value = '';
+      createStemsFileName.textContent = CREATE_DEFAULT_LABEL;
+    }
+  });
 
   // =========================================================================
   // Transport & Playback Controls
@@ -793,8 +1008,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const sessionData = {
       version: 2,
       timestamp: Date.now(),
-      model: currentModel,
-      preset: currentPreset,
       playbackRate: engine.playbackRate,
       pitchSemitones: engine.pitchSemitones,
       loop: {
@@ -884,6 +1097,8 @@ document.addEventListener('DOMContentLoaded', () => {
       btnPresetKaraoke.click();
     } else if (e.code === 'Escape') {
       dropzoneModal.classList.remove('open');
+      createStemsModal.classList.remove('open');
+      libraryModal.classList.remove('open');
     }
   });
 
@@ -921,32 +1136,353 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // Query Server Engine & GPU Status
-  async function checkEngineStatus() {
-    const gpuBadgeText = document.getElementById('gpuBadgeText');
-    const gpuEngineBadge = document.getElementById('gpuEngineBadge');
-    if (!gpuBadgeText || !gpuEngineBadge) return;
+  startAnimationLoop();
 
-    try {
-      const resp = await fetch('/api/engine');
-      if (resp.ok) {
-        const data = await resp.json();
-        if (data.cuda_available) {
-          gpuBadgeText.textContent = `⚡ GPU Active: ${data.device_name} (${data.vram_gb} GB VRAM)`;
-          gpuEngineBadge.style.color = '#34d399';
-          gpuEngineBadge.style.borderColor = 'rgba(16, 185, 129, 0.4)';
-          gpuEngineBadge.title = `NVIDIA CUDA ${data.cuda_version || '12.6'} acceleration enabled on ${data.device_name}`;
-        } else {
-          gpuBadgeText.textContent = `⚙️ Engine: ${data.device_name} Mode`;
-          gpuEngineBadge.style.color = '#f59e0b';
-          gpuEngineBadge.style.borderColor = 'rgba(245, 158, 11, 0.3)';
+  // =========================================================================
+  // Vocal Training Studio Module (Compact Sidebar Version)
+  // =========================================================================
+  
+  // DOM Elements - Vocal Training
+  const btnSetupMic = document.getElementById('btnSetupMic');
+  const micSetupText = document.getElementById('micSetupText');
+  const micMeterFill = document.getElementById('micMeterFill');
+  const micMonitorToggle = document.getElementById('micMonitorToggle');
+  
+  const btnRecord = document.getElementById('btnRecord');
+  const btnStopRecording = document.getElementById('btnStopRecording');
+  const recordingTimer = document.getElementById('recordingTimer');
+  const recordingTimeDisplay = document.getElementById('recordingTimeDisplay');
+  const btnClearRecording = document.getElementById('btnClearRecording');
+  const btnDownloadRecording = document.getElementById('btnDownloadRecording');
+  
+  const pitchNoteCanvas = document.getElementById('pitchNoteCanvas');
+  const btnAnalyzeVocals = document.getElementById('btnAnalyzeVocals');
+  
+  const targetNoteDisplay = document.getElementById('targetNoteDisplay');
+  const yourNoteDisplay = document.getElementById('yourNoteDisplay');
+  const accuracyDisplay = document.getElementById('accuracyDisplay');
+  
+  const btnSourceOriginal = document.getElementById('btnSourceOriginal');
+  const btnSourceUser = document.getElementById('btnSourceUser');
+  const btnSourceBoth = document.getElementById('btnSourceBoth');
+  
+  // State
+  let recordingTimerInterval = null;
+  let recordingStartTimestamp = 0;
+  let microphoneReady = false;
+  let currentUserPitch = null;
+
+  // Setup Microphone Button
+  if (btnSetupMic) {
+    btnSetupMic.addEventListener('click', async () => {
+      if (microphoneReady) {
+        showToast('Microphone already connected!', 'info');
+        return;
+      }
+      
+      btnSetupMic.disabled = true;
+      micSetupText.textContent = '...';
+      
+      const result = await engine.requestMicrophoneAccess();
+      
+      if (result.success) {
+        microphoneReady = true;
+        btnSetupMic.classList.add('active');
+        micSetupText.textContent = 'Mic on';
+        btnRecord.disabled = false;
+        showToast('Microphone connected! Ready to record.', 'success');
+      } else {
+        btnSetupMic.disabled = false;
+        micSetupText.textContent = 'Mic';
+        showToast(`Microphone access denied: ${result.error}`, 'error');
+      }
+    });
+  }
+
+  // Mic Level Updates
+  engine.on('micLevelUpdate', (levels) => {
+    if (micMeterFill) {
+      micMeterFill.style.width = `${Math.min(100, levels.peak * 120)}%`;
+    }
+    if (micClipDot) {
+      micClipDot.classList.toggle('clipping', levels.clipping);
+    }
+  });
+
+  // Pitch Detection Updates
+  engine.on('pitchDetected', (pitchInfo) => {
+    currentUserPitch = pitchInfo;
+    
+    // Update pitch note canvas
+    if (pitchNoteCanvas) {
+      PitchVisualizer.renderNoteDisplay(pitchNoteCanvas, pitchInfo);
+    }
+    
+    // Update your note display
+    if (yourNoteDisplay) {
+      if (pitchInfo.note && !pitchInfo.isSilent) {
+        yourNoteDisplay.textContent = `${pitchInfo.note}${pitchInfo.octave}`;
+        yourNoteDisplay.style.color = Math.abs(pitchInfo.cents) <= 15 ? '#10b981' : 
+                                       Math.abs(pitchInfo.cents) <= 30 ? '#f59e0b' : '#ef4444';
+      } else {
+        yourNoteDisplay.textContent = '—';
+        yourNoteDisplay.style.color = '';
+      }
+    }
+  });
+
+  // Monitor Toggle
+  if (micMonitorToggle) {
+    micMonitorToggle.addEventListener('change', (e) => {
+      engine.setMicMonitorEnabled(e.target.checked);
+      showToast(e.target.checked ? 'Monitor ON - You can hear yourself' : 'Monitor OFF', 'info');
+    });
+  }
+
+  // Record Button
+  if (btnRecord) {
+    btnRecord.addEventListener('click', async () => {
+      if (engine.isRecordingVocals) {
+        // Stop recording
+        engine.stopVocalRecording();
+      } else {
+        // Start recording
+        const success = await engine.startVocalRecording();
+        if (success) {
+          // Also start playback if not playing
+          if (!engine.isPlaying) {
+            await engine.play();
+          }
         }
       }
-    } catch (e) {
-      gpuBadgeText.textContent = '⚡ Web Audio Mode (Offline)';
+    });
+  }
+
+  // Recording State Changes
+  engine.on('recordingStateChanged', (state) => {
+    if (state.recording) {
+      btnRecord.classList.add('recording');
+      if (btnStopRecording) btnStopRecording.disabled = false;
+      if (recordingTimer) recordingTimer.classList.add('active');
+      recordingStartTimestamp = Date.now();
+      
+      // Start timer
+      recordingTimerInterval = setInterval(() => {
+        const elapsed = (Date.now() - recordingStartTimestamp) / 1000;
+        const mins = Math.floor(elapsed / 60);
+        const secs = Math.floor(elapsed % 60);
+        if (recordingTimeDisplay) {
+          recordingTimeDisplay.textContent = `${mins}:${String(secs).padStart(2, '0')}`;
+        }
+      }, 100);
+      
+      showToast('🎤 Recording! Sing along...', 'success');
+    } else {
+      btnRecord.classList.remove('recording');
+      if (btnStopRecording) btnStopRecording.disabled = true;
+      if (recordingTimer) recordingTimer.classList.remove('active');
+      
+      if (recordingTimerInterval) {
+        clearInterval(recordingTimerInterval);
+        recordingTimerInterval = null;
+      }
+      
+      showToast('Recording stopped.', 'info');
+    }
+  });
+
+  // Stop Recording Button
+  if (btnStopRecording) {
+    btnStopRecording.addEventListener('click', () => {
+      engine.stopVocalRecording();
+      engine.pause();
+    });
+  }
+
+  // User Recording Ready
+  engine.on('userRecordingReady', (data) => {
+    if (btnClearRecording) btnClearRecording.disabled = false;
+    if (btnDownloadRecording) btnDownloadRecording.disabled = false;
+    
+    // Calculate and display accuracy
+    const accuracy = engine.calculatePitchAccuracy();
+    if (accuracy && accuracyDisplay) {
+      accuracyDisplay.textContent = `${accuracy.accuracy.toFixed(0)}%`;
+      accuracyDisplay.style.color = accuracy.accuracy >= 80 ? '#10b981' :
+                                     accuracy.accuracy >= 60 ? '#f59e0b' : '#ef4444';
+    }
+    
+    showToast('✅ Recording saved! Compare with original.', 'success');
+  });
+
+  // Clear Recording Button
+  if (btnClearRecording) {
+    btnClearRecording.addEventListener('click', () => {
+      engine.clearUserRecording();
+      btnClearRecording.disabled = true;
+      if (btnDownloadRecording) btnDownloadRecording.disabled = true;
+      if (recordingTimeDisplay) recordingTimeDisplay.textContent = '0:00';
+      
+      if (accuracyDisplay) {
+        accuracyDisplay.textContent = '—';
+        accuracyDisplay.style.color = '';
+      }
+      
+      showToast('Recording cleared.', 'info');
+    });
+  }
+
+  // Download Recording Button
+  if (btnDownloadRecording) {
+    btnDownloadRecording.addEventListener('click', async () => {
+      const dateStr = new Date().toISOString().slice(0, 10);
+      const success = await engine.downloadUserRecording(`my-vocals_${dateStr}.wav`);
+      if (success) {
+        showToast('Recording downloaded!', 'success');
+      }
+    });
+  }
+
+  // Analyze Vocals Button
+  if (btnAnalyzeVocals) {
+    btnAnalyzeVocals.addEventListener('click', async () => {
+      const vocalTrack = engine.tracks.get('vocal');
+      if (!vocalTrack || !vocalTrack.buffer) {
+        showToast('Load a song first to analyze vocals.', 'error');
+        return;
+      }
+      
+      btnAnalyzeVocals.disabled = true;
+      btnAnalyzeVocals.textContent = '...';
+      
+      showToast('Analyzing vocal pitch...', 'info');
+      
+      try {
+        await engine.analyzeVocalStem();
+        showToast('✅ Vocal analysis complete!', 'success');
+      } catch (err) {
+        console.error('Analysis error:', err);
+        showToast('Error: ' + err.message, 'error');
+      } finally {
+        btnAnalyzeVocals.disabled = false;
+        btnAnalyzeVocals.textContent = 'Analyze';
+      }
+    });
+  }
+
+  // Update target note display based on current playback position
+  function updateTargetNote() {
+    const originalPitchData = engine.getOriginalVocalPitchData();
+    if (!originalPitchData || originalPitchData.length === 0) return;
+    
+    const currentTime = engine.getCurrentTime();
+    
+    // Find the nearest pitch point
+    let nearest = null;
+    let minDist = Infinity;
+    
+    for (const point of originalPitchData) {
+      const dist = Math.abs(point.time - currentTime);
+      if (dist < minDist && point.frequency) {
+        minDist = dist;
+        nearest = point;
+      }
+    }
+    
+    if (nearest && minDist < 0.2 && targetNoteDisplay) {
+      const noteInfo = frequencyToNote(nearest.frequency);
+      if (noteInfo.note) {
+        targetNoteDisplay.textContent = `${noteInfo.note}${noteInfo.octave}`;
+      }
+    } else if (targetNoteDisplay) {
+      targetNoteDisplay.textContent = '—';
     }
   }
 
-  checkEngineStatus();
+  function frequencyToNote(frequency) {
+    if (!frequency || frequency <= 0) return { note: null, octave: null };
+    
+    const A4_FREQ = 440;
+    const A4_MIDI = 69;
+    const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+    
+    const midiNumber = 12 * Math.log2(frequency / A4_FREQ) + A4_MIDI;
+    const roundedMidi = Math.round(midiNumber);
+    const noteIndex = ((roundedMidi % 12) + 12) % 12;
+    const octave = Math.floor(roundedMidi / 12) - 1;
+    
+    return {
+      note: NOTE_NAMES[noteIndex],
+      octave: octave
+    };
+  }
+
+  // Add target note update to animation loop
+  const originalStartAnimationLoop = startAnimationLoop;
+  startAnimationLoop = function() {
+    function update() {
+      const curTime = engine.getCurrentTime();
+      const total = engine.totalDuration || 0;
+      const progress = total > 0 ? (curTime / total) : 0;
+
+      currentTimeEl.textContent = formatTime(curTime);
+      totalTimeEl.textContent = formatTime(total);
+
+      scrubberProgress.style.width = `${progress * 100}%`;
+      scrubberPlayhead.style.left = `${progress * 100}%`;
+
+      if (engine.isLooping && total > 0) {
+        scrubberLoopOverlay.style.display = 'block';
+        scrubberLoopOverlay.style.left = `${(engine.loopStart / total) * 100}%`;
+        scrubberLoopOverlay.style.width = `${((engine.loopEnd - engine.loopStart) / total) * 100}%`;
+      } else {
+        scrubberLoopOverlay.style.display = 'none';
+      }
+
+      // Track VU Meters
+      for (const track of engine.tracks.values()) {
+        const levels = engine.getTrackLevels(track.id);
+        const vuFill = document.getElementById(`vuFill_${track.id}`);
+        const vuClip = document.getElementById(`vuClip_${track.id}`);
+        if (vuFill) vuFill.style.width = `${Math.min(100, levels.peak * 110)}%`;
+        if (vuClip) vuClip.classList.toggle('clipping', levels.clip);
+      }
+
+      // Master VU Meters
+      const masterLevels = engine.getMasterLevels();
+      if (masterMeterL) masterMeterL.style.width = `${Math.min(100, masterLevels.left * 100)}%`;
+      if (masterMeterR) masterMeterR.style.width = `${Math.min(100, masterLevels.right * 100)}%`;
+
+      redrawAllWaveforms();
+      
+      // Update target note for vocal training
+      updateTargetNote();
+
+      animationFrameId = requestAnimationFrame(update);
+    }
+    cancelAnimationFrame(animationFrameId);
+    animationFrameId = requestAnimationFrame(update);
+  };
+  
   startAnimationLoop();
+
+  // Comparison Source Buttons
+  const sourceButtons = [btnSourceOriginal, btnSourceUser, btnSourceBoth];
+  sourceButtons.forEach(btn => {
+    if (btn) {
+      btn.addEventListener('click', () => {
+        sourceButtons.forEach(b => b && b.classList.remove('active'));
+        btn.classList.add('active');
+        engine.setPlaybackSource(btn.dataset.source);
+        
+        const labels = {
+          'original': 'Original vocal selected',
+          'user': 'Your recording selected',
+          'both': 'Both vocals playing'
+        };
+        showToast(labels[btn.dataset.source], 'info');
+      });
+    }
+  });
+
 });
