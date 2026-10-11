@@ -266,29 +266,59 @@ CPU_DEVICE_INFO = {
 # many seconds, and that must never be the process that is serving the web page.
 _DEVICE_PROBE_SCRIPT = """
 import json
+import subprocess
 import torch
+
+info = {"device": "cpu"}
 if torch.cuda.is_available():
     props = torch.cuda.get_device_properties(0)
-    print(json.dumps({
+    info = {
         "device": "cuda",
         "device_name": torch.cuda.get_device_name(0),
         "vram_gb": round(props.total_memory / (1024 ** 3), 1),
         "cuda_available": True,
         "cuda_version": getattr(torch.version, "cuda", None),
-    }))
-else:
-    print(json.dumps({"device": "cpu"}))
+    }
+elif getattr(torch.backends, "mps", None) is not None and torch.backends.mps.is_available():
+    # Apple Silicon: PyTorch talks to the Mac's GPU through "MPS".
+    try:
+        torch.zeros(1, device="mps")
+        chip = ""
+        try:
+            chip = subprocess.check_output(["sysctl", "-n", "machdep.cpu.brand_string"], text=True).strip()
+        except Exception:
+            pass
+        info = {
+            "device": "mps",
+            "device_name": "Apple GPU" + (" (" + chip + ")" if chip else ""),
+            "vram_gb": 0,
+            "cuda_available": False,
+            "cuda_version": None,
+        }
+    except Exception:
+        pass
+print(json.dumps(info))
 """
+
+# Devices that count as "a graphics card" (everything else runs on the CPU).
+GPU_DEVICES = ("cuda", "mps")
 
 
 def _detect_device_info():
+    # Escape hatch: set STEMS_STUDIO_DEVICE to cpu, cuda or mps to skip auto-detection.
+    forced = os.environ.get("STEMS_STUDIO_DEVICE", "").strip().lower()
+    if forced == "cpu":
+        return dict(CPU_DEVICE_INFO)
+    if forced in GPU_DEVICES:
+        return {"device": forced, "device_name": f"{forced.upper()} (set by STEMS_STUDIO_DEVICE)",
+                "vram_gb": 0, "cuda_available": forced == "cuda", "cuda_version": None}
     try:
         result = subprocess.run(
             [cli_python(), "-c", _DEVICE_PROBE_SCRIPT],
             capture_output=True, text=True, timeout=300, **NO_WINDOW
         )
         info = json.loads(result.stdout.strip().splitlines()[-1])
-        if info.get("cuda_available"):
+        if info.get("device") in GPU_DEVICES:
             return info
     except Exception:
         pass
@@ -357,36 +387,49 @@ def run_separation_job(job_id, source_type, source_val, model="htdemucs_6s", pre
         job["message"] = f"Running neural separation with {model} on {dev_info['device_name']}..."
         job["progress"] = 35
 
-        cmd = [
-            cli_python(), "-m", "demucs.separate",
-            "-n", model,
-            "-d", device_arg,
-            "-o", job_dir,
-            audio_file
-        ]
+        def run_demucs(device):
+            cmd = [
+                cli_python(), "-m", "demucs.separate",
+                "-n", model,
+                "-d", device,
+                "-o", job_dir,
+                audio_file
+            ]
+            # On a Mac, let PyTorch quietly use the CPU for the few operations the GPU lacks.
+            env = dict(os.environ, PYTORCH_ENABLE_MPS_FALLBACK="1")
+            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                       universal_newlines=True, env=env, **NO_WINDOW)
 
-        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                   universal_newlines=True, **NO_WINDOW)
+            recent_output = []
+            for line in process.stdout:
+                if line.strip():
+                    recent_output = (recent_output + [line.strip()])[-6:]
+                if "%" in line:
+                    try:
+                        parts = line.split("%")[0].split()
+                        pct = int(parts[-1])
+                        job["progress"] = 35 + int(pct * 0.55)
+                        job["message"] = f"Processing neural stems: {pct}%"
+                    except Exception:
+                        pass
 
-        recent_output = []
-        for line in process.stdout:
-            if line.strip():
-                recent_output = (recent_output + [line.strip()])[-6:]
-            if "%" in line:
-                try:
-                    parts = line.split("%")[0].split()
-                    pct = int(parts[-1])
-                    job["progress"] = 35 + int(pct * 0.55)
-                    job["message"] = f"Processing neural stems: {pct}%"
-                except Exception:
-                    pass
+            process.wait()
+            return process.returncode, " | ".join(recent_output)
 
-        process.wait()
-        if process.returncode != 0:
-            tail = " | ".join(recent_output)
-            if "No module named" in tail and "demucs" in tail:
-                raise Exception("Demucs is not installed. Close Stems Studio and run Install.bat again to finish setup.")
-            raise Exception(f"Demucs failed (code {process.returncode}): {tail}")
+        returncode, tail = run_demucs(device_arg)
+        missing_demucs = "No module named" in tail and "demucs" in tail
+        if returncode != 0 and device_arg != "cpu" and not missing_demucs:
+            # The graphics card failed (out of memory, unsupported driver, ...). A slow
+            # result is better than no result, so try again on the CPU.
+            job["message"] = "The graphics card could not process this song. Retrying on the CPU (slower)..."
+            job["progress"] = 35
+            returncode, tail = run_demucs("cpu")
+            missing_demucs = "No module named" in tail and "demucs" in tail
+        if returncode != 0:
+            if missing_demucs:
+                raise Exception("Demucs is not installed. Close Stems Studio and run the installer "
+                                "again (Install.bat on Windows, Install.command on Mac/Linux).")
+            raise Exception(f"Demucs failed (code {returncode}): {tail}")
 
         # Step 3: Collect generated stems
         job["message"] = "Finalizing stem channels..."

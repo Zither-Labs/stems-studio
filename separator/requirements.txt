@@ -5,3 +5,5 @@ yt-dlp>=2024.0.0
 static-ffmpeg
 soundfile
 numpy
+# Intel Macs only get PyTorch 2.2, which does not work with NumPy 2.
+numpy<2; sys_platform == "darwin" and platform_machine == "x86_64"

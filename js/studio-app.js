@@ -415,7 +415,7 @@ document.addEventListener('DOMContentLoaded', () => {
         createStemsEngineNote.textContent = 'Ready. Still checking for your graphics card in the background...';
         recheckSoon = true;
       } else {
-        createStemsEngineNote.textContent = info.cuda_available
+        createStemsEngineNote.textContent = (info.cuda_available || info.device === 'mps')
           ? `Ready. Using your graphics card (${info.device_name}).`
           : 'Ready. Using your CPU, so a song can take several minutes.';
       }

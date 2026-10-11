@@ -123,7 +123,26 @@ Stems Studio is a local desktop app. It runs entirely on your computer and opens
 
 To get newer code later, run `git pull` in this folder yourself when you want it.
 
-### Mac / Linux / development
+### Mac: install once
+1. Install [Google Chrome](https://www.google.com/chrome/) if you do not have it (Edge also works; otherwise your default browser is used).
+2. Double-click **`Install.command`**. (If macOS refuses to open it, right-click it, choose **Open**, then confirm. If nothing happens, run `chmod +x Install.command` in Terminal once.) It builds a private Python 3.12 environment in this folder, installs PyTorch, installs the stem maker, and creates **Stems Studio.app** in `~/Applications`.
+3. Open **Stems Studio** from Launchpad or Spotlight. Drag it to the Dock if you like.
+
+On Apple Silicon Macs (M1 and newer) the stem maker uses the Mac's GPU (MPS). Intel Macs have no usable GPU path, so they use the CPU, which is slow. If the GPU ever fails on a song, the app retries on the CPU by itself.
+
+### Linux: install once
+Run `./Install.command` in a terminal. With an NVIDIA card it installs the CUDA build of PyTorch, otherwise the CPU build, and adds **Stems Studio** to your applications menu.
+
+### Which hardware does what
+| Machine | Speed |
+| :--- | :--- |
+| Windows or Linux with an NVIDIA card | Fast (CUDA) |
+| Mac with Apple Silicon (M1+) | Fast (MPS) |
+| Anything else (Intel Mac, AMD/Intel graphics, no GPU) | Works, but runs on the CPU and takes several minutes per song |
+
+To force a device, set the environment variable `STEMS_STUDIO_DEVICE` to `cpu`, `cuda` or `mps` before starting the app.
+
+### Development
 ```bash
 pip install -r separator/requirements.txt
 python app.py
