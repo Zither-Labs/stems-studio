@@ -110,6 +110,25 @@
         <div class="create-or">or paste a YouTube link</div>
         <input type="text" class="create-text-input" id="createStemsUrl" placeholder="https://www.youtube.com/watch?v=...">
 
+        <div class="create-options">
+          <div class="create-option-label">How many stems?</div>
+          <div class="create-choice-row" role="radiogroup" aria-label="Number of stems">
+            <label class="create-choice">
+              <input type="radio" name="createStemCount" value="4">
+              <span class="create-choice-body"><strong>4 stems</strong><small>Vocals, Drums, Bass, Other. Faster and cleanest.</small></span>
+            </label>
+            <label class="create-choice">
+              <input type="radio" name="createStemCount" value="6" checked>
+              <span class="create-choice-body"><strong>6 stems</strong><small>Also splits out Guitar and Piano.</small></span>
+            </label>
+          </div>
+          <label class="create-folk-toggle">
+            <input type="checkbox" id="createFolkNames">
+            <span>This is Nepali folk music. Use folk instrument names (Madal, Sarangi, Harmonium...).</span>
+          </label>
+          <p class="create-option-hint">Stems with nothing in them are hidden automatically. The app sorts sounds into groups; it cannot tell a madal from a drum kit, so folk names are only used when you tick the box.</p>
+        </div>
+
         <p class="create-engine-note" id="createStemsEngineNote">Checking the stem maker...</p>
       </div>
 

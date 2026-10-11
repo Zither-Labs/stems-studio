@@ -143,7 +143,7 @@ def row_to_summary(row):
         "model": row["model"],
         "preset": row["preset"],
         "created_at": row["created_at"],
-        "stem_count": len(stems),
+        "stem_count": sum(1 for s in stems if not s.get("empty")),
         "size_bytes": row["size_bytes"],
     }
 
@@ -244,10 +244,74 @@ STANDARD_6S_STEM_MAP = {
 
 STANDARD_4S_STEM_MAP = {
     "vocals": {"name": "Vocals", "type": "vocal", "desc": "Vocals"},
-    "drums": {"name": "Drums", "type": "drums", "desc": "Drums & Percussion"},
+    "drums": {"name": "Drums", "type": "drums", "desc": "Drums"},
     "bass": {"name": "Bass", "type": "bass", "desc": "Bassline"},
-    "other": {"name": "Instruments", "type": "other", "desc": "Accompaniment & Lead"}
+    "other": {"name": "Other", "type": "other", "desc": "Everything else: guitars, keys, strings, synths"}
 }
+
+# Folk names are only used when the user says the song is Nepali folk music: the model
+# sorts sounds into groups, it cannot tell a madal from a drum kit by itself.
+NEPALI_FOLK_4S_STEM_MAP = {
+    "vocals": {"name": "Vocals / \u0938\u094d\u0935\u0930", "type": "vocal", "desc": "Lead Vocals & Chorus"},
+    "drums": {"name": "Madal & Drums / \u092e\u093e\u0926\u0932", "type": "drums", "desc": "Madal, Tabla, Dholak, Drums"},
+    "bass": {"name": "Bass / \u092c\u093e\u0938", "type": "bass", "desc": "Sub Bass & Low Frequencies"},
+    "other": {"name": "Sarangi, Bansuri & Others", "type": "other", "desc": "Folk Fiddle, Flute, Harmonium, Plucked Strings"}
+}
+
+STEM_ORDER = ["vocals", "drums", "bass", "guitar", "piano", "other"]
+
+VALID_MODELS = ("htdemucs", "htdemucs_6s")
+VALID_PRESETS = ("standard", "nepali_folk")
+
+
+def clean_choices(model, preset):
+    """Only accept known model / naming choices; anything else falls back to the defaults."""
+    if model not in VALID_MODELS:
+        model = "htdemucs_6s"
+    if preset not in VALID_PRESETS:
+        preset = "standard"
+    return model, preset
+
+
+# A stem counts as "nothing in it" when it is practically silent, or carries under 1% of the
+# energy of all the stems together (about 20 dB quieter). Such stems are hidden in the mixer
+# but kept on disk, so they can still be shown.
+EMPTY_STEM_ABS_DB = -50.0
+EMPTY_STEM_SHARE = 0.01
+
+
+def find_empty_stems(stems_dir, stem_files):
+    """Return the set of stem file names that have (almost) nothing in them."""
+    try:
+        import numpy as np
+        import soundfile as sf
+
+        energy = {}
+        loudness_db = {}
+        for name in stem_files:
+            total = 0.0
+            count = 0
+            with sf.SoundFile(os.path.join(stems_dir, name)) as audio:
+                for block in audio.blocks(blocksize=1 << 18, dtype="float32"):
+                    total += float(np.sum(np.square(block, dtype=np.float64)))
+                    count += block.size
+            energy[name] = total
+            rms = (total / count) ** 0.5 if count else 0.0
+            loudness_db[name] = 20 * np.log10(rms + 1e-12)
+
+        everything = sum(energy.values())
+        if everything <= 0:
+            return set()
+        empty = {
+            name for name in stem_files
+            if loudness_db[name] < EMPTY_STEM_ABS_DB or energy[name] / everything < EMPTY_STEM_SHARE
+        }
+        # Never hide so much that almost nothing is left.
+        keep = sorted(stem_files, key=lambda n: energy[n], reverse=True)[:2]
+        return empty - set(keep)
+    except Exception:
+        traceback.print_exc()
+        return set()
 
 
 _device_info_cache = None
@@ -450,14 +514,19 @@ def run_separation_job(job_id, source_type, source_val, model="htdemucs_6s", pre
 
         # Pick mapping dictionary
         if preset == "nepali_folk":
-            mapping = NEPALI_FOLK_STEM_MAP
+            mapping = NEPALI_FOLK_STEM_MAP if model == "htdemucs_6s" else NEPALI_FOLK_4S_STEM_MAP
         elif model == "htdemucs_6s":
             mapping = STANDARD_6S_STEM_MAP
         else:
             mapping = STANDARD_4S_STEM_MAP
 
+        empty_files = find_empty_stems(stems_source_dir, stem_files)
+
         stems_result = []
-        for sf in sorted(stem_files):
+        # Vocals first (the stem most people care about), then the rest in a fixed order.
+        for sf in sorted(stem_files, key=lambda f: (STEM_ORDER.index(os.path.splitext(f)[0].lower())
+                                                    if os.path.splitext(f)[0].lower() in STEM_ORDER
+                                                    else len(STEM_ORDER), f)):
             stem_key = os.path.splitext(sf)[0].lower()
             meta = mapping.get(stem_key, {
                 "name": stem_key.capitalize(),
@@ -474,6 +543,7 @@ def run_separation_job(job_id, source_type, source_val, model="htdemucs_6s", pre
                 "name": meta["name"],
                 "stemType": meta["type"],
                 "desc": meta["desc"],
+                "empty": sf in empty_files,
                 "url": f"/api/stems/{job_id}/{sf}"
             })
 
@@ -633,8 +703,7 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
                 data = json.loads(body)
 
                 youtube_url = data.get("youtube_url", "").strip()
-                model = data.get("model", "htdemucs_6s")
-                preset = data.get("preset", "nepali_folk")
+                model, preset = clean_choices(data.get("model"), data.get("preset"))
 
                 if not youtube_url:
                     self.send_response(400)
@@ -677,7 +746,7 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
                 msg = email.parser.BytesParser().parsebytes(header_bytes + body_bytes)
 
                 model = "htdemucs_6s"
-                preset = "nepali_folk"
+                preset = "standard"
                 file_bytes = None
                 file_name = "uploaded_audio.wav"
 
@@ -693,6 +762,8 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
                             if fname:
                                 file_name = fname
                             file_bytes = part.get_payload(decode=True)
+
+                model, preset = clean_choices(model, preset)
 
                 if not file_bytes:
                     self.send_response(400)

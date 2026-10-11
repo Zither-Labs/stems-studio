@@ -36,10 +36,11 @@ The bar at the top of the screen has four buttons.
 ### ✨ Create Stems (split a song)
 1. Click **"✨ Create Stems"**.
 2. Choose a song file (MP3 / WAV / FLAC / M4A), or paste a YouTube link.
-3. Click **"✨ Create Stems"** in the window. A progress bar shows how it is going.
-4. When it finishes, the stems load into the mixer by themselves.
+3. Choose **4 stems** (Vocals, Drums, Bass, Other: faster and cleanest) or **6 stems** (also splits out Guitar and Piano). Tick **Nepali folk music** only if the song is folk: that switches the lane names to Madal, Sarangi, Harmonium and so on. The model sorts sounds into groups and cannot tell a madal from a drum kit, so standard names (Vocals, Drums, Bass, Guitar, Piano, Other) are used unless you tick the box. Your choices are remembered.
+4. Click **"✨ Create Stems"** in the window. A progress bar shows how it is going.
+5. When it finishes, the stems load into the mixer by themselves, with **Vocals on top**. Stems that have nothing in them (for example Piano in a song with no piano) are hidden, and a note under the mixer lets you show them anyway.
 
-This uses the 6-stem Nepali folk model (`htdemucs_6s`). The app starts the engine for you; the window tells you if it cannot reach it.
+The app starts the engine for you; the window tells you if it cannot reach it.
 
 ### 📚 My Library (never split the same song twice)
 Every song you create is saved automatically in a small database on your computer (`library.db` in the data folder described below, with the stem files beside it). Click **"📚 My Library"** to see them all, open one instantly, or delete the ones you no longer need.

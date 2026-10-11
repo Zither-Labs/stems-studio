@@ -61,14 +61,15 @@ document.addEventListener('DOMContentLoaded', () => {
   const sessionFileInput = document.getElementById('sessionFileInput');
 
 
-  // Default 6-Stem Nepali Folk Definition
-  const nepaliFolkTrackDefs = [
-    { id: 'vocal', name: 'Vocals / स्वर', stemType: 'vocal' },
-    { id: 'drums', name: 'Madal & Percussion / मादल', stemType: 'drums' },
-    { id: 'other', name: 'Sarangi & Bansuri / सारङ्गी-बाँसुरी', stemType: 'other' },
-    { id: 'piano', name: 'Harmonium & Keys / हार्मोनियम', stemType: 'piano' },
-    { id: 'guitar', name: 'Acoustic Pluck / टुङ्ना-गितार', stemType: 'guitar' },
-    { id: 'bass', name: 'Bass & Low-End / बास', stemType: 'bass' }
+  // Starting lanes, shown empty until a song is loaded. Neutral names: the app does not
+  // assume any particular style of music.
+  const defaultTrackDefs = [
+    { id: 'vocal', name: 'Vocals', stemType: 'vocal' },
+    { id: 'drums', name: 'Drums', stemType: 'drums' },
+    { id: 'bass', name: 'Bass', stemType: 'bass' },
+    { id: 'guitar', name: 'Guitar', stemType: 'guitar' },
+    { id: 'piano', name: 'Piano', stemType: 'piano' },
+    { id: 'other', name: 'Other', stemType: 'other' }
   ];
 
   // Initialize track models in audio engine
@@ -80,7 +81,7 @@ document.addEventListener('DOMContentLoaded', () => {
     renderAllTrackCards();
   }
 
-  initializeTrackModels(nepaliFolkTrackDefs);
+  initializeTrackModels(defaultTrackDefs);
 
   // Render Track DOM Cards
   function renderAllTrackCards() {
@@ -292,6 +293,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const demoStems = await DemoStemGenerator.generateDemoStems(engine.ctx, is6Stems);
 
       engine.tracks.clear();
+      renderHiddenStemsBar([], false);
 
       if (is6Stems) {
         engine.addTrack('vocal', 'Vocals / स्वर', 'vocal', demoStems.vocal);
@@ -489,13 +491,54 @@ document.addEventListener('DOMContentLoaded', () => {
     return null;
   }
 
-  async function loadSeparatedStems(stems) {
+  let currentSongStems = [];
+
+  // Shows which stems were left out because nothing was found in them, with a switch.
+  function renderHiddenStemsBar(hidden, showingAll) {
+    let bar = document.getElementById('hiddenStemsBar');
+    if (!hidden.length) {
+      if (bar) bar.remove();
+      return;
+    }
+    if (!bar) {
+      bar = document.createElement('div');
+      bar.id = 'hiddenStemsBar';
+      bar.className = 'hidden-stems-bar';
+      tracksRack.insertAdjacentElement('afterend', bar);
+    }
+    bar.innerHTML = '';
+    const text = document.createElement('span');
+    const names = hidden.map(h => h.name).join(', ');
+    text.textContent = showingAll
+      ? `Showing everything, including stems with nothing in them (${names}).`
+      : `Hidden because nothing was found in them: ${names}.`;
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'preset-chip';
+    toggle.textContent = showingAll ? 'Hide empty stems' : 'Show anyway';
+    toggle.addEventListener('click', () => loadSeparatedStems(currentSongStems, !showingAll));
+    bar.append(text, toggle);
+  }
+
+  async function loadSeparatedStems(stems, showEmpty = false) {
+    currentSongStems = stems;
+    // Vocals always sit at the top of the mixer, then the rest in a fixed order. This also
+    // fixes songs saved in the library earlier, which were stored alphabetically.
+    const laneOrder = ['vocal', 'drums', 'bass', 'guitar', 'piano', 'other'];
+    const laneRank = stem => {
+      const rank = laneOrder.indexOf(stem.stemType);
+      return rank === -1 ? laneOrder.length : rank;
+    };
+    const ordered = [...stems].sort((a, b) => laneRank(a) - laneRank(b));
+    const shown = showEmpty ? ordered : ordered.filter(stem => !stem.empty);
+    const hidden = ordered.filter(stem => stem.empty);
+
     await engine.resume();
     engine.pause();
     engine.seek(0);
     engine.tracks.clear();
 
-    for (const stem of stems) {
+    for (const stem of shown) {
       const audioResp = await fetch(stem.url);
       const decoded = await engine.ctx.decodeAudioData(await audioResp.arrayBuffer());
       // Karaoke, Acapella, Analyze and Compare look tracks up by type (e.g. "vocal").
@@ -504,9 +547,43 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     renderAllTrackCards();
+    renderHiddenStemsBar(hidden, showEmpty);
     document.querySelectorAll('.track-empty-state').forEach(el => { el.style.display = 'none'; });
     redrawAllWaveforms();
   }
+
+  // The choices made in the Create Stems dialog are remembered between sessions.
+  const CREATE_OPTIONS_KEY = 'stemsStudio.createOptions';
+
+  function getCreateOptions() {
+    const checked = document.querySelector('input[name="createStemCount"]:checked');
+    const folk = document.getElementById('createFolkNames');
+    return {
+      model: checked && checked.value === '4' ? 'htdemucs' : 'htdemucs_6s',
+      preset: folk && folk.checked ? 'nepali_folk' : 'standard'
+    };
+  }
+
+  function restoreCreateOptions() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(CREATE_OPTIONS_KEY) || '{}');
+      const radio = document.querySelector(`input[name="createStemCount"][value="${saved.stems === 4 ? '4' : '6'}"]`);
+      if (radio) radio.checked = true;
+      const folk = document.getElementById('createFolkNames');
+      if (folk) folk.checked = saved.folk === true;
+    } catch (err) { /* private mode or corrupt value: keep the defaults */ }
+  }
+
+  function saveCreateOptions() {
+    const { model, preset } = getCreateOptions();
+    try {
+      localStorage.setItem(CREATE_OPTIONS_KEY, JSON.stringify({ stems: model === 'htdemucs' ? 4 : 6, folk: preset === 'nepali_folk' }));
+    } catch (err) { /* ignore */ }
+  }
+
+  restoreCreateOptions();
+  document.querySelectorAll('input[name="createStemCount"], #createFolkNames')
+    .forEach(el => el.addEventListener('change', saveCreateOptions));
 
   async function startCreateStems() {
     const url = createStemsUrl.value.trim();
@@ -515,6 +592,7 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
+    const options = getCreateOptions();
     createBusy = true;
     const runId = ++createRunId;
     refreshCreateButton();
@@ -526,14 +604,14 @@ document.addEventListener('DOMContentLoaded', () => {
       if (createFileChoice) {
         const formData = new FormData();
         formData.append('file', createFileChoice);
-        formData.append('model', 'htdemucs_6s');
-        formData.append('preset', 'nepali_folk');
+        formData.append('model', options.model);
+        formData.append('preset', options.preset);
         resp = await fetch('/api/separate', { method: 'POST', body: formData });
       } else {
         resp = await fetch('/api/separate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ youtube_url: url, model: 'htdemucs_6s', preset: 'nepali_folk' })
+          body: JSON.stringify({ youtube_url: url, model: options.model, preset: options.preset })
         });
       }
       if (!resp.ok) throw new Error(`The stem maker refused the request (${resp.status}).`);
@@ -866,7 +944,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     engine.updateMuteSoloStates();
     syncMuteSoloButtons();
-    showToast('Rhythm: Solo Madal, Drums & Bass (मादल र ताल मात्र)', 'success');
+    showToast('Rhythm: Solo Drums & Bass', 'success');
   });
 
   btnPresetReset.addEventListener('click', () => {
