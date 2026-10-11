@@ -118,7 +118,7 @@ The Vocal Training Studio helps you learn to sing songs by:
 Stems Studio is a local desktop app. It runs entirely on your computer and opens in its own window (Chrome or Edge, with no tabs or address bar). GitHub is only used to keep a backup of the code and its history; the app never updates itself.
 
 ### Windows: install once
-1. Double-click **`Install.bat`**. It sets up the stem maker (several minutes the first time; it uses your NVIDIA graphics card if it finds one) and puts a **Stems Studio** shortcut on your Desktop and in the Start menu. It is safe to run again whenever something needs repairing.
+1. Double-click **`Install.bat`**. It builds a private Python 3.12 environment in this folder (`.venv`, ignored by git), installs the GPU (CUDA) build of PyTorch when it finds an NVIDIA graphics card, installs the stem maker (several minutes the first time), and puts a **Stems Studio** shortcut on your Desktop and in the Start menu. It ends by printing which GPU the app will use. It is safe to run again whenever something needs repairing.
 2. From then on, just open **Stems Studio** from the shortcut. Closing its window quits the app.
 
 To get newer code later, run `git pull` in this folder yourself when you want it.

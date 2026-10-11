@@ -20,3 +20,9 @@ output/
 
 # Stems created by the app (large audio files)
 separated_output/
+
+# Never commit songs or stems
+*.wav
+*.flac
+*.mp3
+*.m4a

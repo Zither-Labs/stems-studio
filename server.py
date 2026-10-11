@@ -465,7 +465,6 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
     def send_json(self, payload, code=200):
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
-        self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
         self.wfile.write(json.dumps(payload).encode("utf-8"))
 
@@ -542,7 +541,6 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
 
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
-            self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
 
             if job:
@@ -562,7 +560,6 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
                     self.send_response(200)
                     self.send_header("Content-Type", "audio/wav")
                     self.send_header("Content-Length", str(os.path.getsize(file_path)))
-                    self.send_header("Access-Control-Allow-Origin", "*")
                     self.end_headers()
                     with open(file_path, "rb") as f:
                         shutil.copyfileobj(f, self.wfile)
@@ -625,7 +622,6 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
 
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
-                self.send_header("Access-Control-Allow-Origin", "*")
                 self.end_headers()
                 self.wfile.write(json.dumps({"job_id": job_id}).encode("utf-8"))
                 return
@@ -697,7 +693,6 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
 
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
-                self.send_header("Access-Control-Allow-Origin", "*")
                 self.end_headers()
                 self.wfile.write(json.dumps({"job_id": job_id}).encode("utf-8"))
                 return
@@ -717,9 +712,6 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
 
     def do_OPTIONS(self):
         self.send_response(204)
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.end_headers()
 
 
