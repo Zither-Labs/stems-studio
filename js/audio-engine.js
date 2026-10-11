@@ -236,7 +236,11 @@ class AudioEngine {
 
   pause() {
     if (!this.isPlaying) return;
-    this.currentPosition = this.getCurrentTime();
+    this.haltPlayback(this.getCurrentTime());
+  }
+
+  haltPlayback(position) {
+    this.currentPosition = position;
     this.isPlaying = false;
 
     for (const track of this.tracks.values()) {
@@ -285,8 +289,8 @@ class AudioEngine {
         pos = this.loopStart + ((pos - this.loopStart) % loopLen);
       }
     } else if (pos >= this.totalDuration && this.totalDuration > 0) {
-      this.pause();
-      pos = this.totalDuration;
+      this.haltPlayback(this.totalDuration);
+      return this.totalDuration;
     }
 
     return pos;
