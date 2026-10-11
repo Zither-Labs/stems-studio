@@ -368,18 +368,38 @@ document.addEventListener('DOMContentLoaded', () => {
       return `The stem maker hit a problem (error ${resp.status})${detail ? `: ${detail}` : ''}. ${RESTART_HINT}`;
     }
     console.error(err);
+    if (err && err.name === 'AbortError') {
+      return `The stem maker is not answering. If it only just started, wait a few seconds and try again. Otherwise: ${RESTART_HINT}`;
+    }
     return `Cannot reach the stem maker at ${window.location.host}. ${RESTART_HINT}`;
   }
 
-  async function checkStemMaker() {
-    stemMakerReady = false;
-    refreshCreateButton();
-    createStemsEngineNote.className = 'create-engine-note';
-    createStemsEngineNote.textContent = 'Checking the stem maker...';
+  // Never leave the page waiting forever on a server that is not answering.
+  async function fetchWithTimeout(url, options = {}, timeoutMs = 8000) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(url, { ...options, signal: controller.signal });
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  let stemMakerCheckId = 0;
+
+  async function checkStemMaker(quiet = false) {
+    const checkId = ++stemMakerCheckId;
+    if (!quiet) {
+      stemMakerReady = false;
+      refreshCreateButton();
+      createStemsEngineNote.className = 'create-engine-note';
+      createStemsEngineNote.textContent = 'Checking the stem maker...';
+    }
+    let recheckSoon = false;
     try {
       let resp;
       try {
-        resp = await fetch('/api/engine');
+        resp = await fetchWithTimeout('/api/engine');
       } catch (err) {
         throw new Error(await explainServerProblem(null, err));
       }
@@ -388,15 +408,31 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!info.library) {
         throw new Error(await explainServerProblem({ status: 404, json: async () => ({}) }));
       }
+      if (checkId !== stemMakerCheckId) return;
       stemMakerReady = true;
-      createStemsEngineNote.textContent = info.cuda_available
-        ? `Ready. Using your graphics card (${info.device_name}).`
-        : 'Ready. Using your CPU, so a song can take several minutes.';
+      if (info.pending) {
+        // The server is still loading its AI engine; you can already start.
+        createStemsEngineNote.textContent = 'Ready. Still checking for your graphics card in the background...';
+        recheckSoon = true;
+      } else {
+        createStemsEngineNote.textContent = info.cuda_available
+          ? `Ready. Using your graphics card (${info.device_name}).`
+          : 'Ready. Using your CPU, so a song can take several minutes.';
+      }
     } catch (err) {
+      if (checkId !== stemMakerCheckId) return;
+      stemMakerReady = false;
       createStemsEngineNote.className = 'create-engine-note warn';
       createStemsEngineNote.textContent = err.message;
     }
     refreshCreateButton();
+    if (recheckSoon) {
+      setTimeout(() => {
+        if (checkId === stemMakerCheckId && createStemsModal.classList.contains('open')) {
+          checkStemMaker(true);
+        }
+      }, 2000);
+    }
   }
 
   function resetCreateDialog() {
@@ -609,7 +645,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let resp = null;
     try {
       try {
-        resp = await fetch('/api/library');
+        resp = await fetchWithTimeout('/api/library');
       } catch (err) {
         throw new Error(await explainServerProblem(null, err));
       }

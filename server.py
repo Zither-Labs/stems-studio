@@ -207,7 +207,11 @@ STANDARD_4S_STEM_MAP = {
 }
 
 
-def get_device_info():
+_device_info_cache = None
+_device_info_lock = threading.Lock()
+
+
+def _detect_device_info():
     try:
         import torch
         if torch.cuda.is_available():
@@ -229,6 +233,24 @@ def get_device_info():
         "cuda_available": False,
         "cuda_version": None
     }
+
+
+def get_device_info():
+    """Detect the compute device once. Importing PyTorch is slow, so the result is cached."""
+    global _device_info_cache
+    with _device_info_lock:
+        if _device_info_cache is None:
+            _device_info_cache = _detect_device_info()
+        return _device_info_cache
+
+
+def peek_device_info():
+    """Return the cached device info without waiting, or None while detection is still running."""
+    return _device_info_cache
+
+
+def warm_up_device_info():
+    threading.Thread(target=get_device_info, daemon=True).start()
 
 
 def run_separation_job(job_id, source_type, source_val, model="htdemucs_6s", preset="nepali_folk",
@@ -440,8 +462,10 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
             return
 
         elif parsed.path == "/api/engine":
-            dev_info = dict(get_device_info(), library=True)
-            self.send_json(dev_info)
+            dev_info = peek_device_info()
+            if dev_info is None:
+                dev_info = {"device": "unknown", "device_name": "", "cuda_available": False, "pending": True}
+            self.send_json(dict(dev_info, library=True))
             return
 
         elif parsed.path == "/api/status":
@@ -631,6 +655,7 @@ class ThreadedServer(socketserver.ThreadingTCPServer):
 
 
 def start_server():
+    warm_up_device_info()
     server = ThreadedServer(("127.0.0.1", PORT), StudioRequestHandler)
     print(f"Stems Studio Server running at http://localhost:{PORT}")
     server.serve_forever()
