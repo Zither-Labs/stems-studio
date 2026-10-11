@@ -27,35 +27,25 @@ Most stem tools only offer 4 generic channels (*Vocals, Drums, Bass, Other*). Fo
 - 🎸 **Acoustic Pluck / टुङ्ना-गितार:** Tungna, Sarod, acoustic rhythm guitar
 - 🔊 **Bass & Low-End / बास:** Acoustic sub-bass and low frequencies
 
-You can also switch anytime between:
-- **6 Stems: Nepali Folk & Acoustic** (Madal, Sarangi, Flute, Harmonium, Pluck, Bass)
-- **6 Stems: Standard** (Vocals, Drums, Bass, Guitar, Piano, Other)
-- **4 Stems: Studio** (Vocals, Drums, Bass, Other)
-
 ---
 
 ## 🚀 How to Feed Audio into Stems Studio
 
-The app has a prominent intake bar right at the top of the screen:
+The bar at the top of the screen has three buttons.
 
-### Option 1: Paste a YouTube Link 🎬
-1. Paste any YouTube song link (e.g. `https://www.youtube.com/watch?v=...`).
-2. Select your Stem Profile (**6 Stems Nepali Folk**, **6 Stems Standard**, or **4 Stems**).
-3. Click **"✨ Separate Stems & Load Mixer"**.
-4. The server downloads the audio, runs neural separation, and automatically loads all stems into the multi-track studio!
+### ✨ Create Stems (split a song)
+1. Click **"✨ Create Stems"**.
+2. Choose a song file (MP3 / WAV / FLAC / M4A), or paste a YouTube link.
+3. Click **"✨ Create Stems"** in the window. A progress bar shows how it is going.
+4. When it finishes, the stems load into the mixer by themselves.
 
-### Option 2: Upload Your Own Song File (FLAC / MP3 / WAV) 📁
-1. Click the **"Upload File"** tab.
-2. Drag and drop or browse any song file (`.flac`, `.mp3`, `.wav`, `.m4a`).
-3. Click **"✨ Separate Stems & Load Mixer"**.
+This uses the 6-stem Nepali folk model (`htdemucs_6s`). It needs `server.py` to be running (see below); the window tells you if it is not.
 
-### Option 3: Drop Pre-Separated Stems 🎛️
-1. Click **"Import Stems"** or drag multiple stem files into the window.
-2. The studio automatically matches filenames matching "vocal", "madal", "drum", "bass", "guitar", "harmonium", "sarangi" to their track lanes!
+### 📁 Import Stems
+Click **"Import Stems"** or drag several stem files into the window. File names containing "vocal", "madal", "drum", "bass", "guitar", "harmonium" or "sarangi" are matched to the right track.
 
-### Option 4: 1-Click Built-in Demo 🎵
-1. Click **"Load 6-Stem Folk Demo"** or **"Load Studio Demo"**.
-2. Immediately synthesizes 6 synchronized stems in your browser with zero download needed so you can explore all features right away!
+### ▶ Demo
+Synthesizes 6 stems in your browser so you can try everything without any download.
 
 ---
 
@@ -125,10 +115,13 @@ Double-click:
 ```bat
 Run-Stems-Studio.bat
 ```
-This automatically starts the local server and opens **http://localhost:8099** in your browser!
+The first time, it installs the stem maker into a private `.venv` folder (several minutes; it uses your NVIDIA graphics card if it finds one). After that it just starts the local server and opens **http://localhost:8099** in your browser. Keep the black window open while you use the app.
+
+> Do not start the app with `python -m http.server`. That only shows the page; **Create Stems** needs `server.py`.
 
 ### Command Line
 ```bash
+pip install -r separator/requirements.txt
 python server.py
 ```
 Open [http://localhost:8099](http://localhost:8099).

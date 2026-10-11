@@ -285,7 +285,6 @@ document.addEventListener('DOMContentLoaded', () => {
   // =========================================================================
   async function loadDemoStems(is6Stems = true) {
     showToast(`Synthesizing ${is6Stems ? '6-Stem Nepali Folk' : '4-Stem'} demo audio...`, 'info');
-    btnLoad6StemDemo.disabled = true;
     btnLoadDemo.disabled = true;
 
     try {
@@ -316,7 +315,6 @@ document.addEventListener('DOMContentLoaded', () => {
       console.error(err);
       showToast('Error generating demo stems: ' + err.message, 'error');
     } finally {
-      btnLoad6StemDemo.disabled = false;
       btnLoadDemo.disabled = false;
     }
   }
@@ -324,6 +322,212 @@ document.addEventListener('DOMContentLoaded', () => {
   if (btnLoadDemo) {
     btnLoadDemo.addEventListener('click', () => loadDemoStems(true));
   }
+
+  // =========================================================================
+  // Create Stems (talks to server.py, which runs Demucs)
+  // =========================================================================
+  const btnCreateStems = document.getElementById('btnCreateStems');
+  const createStemsModal = document.getElementById('createStemsModal');
+  const createStemsClose = document.getElementById('createStemsClose');
+  const createStemsCancel = document.getElementById('createStemsCancel');
+  const createStemsGo = document.getElementById('createStemsGo');
+  const createStemsForm = document.getElementById('createStemsForm');
+  const createStemsDrop = document.getElementById('createStemsDrop');
+  const createStemsFile = document.getElementById('createStemsFile');
+  const createStemsFileName = document.getElementById('createStemsFileName');
+  const createStemsUrl = document.getElementById('createStemsUrl');
+  const createStemsEngineNote = document.getElementById('createStemsEngineNote');
+  const createStemsProgress = document.getElementById('createStemsProgress');
+  const createStemsMessage = document.getElementById('createStemsMessage');
+  const createStemsPercent = document.getElementById('createStemsPercent');
+  const createStemsFill = document.getElementById('createStemsFill');
+
+  const CREATE_DEFAULT_LABEL = 'Click to choose a song, or drop it here';
+  let createFileChoice = null;
+  let createBusy = false;
+  let stemMakerReady = false;
+  let createRunId = 0;
+
+  function refreshCreateButton() {
+    createStemsGo.disabled = createBusy || !stemMakerReady;
+  }
+
+  async function checkStemMaker() {
+    stemMakerReady = false;
+    refreshCreateButton();
+    createStemsEngineNote.className = 'create-engine-note';
+    createStemsEngineNote.textContent = 'Checking the stem maker...';
+    try {
+      const resp = await fetch('/api/engine');
+      if (!resp.ok) throw new Error('not running');
+      const info = await resp.json();
+      stemMakerReady = true;
+      createStemsEngineNote.textContent = info.cuda_available
+        ? `Ready. Using your graphics card (${info.device_name}).`
+        : 'Ready. Using your CPU, so a song can take several minutes.';
+    } catch (err) {
+      createStemsEngineNote.className = 'create-engine-note warn';
+      createStemsEngineNote.textContent =
+        'The stem maker is not running. Close this app and start it again from the "Stems Studio" shortcut.';
+    }
+    refreshCreateButton();
+  }
+
+  function resetCreateDialog() {
+    createFileChoice = null;
+    createStemsFile.value = '';
+    createStemsFileName.textContent = CREATE_DEFAULT_LABEL;
+    createStemsUrl.value = '';
+    createStemsForm.style.display = '';
+    createStemsProgress.style.display = 'none';
+    createStemsFill.style.background = '';
+    createStemsFill.style.width = '0%';
+    createStemsPercent.textContent = '0%';
+  }
+
+  function openCreateDialog() {
+    if (!createBusy) resetCreateDialog();
+    createStemsModal.classList.add('open');
+    checkStemMaker();
+  }
+
+  function closeCreateDialog() {
+    createStemsModal.classList.remove('open');
+  }
+
+  function chooseCreateFile(file) {
+    if (!file) return;
+    createFileChoice = file;
+    createStemsFileName.textContent = `${file.name} (${(file.size / (1024 * 1024)).toFixed(1)} MB)`;
+    createStemsUrl.value = '';
+  }
+
+  function setCreateProgress(percent, message, isError = false) {
+    createStemsProgress.style.display = 'block';
+    createStemsFill.style.width = `${percent}%`;
+    createStemsFill.style.background = isError ? '#ef4444' : '';
+    createStemsPercent.textContent = isError ? '' : `${percent}%`;
+    createStemsMessage.textContent = message;
+  }
+
+  async function pollSeparation(jobId, runId) {
+    while (runId === createRunId) {
+      await new Promise(resolve => setTimeout(resolve, 900));
+      if (runId !== createRunId) return null;
+
+      const resp = await fetch(`/api/status?job_id=${encodeURIComponent(jobId)}`);
+      const job = await resp.json();
+
+      if (job.status === 'completed') return job;
+      if (job.status === 'error') throw new Error(job.error || 'Separation failed.');
+      if (job.status === 'not_found') throw new Error('The stem maker restarted. Please try again.');
+      setCreateProgress(job.progress || 0, job.message || 'Working...');
+    }
+    return null;
+  }
+
+  async function loadSeparatedStems(stems) {
+    await engine.resume();
+    engine.pause();
+    engine.seek(0);
+    engine.tracks.clear();
+
+    for (const stem of stems) {
+      const audioResp = await fetch(stem.url);
+      const decoded = await engine.ctx.decodeAudioData(await audioResp.arrayBuffer());
+      // Karaoke, Acapella, Analyze and Compare look tracks up by type (e.g. "vocal").
+      const trackId = stem.stemType && stem.stemType !== 'custom' ? stem.stemType : stem.id;
+      engine.addTrack(trackId, stem.name, stem.stemType, decoded);
+    }
+
+    renderAllTrackCards();
+    document.querySelectorAll('.track-empty-state').forEach(el => { el.style.display = 'none'; });
+    redrawAllWaveforms();
+  }
+
+  async function startCreateStems() {
+    const url = createStemsUrl.value.trim();
+    if (!createFileChoice && !url) {
+      showToast('Choose a song file or paste a YouTube link first.', 'error');
+      return;
+    }
+
+    createBusy = true;
+    const runId = ++createRunId;
+    refreshCreateButton();
+    createStemsForm.style.display = 'none';
+    setCreateProgress(3, 'Sending your song to the stem maker...');
+
+    try {
+      let resp;
+      if (createFileChoice) {
+        const formData = new FormData();
+        formData.append('file', createFileChoice);
+        formData.append('model', 'htdemucs_6s');
+        formData.append('preset', 'nepali_folk');
+        resp = await fetch('/api/separate', { method: 'POST', body: formData });
+      } else {
+        resp = await fetch('/api/separate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ youtube_url: url, model: 'htdemucs_6s', preset: 'nepali_folk' })
+        });
+      }
+      if (!resp.ok) throw new Error(`The stem maker refused the request (${resp.status}).`);
+
+      const { job_id: jobId } = await resp.json();
+      const job = await pollSeparation(jobId, runId);
+      if (!job) return;
+
+      setCreateProgress(97, 'Loading the stems into the mixer...');
+      await loadSeparatedStems(job.stems);
+
+      closeCreateDialog();
+      resetCreateDialog();
+      showToast('Stems ready! Press Space to play.', 'success');
+    } catch (err) {
+      console.error(err);
+      createStemsForm.style.display = '';
+      setCreateProgress(100, err.message, true);
+      showToast(`Could not create stems: ${err.message}`, 'error');
+    } finally {
+      if (runId === createRunId) createBusy = false;
+      refreshCreateButton();
+    }
+  }
+
+  btnCreateStems.addEventListener('click', openCreateDialog);
+  createStemsClose.addEventListener('click', closeCreateDialog);
+  createStemsCancel.addEventListener('click', () => {
+    if (createBusy) createRunId++;
+    createBusy = false;
+    closeCreateDialog();
+    resetCreateDialog();
+    refreshCreateButton();
+  });
+  createStemsModal.addEventListener('click', (e) => {
+    if (e.target === createStemsModal) closeCreateDialog();
+  });
+  createStemsGo.addEventListener('click', startCreateStems);
+  createStemsDrop.addEventListener('click', () => createStemsFile.click());
+  createStemsFile.addEventListener('change', (e) => chooseCreateFile(e.target.files[0]));
+  createStemsDrop.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    createStemsDrop.classList.add('drag-over');
+  });
+  createStemsDrop.addEventListener('dragleave', () => createStemsDrop.classList.remove('drag-over'));
+  createStemsDrop.addEventListener('drop', (e) => {
+    e.preventDefault();
+    createStemsDrop.classList.remove('drag-over');
+    chooseCreateFile(e.dataTransfer.files[0]);
+  });
+  createStemsUrl.addEventListener('input', () => {
+    if (createStemsUrl.value.trim()) {
+      createFileChoice = null;
+      createStemsFile.value = '';
+      createStemsFileName.textContent = CREATE_DEFAULT_LABEL;
+    }
+  });
 
   // =========================================================================
   // Transport & Playback Controls
@@ -565,8 +769,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const sessionData = {
       version: 2,
       timestamp: Date.now(),
-      model: currentModel,
-      preset: currentPreset,
       playbackRate: engine.playbackRate,
       pitchSemitones: engine.pitchSemitones,
       loop: {
@@ -656,6 +858,7 @@ document.addEventListener('DOMContentLoaded', () => {
       btnPresetKaraoke.click();
     } else if (e.code === 'Escape') {
       dropzoneModal.classList.remove('open');
+      createStemsModal.classList.remove('open');
     }
   });
 
@@ -738,19 +941,19 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       
       btnSetupMic.disabled = true;
-      micSetupText.textContent = 'Requesting access...';
+      micSetupText.textContent = '...';
       
       const result = await engine.requestMicrophoneAccess();
       
       if (result.success) {
         microphoneReady = true;
         btnSetupMic.classList.add('active');
-        micSetupText.textContent = 'Microphone Ready';
+        micSetupText.textContent = 'Mic on';
         btnRecord.disabled = false;
         showToast('Microphone connected! Ready to record.', 'success');
       } else {
         btnSetupMic.disabled = false;
-        micSetupText.textContent = 'Setup Microphone';
+        micSetupText.textContent = 'Mic';
         showToast(`Microphone access denied: ${result.error}`, 'error');
       }
     });
@@ -786,27 +989,7 @@ document.addEventListener('DOMContentLoaded', () => {
         yourNoteDisplay.style.color = '';
       }
     }
-    
-    // Add to visualizer if recording
-    if (engine.isRecordingVocals && pitchVisualizer) {
-      pitchVisualizer.addUserPitchPoint({
-        time: engine.getCurrentTime(),
-        frequency: pitchInfo.frequency,
-        confidence: pitchInfo.confidence
-      });
-    }
   });
-
-  // Mic Gain Slider
-  if (micGainSlider) {
-    micGainSlider.addEventListener('input', (e) => {
-      const val = parseFloat(e.target.value);
-      engine.setMicInputLevel(val);
-      if (micGainReadout) {
-        micGainReadout.textContent = formatDb(val);
-      }
-    });
-  }
 
   // Monitor Toggle
   if (micMonitorToggle) {

@@ -1,5 +1,7 @@
-demucs>=4.0.0
-torch
-torchaudio
+demucs>=4.0.1
+torch<2.9
+torchaudio<2.9
 yt-dlp>=2024.0.0
+static-ffmpeg
+soundfile
 numpy

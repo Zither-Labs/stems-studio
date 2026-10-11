@@ -1,21 +1,72 @@
 @echo off
-title Stems Studio - Audio Workstation & AI Separator
+title Stems Studio
+cd /d "%~dp0"
+
 echo ======================================================================
-echo          Stems Studio - Multi-Track Audio Workstation
-echo   Featuring 6-Stem AI Separation (Nepali Folk & Acoustic Models)
+echo   Stems Studio
 echo ======================================================================
 echo.
 
-set PYTHON_EXE=C:\Users\bacha\.gemini\antigravity-ide\scratch\venv\python.exe
+set "LEGACY_PY=C:\Users\bacha\.gemini\antigravity-ide\scratch\venv\python.exe"
+set "VENV_PY=%~dp0.venv\Scripts\python.exe"
 
-if not exist "%PYTHON_EXE%" (
-    echo Python virtual environment not found. Using system python...
-    set PYTHON_EXE=python
-)
+if exist "%LEGACY_PY%" goto use_legacy
+if exist "%VENV_PY%" goto use_venv
+goto setup
 
-echo Starting Stems Studio server on http://localhost:8099 ...
-start "" http://localhost:8099
+:use_legacy
+set "PY=%LEGACY_PY%"
+goto run
 
-"%PYTHON_EXE%" "%~dp0server.py"
+:use_venv
+set "PY=%VENV_PY%"
+goto run
 
+:setup
+echo First-time setup: installing the stem maker.
+echo This happens only once and can take several minutes. Please wait...
+echo.
+
+set "BASE_PY=python"
+where py >nul 2>nul
+if errorlevel 1 goto make_venv
+py -3.11 --version >nul 2>nul
+if errorlevel 1 goto make_venv
+set "BASE_PY=py -3.11"
+
+:make_venv
+%BASE_PY% -m venv "%~dp0.venv"
+if errorlevel 1 goto fail
+set "PY=%VENV_PY%"
+
+"%PY%" -m pip install --upgrade pip
+
+where nvidia-smi >nul 2>nul
+if errorlevel 1 goto install_rest
+echo NVIDIA graphics card found - installing the GPU version of PyTorch...
+"%PY%" -m pip install "torch<2.9" "torchaudio<2.9" --index-url https://download.pytorch.org/whl/cu121
+
+:install_rest
+"%PY%" -m pip install -r "%~dp0separator\requirements.txt"
+if errorlevel 1 goto fail
+echo.
+echo Setup finished.
+echo.
+goto run
+
+:run
+echo Starting Stems Studio at http://localhost:8099
+echo Keep this window open while you use the app. Close it to quit.
+echo.
+start "" cmd /c "timeout /t 3 /nobreak >nul & start http://localhost:8099"
+"%PY%" "%~dp0server.py"
+echo.
+echo Stems Studio has stopped.
 pause
+exit /b 0
+
+:fail
+echo.
+echo Setup did not finish. Please copy the messages above and send them over.
+pause
+exit /b 1

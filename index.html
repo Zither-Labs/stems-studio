@@ -13,6 +13,8 @@
   <meta property="og:description" content="Interactive multi-track audio stem mixer, pitch & tempo control, and export studio.">
   <meta property="og:type" content="website">
 
+  <link rel="icon" href="data:,">
+
   <!-- Studio Styles -->
   <link rel="stylesheet" href="css/studio.css">
 </head>
@@ -39,14 +41,55 @@
 
   <!-- Simple Song Loader -->
   <section class="song-loader-simple">
-    <button class="btn btn-load-demo" id="btnLoadDemo" title="Load demo audio to try the app">
-      ▶ Load Demo
+    <button class="btn btn-create-stems" id="btnCreateStems" title="Split a song into vocals, drums, bass and more">
+      ✨ Create Stems
     </button>
     <span class="loader-divider">or</span>
-    <button class="btn" id="btnImportStems" title="Import your own stem files">
+    <button class="btn" id="btnImportStems" title="Import stem files you already have">
       📁 Import Stems
     </button>
+    <button class="btn" id="btnLoadDemo" title="Load demo audio to try the app">
+      ▶ Demo
+    </button>
   </section>
+
+  <!-- Create Stems Dialog -->
+  <div class="modal-backdrop" id="createStemsModal" role="dialog" aria-modal="true" aria-labelledby="createStemsTitle">
+    <div class="modal-window create-stems-window">
+      <div class="modal-header">
+        <h2 class="modal-title" id="createStemsTitle">Create Stems</h2>
+        <button class="modal-close-btn" id="createStemsClose" aria-label="Close">
+          <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" fill="none" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      <div id="createStemsForm">
+        <div class="dropzone-box create-drop" id="createStemsDrop">
+          <strong id="createStemsFileName">Click to choose a song, or drop it here</strong>
+          <p>MP3, WAV, FLAC, M4A</p>
+        </div>
+        <input type="file" id="createStemsFile" accept=".flac,.mp3,.wav,.m4a,.aac,.ogg" style="display:none;">
+
+        <div class="create-or">or paste a YouTube link</div>
+        <input type="text" class="create-text-input" id="createStemsUrl" placeholder="https://www.youtube.com/watch?v=...">
+
+        <p class="create-engine-note" id="createStemsEngineNote">Checking the stem maker...</p>
+      </div>
+
+      <div class="create-progress" id="createStemsProgress" style="display:none;">
+        <div class="create-progress-text">
+          <span id="createStemsMessage">Starting...</span>
+          <span id="createStemsPercent">0%</span>
+        </div>
+        <div class="create-progress-track"><div class="create-progress-fill" id="createStemsFill"></div></div>
+      </div>
+
+      <div class="create-actions">
+        <button class="btn" id="createStemsCancel">Cancel</button>
+        <button class="btn btn-create-stems" id="createStemsGo">✨ Create Stems</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Master Transport Dock -->
   <section class="transport-dock" aria-label="Transport Controls">

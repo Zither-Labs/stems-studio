@@ -98,7 +98,10 @@ def run_separation_job(job_id, source_type, source_val, model="htdemucs_6s", pre
         if source_type == "youtube":
             job["message"] = f"Downloading audio from YouTube ({dev_info['device_name']})..."
             job["progress"] = 15
-            import yt_dlp
+            try:
+                import yt_dlp
+            except ImportError:
+                raise Exception("YouTube support (yt-dlp) is not installed. Try a song file instead.")
             ydl_opts = {
                 'format': 'bestaudio/best',
                 'outtmpl': os.path.join(job_dir, 'source_audio.%(ext)s'),
@@ -134,7 +137,10 @@ def run_separation_job(job_id, source_type, source_val, model="htdemucs_6s", pre
 
         process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True)
 
+        recent_output = []
         for line in process.stdout:
+            if line.strip():
+                recent_output = (recent_output + [line.strip()])[-6:]
             if "%" in line:
                 try:
                     parts = line.split("%")[0].split()
@@ -146,7 +152,10 @@ def run_separation_job(job_id, source_type, source_val, model="htdemucs_6s", pre
 
         process.wait()
         if process.returncode != 0:
-            raise Exception(f"Demucs separation process returned code {process.returncode}")
+            tail = " | ".join(recent_output)
+            if "No module named" in tail and "demucs" in tail:
+                raise Exception("Demucs is not installed. Close the app and start it again from the shortcut to run first-time setup.")
+            raise Exception(f"Demucs failed (code {process.returncode}): {tail}")
 
         # Step 3: Collect generated stems
         job["message"] = "Finalizing stem channels..."
@@ -366,8 +375,13 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
         self.send_error(404, "Endpoint not found")
 
 
+class ThreadedServer(socketserver.ThreadingTCPServer):
+    allow_reuse_address = True
+    daemon_threads = True
+
+
 def start_server():
-    server = socketserver.TCPServer(("", PORT), StudioRequestHandler)
+    server = ThreadedServer(("", PORT), StudioRequestHandler)
     print(f"Stems Studio Server running at http://localhost:{PORT}")
     server.serve_forever()
 
