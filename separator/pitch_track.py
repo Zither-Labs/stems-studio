@@ -24,7 +24,7 @@ import sys
 
 import numpy as np
 
-ANALYSIS_VERSION = 2          # bump this when the method changes, so saved results are redone
+ANALYSIS_VERSION = 3          # bump this when the method changes, so saved results are redone
 STEP_SECONDS = 256 / 16000    # SwiftF0 reports one pitch every 256 samples at 16 kHz
 
 # Singing range we accept (Hz). Lower than a bass voice or higher than a soprano is bleed.
@@ -150,6 +150,43 @@ def drop_spikes(midi, voiced):
     return midi, voiced
 
 
+# Second chance for singing the detector is unsure about (rough, doubled or harmonised voices).
+# If the vocal stem is clearly loud but no pitch was kept, a steady stretch of pitch readings is
+# still accepted at a lower confidence. Steady means: no jump bigger than RESCUE_STEP_SEMITONES
+# between neighbouring frames, which noise and breath do not manage but a held note does.
+RESCUE_CONFIDENCE = 0.1
+RESCUE_LOUD_BELOW_DB = 24      # "clearly loud" = within this many dB of the singer's usual level
+RESCUE_STEP_SEMITONES = 1.5
+RESCUE_MIN_SECONDS = 0.14
+
+
+def rescue_steady_singing(hz, confidence, loudness_db, pitched, level, in_range):
+    """Frames that are loud, were not accepted yet, and form a steady low-confidence pitch."""
+    candidate = (~pitched) & in_range & (confidence >= RESCUE_CONFIDENCE) \
+        & (loudness_db >= level - RESCUE_LOUD_BELOW_DB)
+    semitones = hz_to_midi(hz)
+    min_frames = int(round(RESCUE_MIN_SECONDS / STEP_SECONDS))
+    rescued = np.zeros(len(hz), dtype=bool)
+    for start, end in _runs(candidate):
+        piece_start = start
+        for i in range(start + 1, end + 1):
+            if i == end or abs(semitones[i] - semitones[i - 1]) > RESCUE_STEP_SEMITONES:
+                if i - piece_start >= min_frames:
+                    rescued[piece_start:i] = True
+                piece_start = i
+    return rescued
+
+
+def unpitched_loud_fraction(midi, loudness_db):
+    """The check: of the frames where the vocal stem is clearly loud, how many have no pitch?"""
+    singing = midi > 0
+    if not singing.any():
+        return 1.0 if len(midi) else 0.0
+    level = np.percentile(loudness_db[singing], 90)
+    loud = loudness_db >= level - RESCUE_LOUD_BELOW_DB
+    return float((loud & ~singing).sum() / max(1, loud.sum()))
+
+
 def clean_track(hz, confidence, loudness_db):
     """The whole clean-up, from raw detector output to the final MIDI track (0 = silence)."""
     n = len(hz)
@@ -164,6 +201,7 @@ def clean_track(hz, confidence, loudness_db):
     if not pitched.any():
         return np.zeros(n)
     level = np.percentile(loudness_db[pitched], 90)
+    pitched = pitched | rescue_steady_singing(hz, confidence, loudness_db, pitched, level, in_range)
     loud_enough = loudness_db >= level - LOUDNESS_BELOW_PEAK_DB
     voiced = pitched & loud_enough
     if not voiced.any():

@@ -575,11 +575,14 @@ class VocalHighway {
       }
     }
     ctx.restore();
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.45)';
-    ctx.font = '10px "Inter", sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('Chords', gutter / 2, h / 2);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+    ctx.font = '10px "Inter", sans-serif';
+    ctx.fillText('Chords', gutter / 2, h / 2 - 5);
+    ctx.fillStyle = '#fbbf24';
+    ctx.font = 'bold 8px "Inter", sans-serif';
+    ctx.fillText('VERY EXPERIMENTAL', gutter / 2, h / 2 + 7, gutter - 6);
   }
 
   draw(t) {

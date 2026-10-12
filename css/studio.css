@@ -548,6 +548,14 @@ body::before {
   white-space: nowrap;
 }
 
+.highway-warning {
+  color: #fbbf24;
+  font-weight: 700;
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
 .highway-bar select {
   background: #11141c;
   color: #fff;
