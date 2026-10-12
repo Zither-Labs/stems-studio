@@ -71,15 +71,34 @@ function vocalHighwayWorkerMain() {
   };
 }
 
+// The 12 notes of the Indian scale, counted from Sa. A small letter means "komal" (flat).
+const SARGAM_12 = ['Sa', 're', 'Re', 'ga', 'Ga', 'Ma', "Ma'", 'Pa', 'dha', 'Dha', 'ni', 'Ni'];
+const MAJOR_DEGREES = [0, 2, 4, 5, 7, 9, 11];
+const MINOR_DEGREES = [0, 2, 3, 5, 7, 8, 10];
+const FLAT_MAJOR_TONICS = [5, 10, 3, 8, 1, 6];
+const FLAT_MINOR_TONICS = [2, 7, 0, 5, 10, 3];
+
 class VocalHighway {
-  constructor({ canvas, engine }) {
+  constructor({ canvas, engine, bar }) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
     this.engine = engine;
 
     this.windowSeconds = 10;   // how much time is visible at once
     this.nowFraction = 0.25;   // where the "now" line sits across the lane
-    this.gutter = 46;          // room for the note names on the left
+    this.gutter = 108;         // room for the note names and the Sa Re Ga names on the left
+    this.chordBarHeight = 28;  // the chord ribbon along the top
+
+    // The key found by the engine (detected) and the one being shown (it may be changed by hand).
+    this.detected = null;      // { tonic, mode, name, flats, certainty, relative, alternatives }
+    this.key = null;           // { tonic, mode, flats, manual }
+    this.chords = [];          // [{ start, end, root, quality, name }]
+    this.showChords = true;
+    this.analysisUrl = null;   // set by the app: where the engine keeps this song's key and chords
+    this.keyRequestId = 0;
+    this.tuningCents = 0;
+    this.barEls = null;
+    this.barRoot = bar || null;
 
     this.NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
@@ -105,6 +124,7 @@ class VocalHighway {
       window.addEventListener('resize', () => this.resize());
     }
     canvas.addEventListener('click', (e) => this.handleClick(e));
+    if (this.barRoot) this.setupBar(this.barRoot);
 
     this.loop = this.loop.bind(this);
     requestAnimationFrame(this.loop);
@@ -143,6 +163,11 @@ class VocalHighway {
   // --- following the song ----------------------------------------------------------
 
   loop() {
+    if (this.analysisUrl) {
+      const url = this.analysisUrl;
+      this.analysisUrl = null;       // used once per song
+      this.fetchAnalysis(url);
+    }
     this.checkBuffer();
     const t = this.engine.getCurrentTime();
     const key = `${t.toFixed(3)}|${this.width}|${this.height}|${this.state}|${this.notes.length}`;
@@ -169,6 +194,146 @@ class VocalHighway {
     }
     if (url) this.fetchServerPitch(buffer, url);
     else this.analyze(buffer);
+  }
+
+  // --- key, scale and chords ------------------------------------------------------------
+
+  setupBar(bar) {
+    const els = {
+      text: bar.querySelector('#highwayKeyText'),
+      tonic: bar.querySelector('#highwayTonic'),
+      mode: bar.querySelector('#highwayMode'),
+      reset: bar.querySelector('#highwayKeyReset'),
+      chords: bar.querySelector('#highwayShowChords')
+    };
+    this.barEls = els;
+    // The "Sa =" list is spelled in sharps; flats are used on the lane when the key calls for them.
+    this.NOTE_NAMES.forEach((name, pc) => {
+      const option = document.createElement('option');
+      option.value = String(pc);
+      option.textContent = name;
+      els.tonic.appendChild(option);
+    });
+    const changed = () => {
+      this.key = {
+        tonic: Number(els.tonic.value),
+        mode: els.mode.value,
+        flats: this.prefersFlats(Number(els.tonic.value), els.mode.value),
+        manual: true
+      };
+      this.applyKeyRange();
+      this.refreshBar();
+      this.lastKey = '';
+    };
+    els.tonic.addEventListener('change', changed);
+    els.mode.addEventListener('change', changed);
+    els.reset.addEventListener('click', () => {
+      if (this.detected) this.setKey(this.detected, false);
+    });
+    els.chords.addEventListener('change', () => {
+      this.showChords = els.chords.checked;
+      this.lastKey = '';
+    });
+    this.refreshBar();
+  }
+
+  prefersFlats(tonic, mode) {
+    return (mode === 'major' ? FLAT_MAJOR_TONICS : FLAT_MINOR_TONICS).includes(tonic);
+  }
+
+  setKey(key, manual) {
+    this.key = { tonic: key.tonic, mode: key.mode, flats: this.prefersFlats(key.tonic, key.mode), manual };
+    this.applyKeyRange();
+    this.refreshBar();
+    this.lastKey = '';
+  }
+
+  // Forget the key and chords (a new song is loading, or the song has none).
+  resetKey() {
+    this.keyRequestId++;
+    this.detected = null;
+    this.key = null;
+    this.chords = [];
+    this.applyKeyRange();
+    this.refreshBar();
+    this.lastKey = '';
+  }
+
+  async fetchAnalysis(url) {
+    this.resetKey();
+    const id = this.keyRequestId;
+    if (this.barEls) this.barEls.text.textContent = 'Key: finding it from the bass, instruments and vocal...';
+    try {
+      const resp = await fetch(url);
+      if (!resp.ok) throw new Error(`analysis request failed (${resp.status})`);
+      const data = await resp.json();
+      if (id !== this.keyRequestId) return;
+      this.detected = data.key || null;
+      this.chords = Array.isArray(data.chords) ? data.chords : [];
+      this.tuningCents = data.tuning_cents || 0;
+      if (this.detected) this.setKey(this.detected, false);
+      else this.refreshBar();
+    } catch (err) {
+      console.warn('Key and chords unavailable:', err);
+      if (id === this.keyRequestId) {
+        this.chords = [];
+        this.refreshBar('Key: not available (install the extras to turn this on).');
+      }
+    }
+    this.lastKey = '';
+  }
+
+  noteSpelling(pc) {
+    const flats = this.key ? this.key.flats : false;
+    return (flats ? ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'] : this.NOTE_NAMES)[((pc % 12) + 12) % 12];
+  }
+
+  refreshBar(message) {
+    const els = this.barEls;
+    if (!els) return;
+    if (!this.key) {
+      els.text.textContent = message || 'Key: not found yet';
+      els.reset.hidden = true;
+      return;
+    }
+    // The "Sa =" list is spelled the way this key is spelled (Bb, not A#).
+    Array.from(els.tonic.options).forEach((option) => { option.textContent = this.noteSpelling(Number(option.value)); });
+    els.tonic.value = String(this.key.tonic);
+    els.mode.value = this.key.mode;
+    const name = `${this.noteSpelling(this.key.tonic)} ${this.key.mode}`;
+    const d = this.detected;
+    let text;
+    if (this.key.manual) {
+      text = `Key: ${name} (your choice)`;
+    } else {
+      text = `Key: ${name}`;
+      if (d) {
+        text += `  \u00B7  ${d.certainty}`;
+        if (d.relative) text += `  \u00B7  could also be ${d.relative.name}`;
+      }
+      if (this.tuningCents && Math.abs(this.tuningCents) >= 10) {
+        text += `  \u00B7  tuned ${this.tuningCents > 0 ? '+' : ''}${this.tuningCents} cents`;
+      }
+    }
+    text += `  \u00B7  Sa = ${this.noteSpelling(this.key.tonic)}`;
+    els.text.textContent = text;
+    els.reset.hidden = !(this.key.manual && this.detected);
+  }
+
+  // Which of the 12 notes belong to the scale in use.
+  inScale(pc) {
+    if (!this.key) return false;
+    const degrees = this.key.mode === 'major' ? MAJOR_DEGREES : MINOR_DEGREES;
+    return degrees.includes((((pc - this.key.tonic) % 12) + 12) % 12);
+  }
+
+  sargam(pc) {
+    if (!this.key) return null;
+    return SARGAM_12[(((pc - this.key.tonic) % 12) + 12) % 12];
+  }
+
+  chordName(chord) {
+    return `${this.noteSpelling(chord.root)}${chord.quality}`;
   }
 
   // The engine (server.py) finds the pitch with a neural detector and cleans it up. If it is
@@ -251,9 +416,24 @@ class VocalHighway {
     let lo = Math.floor(pick(0.03)) - 2;
     let hi = Math.ceil(pick(0.97)) + 2;
     while (hi - lo < 16) { lo--; hi++; }   // never zoom in tighter than about an octave and a half
-    this.minMidi = Math.max(24, lo);
-    this.maxMidi = Math.min(100, hi);
+    this.baseMin = Math.max(24, lo);
+    this.baseMax = Math.min(100, hi);
+    this.applyKeyRange();
     this.state = 'ready';
+  }
+
+  // With a key, the lane is stretched to start and end on a Sa, so a whole Sa-to-Sa scale
+  // (for example C D E F G A B C) is always on screen.
+  applyKeyRange() {
+    if (this.baseMin === undefined) return;
+    let lo = this.baseMin;
+    let hi = this.baseMax;
+    if (this.key) {
+      while ((((lo % 12) + 12) % 12) !== this.key.tonic) lo--;
+      while ((((hi % 12) + 12) % 12) !== this.key.tonic) hi++;
+    }
+    this.minMidi = Math.max(24, lo);
+    this.maxMidi = Math.min(108, hi);
   }
 
   // Removes single-frame glitches (octave jumps) by taking the median of neighbours.
@@ -326,13 +506,20 @@ class VocalHighway {
 
   // --- drawing --------------------------------------------------------------------
 
+  // The lane sits under the chord ribbon (when there are chords to show).
+  get laneTop() {
+    return this.showChords && this.chords.length ? this.chordBarHeight : 0;
+  }
+
   midiToY(midi) {
     const rows = this.maxMidi - this.minMidi + 1;
-    return this.height - ((midi - this.minMidi + 0.5) / rows) * this.height;
+    const top = this.laneTop;
+    const laneH = this.height - top;
+    return top + laneH - ((midi - this.minMidi + 0.5) / rows) * laneH;
   }
 
   noteLabel(midi) {
-    return `${this.NOTE_NAMES[((midi % 12) + 12) % 12]}${Math.floor(midi / 12) - 1}`;
+    return `${this.noteSpelling(midi)}${Math.floor(midi / 12) - 1}`;
   }
 
   drawMessage(text) {
@@ -341,7 +528,7 @@ class VocalHighway {
     ctx.font = '13px "Inter", sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(text, this.width / 2, this.height / 2);
+    ctx.fillText(text, this.width / 2 + this.gutter / 2, this.height / 2);
   }
 
   roundedBar(x, y, w, h) {
@@ -354,6 +541,45 @@ class VocalHighway {
     ctx.lineTo(x + r, y + h);
     ctx.arc(x + r, y + r, r, Math.PI / 2, (3 * Math.PI) / 2);
     ctx.closePath();
+  }
+
+  // Chord names along the top, scrolling with the notes. The chord playing now is lit up.
+  drawChordRibbon(t, nowX, pxPerSec) {
+    const ctx = this.ctx;
+    const gutter = this.gutter;
+    const h = this.chordBarHeight;
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.025)';
+    ctx.fillRect(gutter, 0, this.width - gutter, h);
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(gutter, 0, this.width - gutter, h);
+    ctx.clip();
+    const viewStart = t - this.nowFraction * this.windowSeconds - 1;
+    const viewEnd = t + (1 - this.nowFraction) * this.windowSeconds + 1;
+    ctx.font = 'bold 12px "Inter", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    for (const chord of this.chords) {
+      if (chord.end < viewStart) continue;
+      if (chord.start > viewEnd) break;
+      const x1 = nowX + (chord.start - t) * pxPerSec;
+      const x2 = nowX + (chord.end - t) * pxPerSec;
+      const active = chord.start <= t && chord.end > t;
+      const past = chord.end <= t;
+      ctx.fillStyle = active ? 'rgba(244, 114, 182, 0.9)' : past ? 'rgba(139, 92, 246, 0.14)' : 'rgba(139, 92, 246, 0.32)';
+      ctx.fillRect(x1 + 1, 3, Math.max(2, x2 - x1 - 2), h - 6);
+      if (x2 - x1 > 16) {
+        ctx.fillStyle = active ? '#0b0d12' : past ? 'rgba(255, 255, 255, 0.4)' : '#ffffff';
+        ctx.fillText(this.chordName(chord), (Math.max(x1, gutter) + x2) / 2, h / 2 + 1, Math.max(8, x2 - x1 - 4));
+      }
+    }
+    ctx.restore();
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.45)';
+    ctx.font = '10px "Inter", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('Chords', gutter / 2, h / 2);
   }
 
   draw(t) {
@@ -379,31 +605,50 @@ class VocalHighway {
 
     const { plotW, nowX, pxPerSec } = this.layout();
     const rows = this.maxMidi - this.minMidi + 1;
-    const rowH = h / rows;
+    const top = this.laneTop;
+    const rowH = (h - top) / rows;
     const gutter = this.gutter;
     const timeToX = (time) => nowX + (time - t) * pxPerSec;
+    const pcOf = (m) => ((m % 12) + 12) % 12;
 
-    // Pitch rows: dark bands for the black keys, a brighter line on every C.
+    // Pitch rows. With a key: the notes of the scale are lit and the others are dark, and every
+    // Sa (home note) gets a line. Without one: the usual piano-key look.
     for (let m = this.minMidi; m <= this.maxMidi; m++) {
       const yTop = this.midiToY(m) - rowH / 2;
-      if ([1, 3, 6, 8, 10].includes(((m % 12) + 12) % 12)) {
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.025)';
-        ctx.fillRect(gutter, yTop, plotW, rowH);
-      }
-      if (m % 12 === 0) {
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.14)';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(gutter, this.midiToY(m));
-        ctx.lineTo(w, this.midiToY(m));
-        ctx.stroke();
+      const pc = pcOf(m);
+      if (this.key) {
+        if (this.inScale(pc)) {
+          ctx.fillStyle = 'rgba(139, 92, 246, 0.07)';
+          ctx.fillRect(gutter, yTop, plotW, rowH);
+        }
+        if (pc === this.key.tonic) {
+          ctx.strokeStyle = 'rgba(251, 191, 36, 0.35)';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(gutter, this.midiToY(m));
+          ctx.lineTo(w, this.midiToY(m));
+          ctx.stroke();
+        }
+      } else {
+        if ([1, 3, 6, 8, 10].includes(pc)) {
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.025)';
+          ctx.fillRect(gutter, yTop, plotW, rowH);
+        }
+        if (pc === 0) {
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.14)';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(gutter, this.midiToY(m));
+          ctx.lineTo(w, this.midiToY(m));
+          ctx.stroke();
+        }
       }
     }
 
     // Everything below scrolls and is clipped to the lane.
     ctx.save();
     ctx.beginPath();
-    ctx.rect(gutter, 0, plotW, h);
+    ctx.rect(gutter, top, plotW, h - top);
     ctx.clip();
 
     // One faint line per second.
@@ -413,13 +658,13 @@ class VocalHighway {
     for (let s = firstSecond; s <= t + this.windowSeconds; s++) {
       const x = timeToX(s);
       ctx.beginPath();
-      ctx.moveTo(x, 0);
+      ctx.moveTo(x, top);
       ctx.lineTo(x, h);
       ctx.stroke();
     }
 
     // Note bars.
-    const barH = Math.max(7, Math.min(rowH * 0.85, 18));
+    const barH = Math.max(6, Math.min(rowH * 0.85, 18));
     const viewStart = t - this.nowFraction * this.windowSeconds - 1;
     const viewEnd = t + (1 - this.nowFraction) * this.windowSeconds + 1;
     for (const note of this.notes) {
@@ -476,7 +721,7 @@ class VocalHighway {
     ctx.strokeStyle = '#ffffff';
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.moveTo(nowX, 0);
+    ctx.moveTo(nowX, top);
     ctx.lineTo(nowX, h);
     ctx.stroke();
     ctx.restore();
@@ -494,34 +739,55 @@ class VocalHighway {
       ctx.restore();
 
       const hz = 440 * Math.pow(2, (nowMidi - 69) / 12);
+      const swara = this.sargam(pcOf(Math.round(nowMidi)));
       ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
       ctx.font = 'bold 11px "JetBrains Mono", monospace';
       ctx.textAlign = 'left';
       ctx.textBaseline = 'top';
-      ctx.fillText(`${this.noteLabel(Math.round(nowMidi))}  ${Math.round(hz)} Hz`, nowX + 10, 6);
+      ctx.fillText(`${this.noteLabel(Math.round(nowMidi))}${swara ? '  ' + swara : ''}  ${Math.round(hz)} Hz`, nowX + 10, top + 6);
     }
     ctx.restore();
 
-    // Note names down the left edge.
-    ctx.fillStyle = 'rgba(13, 16, 23, 0.96)';
-    ctx.fillRect(0, 0, gutter, h);
+    // Left edge: the note names, and the Sa Re Ga names next to them.
+    ctx.fillStyle = 'rgba(13, 16, 23, 0.97)';
+    ctx.fillRect(0, top, gutter, h - top);
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(gutter, 0);
+    ctx.moveTo(gutter, top);
     ctx.lineTo(gutter, h);
     ctx.stroke();
-    ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
+    const fontPx = Math.max(8, Math.min(11, rowH - 0.5));
     for (let m = this.minMidi; m <= this.maxMidi; m++) {
-      const name = this.NOTE_NAMES[((m % 12) + 12) % 12];
-      const isC = name === 'C';
-      if (name.includes('#')) continue;
-      // In a tight lane, name only C, E and G so the labels do not overlap.
-      if (rowH < 9 && !['C', 'E', 'G'].includes(name)) continue;
-      ctx.fillStyle = isC ? '#ffffff' : 'rgba(255, 255, 255, 0.45)';
-      ctx.font = isC ? 'bold 10px "Inter", sans-serif' : '9px "Inter", sans-serif';
-      ctx.fillText(this.noteLabel(m), gutter / 2, this.midiToY(m));
+      const pc = pcOf(m);
+      const y = this.midiToY(m);
+      if (this.key) {
+        if (!this.inScale(pc)) {
+          // a small tick for notes outside the scale, so the lane still reads as a keyboard
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.12)';
+          ctx.fillRect(gutter - 6, y - 0.5, 6, 1);
+          continue;
+        }
+        const isSa = pc === this.key.tonic;
+        ctx.font = `${isSa ? 'bold ' : ''}${fontPx}px "Inter", sans-serif`;
+        ctx.textAlign = 'left';
+        ctx.fillStyle = isSa ? '#fbbf24' : 'rgba(255, 255, 255, 0.75)';
+        ctx.fillText(this.noteLabel(m), 8, y);
+        ctx.textAlign = 'right';
+        ctx.fillStyle = isSa ? '#fbbf24' : 'rgba(196, 181, 253, 0.95)';
+        ctx.fillText(this.sargam(pc), gutter - 10, y);
+      } else {
+        const name = this.NOTE_NAMES[pc];
+        if (name.includes('#')) continue;
+        if (rowH < 9 && !['C', 'E', 'G'].includes(name)) continue;
+        ctx.font = `${name === 'C' ? 'bold ' : ''}${fontPx}px "Inter", sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.fillStyle = name === 'C' ? '#ffffff' : 'rgba(255, 255, 255, 0.45)';
+        ctx.fillText(this.noteLabel(m), gutter / 2, y);
+      }
     }
+
+    if (top) this.drawChordRibbon(t, nowX, pxPerSec);
   }
 }

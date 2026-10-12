@@ -502,19 +502,187 @@ body::before {
 
 .vocal-highway {
   position: relative;
-  height: 150px;
+  height: 330px;
   margin-bottom: 0.5rem;
   background: #090b10;
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .vocal-highway canvas {
   display: block;
   width: 100%;
-  height: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
   cursor: pointer;
+}
+
+.highway-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex: 0 0 auto;
+  padding: 0.3rem 0.6rem;
+  background: rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 0.75rem;
+  color: var(--text-secondary, rgba(255, 255, 255, 0.7));
+}
+
+.highway-key {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.highway-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  white-space: nowrap;
+}
+
+.highway-bar select {
+  background: #11141c;
+  color: #fff;
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  padding: 0.1rem 0.25rem;
+  font-size: 0.75rem;
+}
+
+.highway-bar [hidden],
+.lyrics-panel [hidden] {
+  display: none !important;
+}
+
+/* --- Karaoke lyrics --- */
+.lyrics-panel {
+  background: var(--bg-surface-1);
+  padding: 0.5rem 1.5rem 0.9rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.lyrics-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.4rem;
+  font-size: 0.75rem;
+}
+
+.lyrics-heading {
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+
+.lyrics-source {
+  color: rgba(255, 255, 255, 0.5);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.lyrics-spacer { flex: 1 1 auto; }
+
+.lyrics-sync {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.lyrics-find {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.lyrics-find input {
+  background: #11141c;
+  color: #fff;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  padding: 0.3rem 0.5rem;
+  font-size: 0.8rem;
+  min-width: 12rem;
+}
+
+.lyrics-find-status {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.lyrics-stage {
+  position: relative;
+  height: 190px;
+  overflow: hidden;
+  background: #090b10;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  /* the lines fade out towards the top and bottom edge */
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 22%, #000 78%, transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 22%, #000 78%, transparent 100%);
+}
+
+.lyrics-stage:not(.synced) {
+  overflow-y: auto;
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+
+.lyrics-lines {
+  padding: 0.5rem 1rem;
+  text-align: center;
+  transition: transform 0.35s ease-out;
+}
+
+.lyrics-stage:not(.synced) .lyrics-lines {
+  text-align: left;
+  transition: none;
+}
+
+.lyric-line {
+  padding: 0.18rem 0;
+  font-size: 1.05rem;
+  line-height: 1.35;
+  color: rgba(255, 255, 255, 0.4);
+  transition: color 0.2s, transform 0.2s;
+}
+
+.lyrics-stage.synced .lyric-line { cursor: pointer; }
+.lyrics-stage.synced .lyric-line:hover { color: rgba(255, 255, 255, 0.7); }
+.lyrics-stage:not(.synced) .lyric-line { color: rgba(255, 255, 255, 0.75); font-size: 0.9rem; }
+
+.lyric-line.past { color: rgba(255, 255, 255, 0.28); }
+.lyric-line.lyric-gap { opacity: 0.5; }
+
+.lyric-line.current {
+  font-size: 1.45rem;
+  font-weight: 700;
+  /* karaoke wipe: the part already sung is coloured */
+  --fill: 0%;
+  background-image: linear-gradient(90deg, #f9a8d4 var(--fill), rgba(255, 255, 255, 0.5) var(--fill));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+}
+
+.lyrics-empty {
+  padding: 3rem 1rem;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 0.85rem;
 }
 
 .timeline-ruler {

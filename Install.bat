@@ -70,11 +70,11 @@ echo Step 3 of 4: installing the stem maker. This can take several minutes...
 if errorlevel 1 goto fail_pip
 
 :pitch_parts
-"%PY%" -c "import swift_f0, soxr" >nul 2>nul
+"%PY%" -c "import swift_f0, soxr, mutagen" >nul 2>nul
 if not errorlevel 1 goto make_shortcut
-echo Installing the vocal pitch detector...
-"%PY%" -m pip install -r "%~dp0separator\requirements-pitch.txt"
-if errorlevel 1 echo   (Could not install it. The app still works; the vocal highway will use a simpler detector.)
+echo Installing the extras (pitch detector, key finder, lyrics)...
+"%PY%" -m pip install -r "%~dp0separator\requirements-extras.txt"
+if errorlevel 1 echo   (Could not install it. The app still works; some features will be simpler or switched off.)
 
 :make_shortcut
 echo Step 4 of 4: creating the Stems Studio shortcut...

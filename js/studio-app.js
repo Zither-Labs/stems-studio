@@ -11,7 +11,13 @@ document.addEventListener('DOMContentLoaded', () => {
   const vocalHighwayCanvas = document.getElementById('vocalHighwayCanvas');
   let vocalHighway = null;
   if (vocalHighwayCanvas && typeof VocalHighway !== 'undefined') {
-    vocalHighway = new VocalHighway({ canvas: vocalHighwayCanvas, engine });
+    vocalHighway = new VocalHighway({ canvas: vocalHighwayCanvas, engine, bar: document.getElementById('highwayBar') });
+  }
+  // Karaoke lyrics, from the song's own tags or from LRCLIB.
+  let lyricsPanel = null;
+  const lyricsPanelEl = document.getElementById('lyricsPanel');
+  if (lyricsPanelEl && typeof LyricsPanel !== 'undefined') {
+    lyricsPanel = new LyricsPanel({ engine, panel: lyricsPanelEl });
   }
   let animationFrameId = null;
 
@@ -299,7 +305,8 @@ document.addEventListener('DOMContentLoaded', () => {
       await engine.resume();
       const demoStems = await DemoStemGenerator.generateDemoStems(engine.ctx, is6Stems);
 
-      if (vocalHighway) vocalHighway.pitchUrl = null;   // the demo has no saved pitch track
+      if (vocalHighway) { vocalHighway.pitchUrl = null; vocalHighway.analysisUrl = null; vocalHighway.resetKey(); }   // the demo has nothing saved
+      if (lyricsPanel) { currentSongId = null; lyricsPanel.clear(); }
       engine.tracks.clear();
       renderHiddenStemsBar([], false);
 
@@ -500,6 +507,8 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   let currentSongStems = [];
+  let currentSongTitle = '';
+  let currentSongId = null;
 
   // Shows which stems were left out because nothing was found in them, with a switch.
   function renderHiddenStemsBar(hidden, showingAll) {
@@ -524,12 +533,13 @@ document.addEventListener('DOMContentLoaded', () => {
     toggle.type = 'button';
     toggle.className = 'preset-chip';
     toggle.textContent = showingAll ? 'Hide empty stems' : 'Show anyway';
-    toggle.addEventListener('click', () => loadSeparatedStems(currentSongStems, !showingAll));
+    toggle.addEventListener('click', () => loadSeparatedStems(currentSongStems, !showingAll, currentSongTitle));
     bar.append(text, toggle);
   }
 
-  async function loadSeparatedStems(stems, showEmpty = false) {
+  async function loadSeparatedStems(stems, showEmpty = false, songTitle = '') {
     currentSongStems = stems;
+    currentSongTitle = songTitle || currentSongTitle;
     // Vocals always sit at the top of the mixer, then the rest in a fixed order. This also
     // fixes songs saved in the library earlier, which were stored alphabetically.
     const laneOrder = ['vocal', 'drums', 'bass', 'guitar', 'piano', 'other'];
@@ -546,11 +556,19 @@ document.addEventListener('DOMContentLoaded', () => {
     engine.seek(0);
     engine.tracks.clear();
 
-    // The vocal highway asks the engine for the pitch of this song's vocal stem.
+    // The vocal highway asks the engine for this song's vocal pitch, key and chords, and
+    // the lyrics panel for its lyrics. All of them are looked up by the song's id.
+    const anyStem = stems.find(stem => /^\/api\/stems\/[0-9a-f]{8}\//.test(stem.url));
+    const songId = anyStem ? /^\/api\/stems\/([0-9a-f]{8})\//.exec(anyStem.url)[1] : null;
     if (vocalHighway) {
       const vocalStem = shown.find(stem => stem.stemType === 'vocal');
-      const match = vocalStem && /^\/api\/stems\/([0-9a-f]{8})\//.exec(vocalStem.url);
-      vocalHighway.pitchUrl = match ? `/api/pitch/${match[1]}` : null;
+      vocalHighway.pitchUrl = vocalStem && songId ? `/api/pitch/${songId}` : null;
+      vocalHighway.analysisUrl = songId ? `/api/analysis/${songId}` : null;
+    }
+    if (lyricsPanel && songId !== currentSongId) {
+      currentSongId = songId;
+      if (songId) lyricsPanel.loadSong(songId, currentSongTitle);
+      else lyricsPanel.clear();
     }
 
     for (const stem of shown) {
@@ -664,7 +682,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!job) return;
 
       setCreateProgress(97, 'Loading the stems into the mixer...');
-      await loadSeparatedStems(job.stems);
+      await loadSeparatedStems(job.stems, false, job.title || '');
 
       closeCreateDialog();
       resetCreateDialog();
@@ -819,7 +837,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const resp = await fetch(`/api/library/${encodeURIComponent(song.id)}`);
       if (!resp.ok) throw new Error('This song is no longer saved on this computer.');
       const saved = await resp.json();
-      await loadSeparatedStems(saved.stems);
+      await loadSeparatedStems(saved.stems, false, saved.title || '');
       closeLibraryDialog();
       showToast(`Loaded "${song.title}". Press Space to play.`, 'success');
     } catch (err) {

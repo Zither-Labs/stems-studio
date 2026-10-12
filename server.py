@@ -334,6 +334,53 @@ def find_empty_stems(stems_dir, stem_files):
         return set()
 
 
+def separator_module(name):
+    """Import one of the helper modules in the separator folder (they are optional extras)."""
+    path = os.path.join(BASE_DIR, "separator")
+    if path not in sys.path:
+        sys.path.insert(0, path)
+    return __import__(name)
+
+
+def read_song_tags(audio_path, fallback_name=None):
+    return separator_module("lyrics").read_tags(audio_path)
+
+
+def write_json_file(path, payload):
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as handle:
+        json.dump(payload, handle)
+    os.replace(tmp, path)
+
+
+def save_song_lyrics(song_folder, tags, fallback_name, extra):
+    """Find lyrics (the file's own tags first, then LRCLIB) and keep them with the song."""
+    lyrics = separator_module("lyrics")
+    result, meta = lyrics.find_for_song(tags, fallback_name, extra)
+    write_json_file(os.path.join(song_folder, "meta.json"), meta)
+    if result:
+        write_json_file(os.path.join(song_folder, "lyrics.json"), result)
+    return result
+
+
+def load_song_lyrics(song_id):
+    """The saved lyrics for a song, as the page wants them (never raises)."""
+    folder = os.path.join(OUTPUT_DIR, song_id)
+    payload = {"found": False, "meta": {}}
+    try:
+        with open(os.path.join(folder, "meta.json"), "r", encoding="utf-8") as handle:
+            payload["meta"] = json.load(handle)
+    except (OSError, ValueError):
+        pass
+    try:
+        with open(os.path.join(folder, "lyrics.json"), "r", encoding="utf-8") as handle:
+            payload.update(json.load(handle))
+            payload["found"] = True
+    except (OSError, ValueError):
+        pass
+    return payload
+
+
 _device_info_cache = None
 _device_info_lock = threading.Lock()
 
@@ -435,6 +482,8 @@ def run_separation_job(job_id, source_type, source_val, model="htdemucs_6s", pre
 
     try:
         audio_file = None
+        lyrics_tags = None
+        lyrics_extra = None
         dev_info = get_device_info()
         device_arg = dev_info["device"]
 
@@ -459,10 +508,22 @@ def run_separation_job(job_id, source_type, source_val, model="htdemucs_6s", pre
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(source_val, download=True)
                 job["title"] = info.get("title", "YouTube Audio")
+                # What YouTube knows about the song, for the lyrics lookup.
+                lyrics_extra = {
+                    "artist": info.get("artist") or info.get("creator"),
+                    "title": info.get("track") or info.get("title"),
+                    "album": info.get("album"),
+                    "duration": info.get("duration"),
+                }
             audio_file = os.path.join(job_dir, "source_audio.wav")
         else:
             audio_file = source_val
             job["title"] = title or os.path.splitext(os.path.basename(audio_file))[0]
+            # Read the file's own tags (artist, title, embedded lyrics) before the file is cleaned up.
+            try:
+                lyrics_tags = read_song_tags(audio_file, source_label)
+            except Exception:
+                traceback.print_exc()
 
         if not os.path.isfile(audio_file):
             raise Exception("Failed to prepare source audio file.")
@@ -586,6 +647,14 @@ def run_separation_job(job_id, source_type, source_val, model="htdemucs_6s", pre
                 "empty": sf in empty_files,
                 "url": f"/api/stems/{job_id}/{sf}"
             })
+
+        job["message"] = "Looking for the lyrics..."
+        job["progress"] = 96
+        try:
+            save_song_lyrics(job_dir, lyrics_tags,
+                             source_label if source_type == "file" else job.get("title"), lyrics_extra)
+        except Exception:
+            traceback.print_exc()          # lyrics are a bonus: never fail the song because of them
 
         # Keep only the finished stems; drop the working copies to save disk space.
         for entry in os.listdir(job_dir):
@@ -718,6 +787,62 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
             with PITCH_LOCK:   # one analysis at a time; a second request waits and then reads the saved result
                 result = pitch_track.cached_analysis(wav_path, os.path.join(OUTPUT_DIR, song_id, "vocals.pitch.json"))
             self.send_json({"t0": result["t0"], "dt": result["dt"], "midi": result["midi"]})
+            return
+
+        elif parsed.path.startswith("/api/analysis/"):
+            # Key and chords of a song, found from its separated stems.
+            song_id = parsed.path.split("/")[3]
+            folder = os.path.join(OUTPUT_DIR, song_id)
+            if not SONG_ID_RE.match(song_id) or not os.path.isdir(folder):
+                self.send_json({"error": "Song not found"}, 404)
+                return
+            try:
+                music_analysis = separator_module("music_analysis")
+            except ImportError as exc:
+                self.send_json({"error": f"Key finder is not installed: {exc}"}, 501)
+                return
+            with PITCH_LOCK:
+                vocal_midi = None
+                vocals = os.path.join(folder, "vocals.wav")
+                if os.path.isfile(vocals):
+                    try:
+                        pitch_track = separator_module("pitch_track")
+                        vocal_midi = pitch_track.cached_analysis(vocals, os.path.join(folder, "vocals.pitch.json"))["midi"]
+                    except ImportError:
+                        pass
+                result = music_analysis.cached_analysis(folder, os.path.join(folder, "analysis.json"), vocal_midi)
+            self.send_json({k: result[k] for k in ("key", "chords", "tuning_cents", "sources")})
+            return
+
+        elif parsed.path.startswith("/api/lyrics/"):
+            parts = parsed.path.split("/")
+            song_id = parts[3] if len(parts) > 3 else ""
+            if not SONG_ID_RE.match(song_id) or not os.path.isdir(os.path.join(OUTPUT_DIR, song_id)):
+                self.send_json({"error": "Song not found"}, 404)
+                return
+            if len(parts) > 4 and parts[4] == "find":
+                # Search LRCLIB for what the user typed, and keep the best match with the song.
+                query = urllib.parse.parse_qs(parsed.query)
+                artist = query.get("artist", [""])[0].strip() or None
+                title = query.get("title", [""])[0].strip()
+                if not title:
+                    self.send_json({"error": "Type the song title first."}, 400)
+                    return
+                lyrics = separator_module("lyrics")
+                try:
+                    result = lyrics.fetch_lrclib(artist, title, None, None)
+                except Exception as exc:
+                    self.send_json({"error": f"Could not reach LRCLIB ({type(exc).__name__}). Check your internet connection."}, 502)
+                    return
+                if not result:
+                    self.send_json({"found": False, "meta": {"artist": artist, "title": title}})
+                    return
+                folder = os.path.join(OUTPUT_DIR, song_id)
+                write_json_file(os.path.join(folder, "lyrics.json"), result)
+                write_json_file(os.path.join(folder, "meta.json"), {"artist": artist or result["matched"].get("artist"),
+                                                                    "title": title, "album": result["matched"].get("album"),
+                                                                    "duration": result["matched"].get("duration")})
+            self.send_json(load_song_lyrics(song_id))
             return
 
         elif parsed.path.startswith("/api/stems/"):

@@ -1,0 +1,4 @@
+# Optional extras: the vocal pitch detector, the key/chord finder and the lyrics reader.
+# If these cannot be installed, the app still works; those features just fall back or switch off.
+swift-f0[audio]
+mutagen

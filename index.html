@@ -239,6 +239,18 @@
   <section class="timeline-overview-deck" aria-label="Timeline Overview">
     <!-- Vocal highway: the sung pitch scrolls towards the "now" line. Click it to jump. -->
     <div class="vocal-highway" aria-label="Vocal pitch highway">
+      <div class="highway-bar" id="highwayBar">
+        <span class="highway-key" id="highwayKeyText">Key: not found yet</span>
+        <label class="highway-field">Sa =
+          <select id="highwayTonic" title="The home note. Sa is whatever note you decide: change it to follow your singer."></select>
+        </label>
+        <select id="highwayMode" title="Major or minor scale">
+          <option value="major">major</option>
+          <option value="minor">minor</option>
+        </select>
+        <button type="button" class="preset-chip" id="highwayKeyReset" title="Go back to the key the app found" hidden>Use detected key</button>
+        <label class="highway-field highway-check"><input type="checkbox" id="highwayShowChords" checked> Chords</label>
+      </div>
       <canvas id="vocalHighwayCanvas" title="Vocal pitch highway. Click to jump to that moment."></canvas>
     </div>
     <div class="timeline-ruler">
@@ -249,6 +261,29 @@
       <div class="scrubber-loop-overlay" id="scrubberLoopOverlay"></div>
       <div class="scrubber-playhead" id="scrubberPlayhead"></div>
     </div>
+  </section>
+
+  <!-- Karaoke lyrics: time-synced when the song's tags or LRCLIB have timings -->
+  <section class="lyrics-panel" id="lyricsPanel" aria-label="Lyrics" hidden>
+    <div class="lyrics-head">
+      <span class="lyrics-heading">Lyrics</span>
+      <span class="lyrics-source" id="lyricsSource"></span>
+      <span class="lyrics-spacer"></span>
+      <span class="lyrics-sync" id="lyricsSyncBox" hidden>
+        <button type="button" class="preset-chip" id="lyricsEarlier" title="Show each line a little earlier">&minus;0.5s</button>
+        <span id="lyricsOffsetLabel">sync 0.0s</span>
+        <button type="button" class="preset-chip" id="lyricsLater" title="Show each line a little later">+0.5s</button>
+      </span>
+      <button type="button" class="preset-chip" id="lyricsFindToggle">Find lyrics</button>
+      <button type="button" class="preset-chip" id="lyricsCollapse">Hide</button>
+    </div>
+    <form class="lyrics-find" id="lyricsFind" hidden>
+      <input type="text" id="lyricsArtist" placeholder="Artist" autocomplete="off">
+      <input type="text" id="lyricsTitle" placeholder="Song title" autocomplete="off">
+      <button type="submit" class="preset-chip" id="lyricsFindGo">Search LRCLIB</button>
+      <span class="lyrics-find-status" id="lyricsFindStatus"></span>
+    </form>
+    <div class="lyrics-stage" id="lyricsStage" aria-live="off"></div>
   </section>
 
   <!-- Studio Main Workstation Grid -->
@@ -404,6 +439,7 @@
   <script src="js/vocal-recorder.js"></script>
   <script src="js/pitch-visualizer.js"></script>
   <script src="js/vocal-highway.js"></script>
+  <script src="js/lyrics-panel.js"></script>
   <script src="js/studio-app.js"></script>
   <script>
     (function () {

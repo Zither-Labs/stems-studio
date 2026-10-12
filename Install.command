@@ -93,11 +93,11 @@ if ! "$VENV_PY" -c "import demucs, yt_dlp, static_ffmpeg, soundfile, numpy" >/de
         || fail "The install did not finish. Please copy the messages above and send them over."
 fi
 
-# The pitch detector for the vocal highway is optional: without it the page uses a simpler one.
-if ! "$VENV_PY" -c "import swift_f0, soxr" >/dev/null 2>&1; then
-    echo "Installing the vocal pitch detector..."
-    "$VENV_PY" -m pip install -r "$ROOT/separator/requirements-pitch.txt" \
-        || echo "  (Could not install it. The app still works; the vocal highway will use a simpler detector.)"
+# The extras (pitch detector, key finder, lyrics) are optional: the app still works without them.
+if ! "$VENV_PY" -c "import swift_f0, soxr, mutagen" >/dev/null 2>&1; then
+    echo "Installing the extras (pitch detector, key finder, lyrics)..."
+    "$VENV_PY" -m pip install -r "$ROOT/separator/requirements-extras.txt" \
+        || echo "  (Could not install it. The app still works; some features will be simpler or switched off.)"
 fi
 
 # --- Step 4: launcher --------------------------------------------------------
