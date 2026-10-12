@@ -976,6 +976,14 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=BASE_DIR, **kwargs)
 
+    def end_headers(self):
+        # The page's own files must be checked again on every load; otherwise the window can keep
+        # running an old script after an update. (Audio stays cacheable.)
+        path = urllib.parse.urlparse(self.path).path
+        if path == "/" or path.endswith((".js", ".css", ".html")):
+            self.send_header("Cache-Control", "no-cache")
+        super().end_headers()
+
     def send_json(self, payload, code=200):
         self.send_response(code)
         self.send_header("Content-Type", "application/json")

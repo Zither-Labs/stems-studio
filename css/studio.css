@@ -375,6 +375,76 @@ body::before {
   border-color: var(--accent-indigo);
 }
 
+.key-shift-item {
+  position: relative;
+}
+
+.key-fit-btn {
+  background: var(--bg-surface-3);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.2rem 0.5rem;
+  cursor: pointer;
+}
+
+.key-fit-btn:hover,
+.key-fit-btn.active {
+  background: var(--accent-indigo);
+  color: #fff;
+}
+
+.key-fit-panel {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  right: 0;
+  z-index: 40;
+  width: 300px;
+  padding: 0.8rem 0.9rem;
+  background: var(--bg-surface-1);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
+}
+
+.key-fit-panel[hidden] {
+  display: none;
+}
+
+.key-fit-title {
+  font-size: 0.8rem;
+  font-weight: 700;
+  margin-bottom: 0.6rem;
+}
+
+.key-fit-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+
+.key-fit-text {
+  margin: 0.7rem 0;
+  font-size: 0.76rem;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
+.key-fit-text strong {
+  color: var(--text-primary);
+}
+
+.key-fit-actions {
+  display: flex;
+  gap: 0.4rem;
+}
+
 .pitch-stepper {
   display: flex;
   align-items: center;

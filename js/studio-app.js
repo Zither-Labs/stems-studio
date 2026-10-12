@@ -1034,17 +1034,143 @@ document.addEventListener('DOMContentLoaded', () => {
     engine.setPlaybackRate(parseFloat(e.target.value));
   });
 
-  pitchDownBtn.addEventListener('click', () => {
-    const newPitch = Math.max(-12, engine.pitchSemitones - 1);
-    engine.setPitchSemitones(newPitch);
-    pitchValEl.textContent = `${newPitch >= 0 ? '+' : ''}${newPitch} st`;
-  });
+  // The key shifter: moves the song up or down without changing its speed.
+  function setKeyShift(semitones) {
+    const value = Math.max(-12, Math.min(12, Math.round(semitones)));
+    engine.setPitchSemitones(value);
+    pitchValEl.textContent = `${value > 0 ? '+' : ''}${value} st`;
+    updateKeyFit();
+  }
 
-  pitchUpBtn.addEventListener('click', () => {
-    const newPitch = Math.min(12, engine.pitchSemitones + 1);
-    engine.setPitchSemitones(newPitch);
-    pitchValEl.textContent = `${newPitch >= 0 ? '+' : ''}${newPitch} st`;
+  pitchDownBtn.addEventListener('click', () => setKeyShift(engine.pitchSemitones - 1));
+  pitchUpBtn.addEventListener('click', () => setKeyShift(engine.pitchSemitones + 1));
+
+  // "Fit my voice": picks the key shift that puts the song's singer inside your comfortable range.
+  // Comfortable ranges, as MIDI notes (60 = middle C). They are kept narrower than the textbook
+  // ranges, so the suggestion does not ask for the top or bottom note of anyone's voice.
+  const VOICE_RANGES = {
+    bass: { name: 'Bass', low: 43, high: 62 },
+    baritone: { name: 'Baritone', low: 47, high: 67 },
+    tenor: { name: 'Tenor', low: 50, high: 70 },
+    alto: { name: 'Alto', low: 55, high: 74 },
+    mezzo: { name: 'Mezzo-soprano', low: 59, high: 78 },
+    soprano: { name: 'Soprano', low: 62, high: 81 }
+  };
+  const keyFitBtn = document.getElementById('keyFitBtn');
+  const keyFitPanel = document.getElementById('keyFitPanel');
+  const keyVoiceEl = document.getElementById('keyVoice');
+  const keyFitText = document.getElementById('keyFitText');
+  const keyFitApply = document.getElementById('keyFitApply');
+  let keyFitSuggestion = null;      // the shift the panel offers
+  let keyFitRange = null;           // the song's singer: { low, mid, high } as MIDI notes
+
+  function noteName(midi) {
+    const names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+    const m = Math.round(midi);
+    return `${names[((m % 12) + 12) % 12]}${Math.floor(m / 12) - 1}`;
+  }
+
+  // The sung range of the song's vocal (the 8th to 92nd percentile, so a stray note does not count).
+  async function readVocalRange() {
+    const hw = window.vocalHighway;
+    if (!hw) return null;
+    let midi = null;
+    const cached = hw.cache.get('vocals:melody');
+    if (cached && cached.midi) midi = cached.midi;
+    else if (hw.active && hw.active.key === 'vocals:melody' && hw.midi) midi = hw.midi;
+    else if (hw.songInfo && hw.songInfo.stems.some((s) => s.file === 'vocals')) {
+      try {
+        const resp = await fetch(`/api/pitch/${hw.songInfo.songId}?stem=vocals`);
+        if (resp.ok) midi = (await resp.json()).midi;
+      } catch (err) { /* no vocal reading: the panel says so */ }
+    }
+    if (!midi) return null;
+    const voiced = Array.from(midi).filter((m) => m > 0).sort((a, b) => a - b);
+    if (voiced.length < 50) return null;
+    const at = (q) => voiced[Math.min(voiced.length - 1, Math.floor(voiced.length * q))];
+    return { low: at(0.08), mid: at(0.5), high: at(0.92) };
+  }
+
+  // The shift (-12..+12) that keeps the singer inside the voice's range; among equal answers the smallest.
+  function bestShift(range, voice) {
+    let best = null;
+    for (let s = -12; s <= 12; s++) {
+      const below = Math.max(0, voice.low - (range.low + s));
+      const above = Math.max(0, (range.high + s) - voice.high);
+      const cost = below + above * 1.5 + Math.abs(s) * 0.01;
+      if (!best || cost < best.cost - 1e-9) best = { shift: s, cost, below, above };
+    }
+    return best;
+  }
+
+  function keyName(semitones) {
+    const hw = window.vocalHighway;
+    if (!hw || !hw.key) return '';
+    return `${hw.noteSpelling(hw.key.tonic + semitones)} ${hw.key.mode}`;
+  }
+
+  function updateKeyFit() {
+    if (keyFitPanel.hidden) return;
+    const voice = VOICE_RANGES[keyVoiceEl.value];
+    keyFitSuggestion = null;
+    keyFitApply.disabled = true;
+    const notes = engine.keyShifterState === 'failed'
+      ? '<br><em>This browser could not start the key shifter, so changing the key also changes the speed.</em>' : '';
+    if (!keyFitRange) {
+      keyFitText.innerHTML = 'The vocal of this song has not been read yet. Open a song from My Library or Create Stems, ' +
+        'then try again. Meanwhile the + and - buttons move the key by hand.' + notes;
+      return;
+    }
+    const best = bestShift(keyFitRange, voice);
+    const r = keyFitRange;
+    const song = `The singer here goes from <strong>${noteName(r.low)}</strong> to <strong>${noteName(r.high)}</strong>, mostly around ${noteName(r.mid)}.`;
+    const fit = `${voice.name}s are comfortable from ${noteName(voice.low)} to ${noteName(voice.high)}.`;
+    let advice;
+    if (best.shift === 0 && best.cost < 0.05) {
+      advice = '<strong>The original key already suits you.</strong>';
+    } else {
+      const word = best.shift > 0 ? 'up' : 'down';
+      const to = keyName(best.shift);
+      advice = `Move the key <strong>${word} ${Math.abs(best.shift)} semitone${Math.abs(best.shift) === 1 ? '' : 's'}</strong>` +
+        `${to ? ` (to ${to})` : ''}.`;
+    }
+    if (best.below > 0 || best.above > 0) {
+      advice += ' The song is wider than this voice, so some notes will stay out of reach.';
+    }
+    keyFitText.innerHTML = `${song}<br>${fit}<br>${advice}${notes}`;
+    keyFitSuggestion = best.shift;
+    keyFitApply.disabled = best.shift === engine.pitchSemitones;
+    keyFitApply.textContent = best.shift === 0 ? 'Original key' : `Use ${best.shift > 0 ? '+' : ''}${best.shift}`;
+  }
+
+  async function openKeyFit() {
+    keyFitPanel.hidden = false;
+    keyFitBtn.classList.add('active');
+    keyFitRange = null;
+    keyFitText.textContent = 'Reading the singer in this song...';
+    keyFitRange = await readVocalRange();
+    updateKeyFit();
+  }
+
+  function closeKeyFit() {
+    keyFitPanel.hidden = true;
+    keyFitBtn.classList.remove('active');
+  }
+
+  try {
+    const saved = localStorage.getItem('stemsStudio.voiceType');
+    if (saved && VOICE_RANGES[saved]) keyVoiceEl.value = saved;
+    else keyVoiceEl.value = 'mezzo';
+  } catch (err) { /* private mode: the default stays */ }
+  keyFitBtn.addEventListener('click', () => (keyFitPanel.hidden ? openKeyFit() : closeKeyFit()));
+  document.getElementById('keyFitClose').addEventListener('click', closeKeyFit);
+  document.getElementById('keyFitReset').addEventListener('click', () => setKeyShift(0));
+  keyFitApply.addEventListener('click', () => { if (keyFitSuggestion !== null) setKeyShift(keyFitSuggestion); });
+  keyVoiceEl.addEventListener('change', () => {
+    try { localStorage.setItem('stemsStudio.voiceType', keyVoiceEl.value); } catch (err) { /* ignore */ }
+    updateKeyFit();
   });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !keyFitPanel.hidden) closeKeyFit(); });
 
   // Looping
   loopToggleBtn.addEventListener('click', () => {

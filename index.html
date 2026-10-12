@@ -213,12 +213,36 @@
         </select>
       </div>
 
-      <div class="control-item">
-        <span class="control-label">Pitch</span>
+      <div class="control-item key-shift-item">
+        <span class="control-label">Key</span>
         <div class="pitch-stepper">
-          <button class="step-btn" id="pitchDownBtn" title="Pitch Down (Semitone)">-</button>
+          <button class="step-btn" id="pitchDownBtn" title="Key down one semitone (the speed stays the same)">-</button>
           <span class="pitch-val" id="pitchVal">0 st</span>
-          <button class="step-btn" id="pitchUpBtn" title="Pitch Up (Semitone)">+</button>
+          <button class="step-btn" id="pitchUpBtn" title="Key up one semitone (the speed stays the same)">+</button>
+        </div>
+        <button class="key-fit-btn" id="keyFitBtn" title="Find the key that suits your voice">Fit my voice</button>
+        <div class="key-fit-panel" id="keyFitPanel" hidden>
+          <div class="key-fit-title">Fit the key to your voice</div>
+          <label class="key-fit-row">I sing as
+            <select class="mini-select" id="keyVoice">
+              <optgroup label="Male voice">
+                <option value="bass">Bass (low)</option>
+                <option value="baritone">Baritone (middle)</option>
+                <option value="tenor">Tenor (high)</option>
+              </optgroup>
+              <optgroup label="Female voice">
+                <option value="alto">Alto (low)</option>
+                <option value="mezzo">Mezzo-soprano (middle)</option>
+                <option value="soprano">Soprano (high)</option>
+              </optgroup>
+            </select>
+          </label>
+          <p class="key-fit-text" id="keyFitText">Open a song to see which key suits you.</p>
+          <div class="key-fit-actions">
+            <button class="btn btn-sm" id="keyFitApply" disabled>Use it</button>
+            <button class="btn btn-sm" id="keyFitReset">Original key</button>
+            <button class="btn btn-sm" id="keyFitClose">Close</button>
+          </div>
         </div>
       </div>
     </div>

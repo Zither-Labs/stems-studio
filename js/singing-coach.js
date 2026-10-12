@@ -279,7 +279,7 @@ class SingingCoach {
     const ctx = this.engine.ctx;
     const output = ctx.outputLatency || ctx.baseLatency || 0.02;
     const real = (this.inputLatency || 0.015) + (this.frameLag || 0.025) + output + this.settings.delayMs / 1000;
-    const speed = this.engine.playbackRate * Math.pow(2, this.engine.pitchSemitones / 12);
+    const speed = this.engine.getSpeed();
     return real * speed;
   }
 

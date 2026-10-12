@@ -14,7 +14,15 @@ class AudioEngine {
     this.tracks = new Map(); // id -> TrackState
     this.isPlaying = false;
     this.playbackRate = 1.0;
-    this.pitchSemitones = 0; // -12 to +12
+    this.pitchSemitones = 0; // the key shift, -12 to +12 semitones
+
+    // The key shifter: a SoundTouch worklet on the master bus changes the key without changing the
+    // speed. 'idle' | 'loading' | 'ready' | 'failed'. If it cannot load, the key shift falls back to
+    // the old tape-style way (the song also gets faster or slower).
+    this.keyShifter = null;
+    this.keyShifterState = 'idle';
+    this.shifterRouted = false;
+    this.shifterDelay = 0.12;   // seconds the shifter holds the sound back (measured: 0.11 to 0.13 at every setting)
 
     // Timeline state
     this.currentPosition = 0; // seconds
@@ -55,6 +63,63 @@ class AudioEngine {
     this.masterSplitter.connect(this.masterAnalyserL, 0);
     this.masterSplitter.connect(this.masterAnalyserR, 1);
     this.masterGain.connect(this.ctx.destination);
+    this.loadKeyShifter();
+  }
+
+  // --- key shifter -----------------------------------------------------------------
+
+  async loadKeyShifter() {
+    if (this.keyShifterState !== 'idle' || !this.ctx) return;
+    this.keyShifterState = 'loading';
+    try {
+      if (!this.ctx.audioWorklet) throw new Error('this browser has no audio worklets');
+      await this.ctx.audioWorklet.addModule('js/vendor/soundtouch-processor.js');
+      const node = new AudioWorkletNode(this.ctx, 'soundtouch-processor', {
+        numberOfInputs: 1,
+        numberOfOutputs: 1,
+        outputChannelCount: [2],
+        processorOptions: { sampleBufferType: 'circular' }
+      });
+      const position = this.getCurrentTime();
+      this.keyShifter = node;
+      this.keyShifterState = 'ready';
+      this.updateKeyShifter();
+      if (this.isPlaying && (this.pitchSemitones !== 0 || this.playbackRate !== 1)) this.seek(position);
+    } catch (err) {
+      console.warn('The key shifter could not start, using the simple pitch control instead:', err);
+      this.keyShifterState = 'failed';
+    }
+  }
+
+  // Whether the sound has to pass through the shifter (it does not when nothing is shifted: no delay, no artefacts).
+  shifterNeeded() {
+    return this.keyShifterState === 'ready' && (this.pitchSemitones !== 0 || this.playbackRate !== 1);
+  }
+
+  // Points the master bus at the shifter (or straight to the speakers) and sets the shifter's key.
+  updateKeyShifter() {
+    if (!this.ctx || this.keyShifterState !== 'ready') return;
+    const node = this.keyShifter;
+    node.parameters.get('pitchSemitones').value = this.pitchSemitones;
+    node.parameters.get('playbackRate').value = this.playbackRate;
+    const needed = this.shifterNeeded();
+    if (needed === this.shifterRouted) return;
+    if (needed) {
+      this.masterGain.disconnect(this.ctx.destination);
+      this.masterGain.connect(node);
+      node.connect(this.ctx.destination);
+    } else {
+      this.masterGain.disconnect(node);
+      node.disconnect();
+      this.masterGain.connect(this.ctx.destination);
+    }
+    this.shifterRouted = needed;
+  }
+
+  // How fast the song's own time runs, compared with the clock.
+  getSpeed() {
+    if (this.keyShifterState === 'ready') return this.playbackRate;
+    return this.playbackRate * Math.pow(2, this.pitchSemitones / 12);
   }
 
   async resume() {
@@ -212,9 +277,8 @@ class AudioEngine {
     const source = this.ctx.createBufferSource();
     source.buffer = track.buffer;
 
-    // Calculate effective playback rate including semitone shift
-    const semitoneRatio = Math.pow(2, this.pitchSemitones / 12);
-    source.playbackRate.value = this.playbackRate * semitoneRatio;
+    // With the key shifter the sources only change speed; the shifter puts the key right again.
+    source.playbackRate.value = this.getSpeed();
 
     source.connect(track.nodes.eqLow);
 
@@ -278,9 +342,10 @@ class AudioEngine {
       return this.currentPosition;
     }
 
-    const semitoneRatio = Math.pow(2, this.pitchSemitones / 12);
-    const speed = this.playbackRate * semitoneRatio;
-    const elapsed = (this.ctx.currentTime - this.lastStartAudioTime) * speed;
+    const speed = this.getSpeed();
+    // What is being heard is a little behind what is being played while the shifter is in the way.
+    const held = this.shifterRouted ? this.shifterDelay : 0;
+    const elapsed = Math.max(0, this.ctx.currentTime - this.lastStartAudioTime - held) * speed;
     let pos = this.currentPosition + elapsed;
 
     if (this.isLooping && this.loopEnd > this.loopStart) {
@@ -361,17 +426,21 @@ class AudioEngine {
   }
 
   setPlaybackRate(rate) {
+    const position = this.isPlaying ? this.getCurrentTime() : null;
     this.playbackRate = Math.max(0.25, Math.min(2.0, rate));
+    this.updateKeyShifter();
     if (this.isPlaying) {
-      this.seek(this.getCurrentTime());
+      this.seek(position);
     }
     this.emit('rateChanged', this.playbackRate);
   }
 
   setPitchSemitones(semitones) {
+    const position = this.isPlaying ? this.getCurrentTime() : null;
     this.pitchSemitones = Math.max(-12, Math.min(12, semitones));
+    this.updateKeyShifter();
     if (this.isPlaying) {
-      this.seek(this.getCurrentTime());
+      this.seek(position);
     }
     this.emit('pitchChanged', this.pitchSemitones);
   }
