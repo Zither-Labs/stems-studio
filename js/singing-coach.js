@@ -360,7 +360,7 @@ class SingingCoach {
   targetAt(time) {
     const h = this.highway;
     if (h.kind !== 'melody' || h.state !== 'ready') return null;
-    const notes = h.notes;
+    const notes = h.singableNotes;     // growl guesses are not scored
     let lo = 0;
     let hi = notes.length - 1;
     while (lo <= hi) {
@@ -404,7 +404,7 @@ class SingingCoach {
   }
 
   getPhrases() {
-    const notes = this.highway.notes;
+    const notes = this.highway.singableNotes;
     if (this.phraseSource === notes) return this.phrases;
     this.phraseSource = notes;
     // First cut at every real pause...

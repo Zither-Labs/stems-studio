@@ -158,6 +158,12 @@ class VocalHighway {
     this.rollChords = [];      // chords worked out from the notes that sound together
     this.lanes = [];           // drum mode: [{ id, label, hits: [[time, strength]...] }]
     this.approximateDrums = false;
+    this.cleanNotes = [];      // melody mode: the sung notes
+    this.roughNotes = [];      // melody mode: guesses at growls and screams (dashed, not scored)
+    this.roughMidi = null;
+    this.roughAuto = false;    // the server found the vocal mostly rough: show those guesses by default
+    this.roughChoice = null;   // null = follow roughAuto, or what the singer ticked
+    this.showRough = false;
     this.rollMinStrength = this.loadNumber('stemsStudio.rollMinStrength', 0.4);
     this.shift = 0;            // semitones the engine's pitch control moves everything up or down
     this.coach = null;         // the singing coach draws on top of the highway (js/singing-coach.js)
@@ -275,6 +281,7 @@ class VocalHighway {
     this.songToken++;
     this.analysisId++;
     this.cache.clear();
+    this.roughChoice = null;       // a new song starts with the automatic choice again
     this.active = null;
     this.clearView();
     if (!buffer) {
@@ -313,7 +320,9 @@ class VocalHighway {
       this.cache.set(this.active.key, {
         state: this.state, midi: this.midi, t0: this.t0, dt: this.dt, notes: this.notes,
         baseMin: this.baseMin, baseMax: this.baseMax, roll: this.roll, rawRoll: this.rawRoll,
-        lanes: this.lanes, approximateDrums: this.approximateDrums
+        lanes: this.lanes, approximateDrums: this.approximateDrums,
+        cleanNotes: this.cleanNotes, roughNotes: this.roughNotes, roughMidi: this.roughMidi,
+        roughAuto: this.roughAuto, rangeClean: this.rangeClean, rangeRough: this.rangeRough
       });
     }
   }
@@ -326,6 +335,13 @@ class VocalHighway {
     this.rollChords = [];
     this.lanes = [];
     this.approximateDrums = false;
+    this.cleanNotes = [];
+    this.roughNotes = [];
+    this.roughMidi = null;
+    this.roughAuto = false;
+    this.rangeClean = null;
+    this.rangeRough = null;
+    this.showRough = false;
     this.baseMin = undefined;
     this.baseMax = undefined;
   }
@@ -341,8 +357,45 @@ class VocalHighway {
     this.rawRoll = view.rawRoll || [];
     this.lanes = view.lanes || [];
     this.approximateDrums = Boolean(view.approximateDrums);
+    this.cleanNotes = view.cleanNotes || [];
+    this.roughNotes = view.roughNotes || [];
+    this.roughMidi = view.roughMidi || null;
+    this.roughAuto = Boolean(view.roughAuto);
+    this.rangeClean = view.rangeClean || null;
+    this.rangeRough = view.rangeRough || null;
     this.filterRoll();
+    this.chooseRough();
     this.applyKeyRange();
+  }
+
+  // Which melody notes are on show: the sung ones, and (when asked for, or when the voice is mostly
+  // rough) the dashed guesses at growls and screams.
+  chooseRough() {
+    if (this.kind !== 'melody' || !this.cleanNotes.length && !this.roughNotes.length) {
+      this.showRough = false;
+    } else {
+      this.showRough = this.roughNotes.length > 0 && (this.roughChoice === null ? this.roughAuto : this.roughChoice);
+      this.notes = this.showRough
+        ? this.cleanNotes.concat(this.roughNotes).sort((a, b) => a.start - b.start)
+        : this.cleanNotes;
+      const range = this.showRough && this.rangeRough ? this.rangeRough : this.rangeClean;
+      if (range) { this.baseMin = range.min; this.baseMax = range.max; }
+      if (this.state === 'nopitch' && this.notes.length) this.state = 'ready';
+      if (this.state === 'ready' && !this.notes.length) this.state = 'nopitch';
+    }
+    this.singableCache = null;
+    if (this.barEls && this.barEls.roughWrap) {
+      this.barEls.roughWrap.hidden = !(this.kind === 'melody' && this.roughNotes.length);
+      this.barEls.rough.checked = this.showRough;
+    }
+  }
+
+  // The notes a singer can be scored on (growl guesses are not).
+  get singableNotes() {
+    if (this.singableCache && this.singableCache.source === this.notes) return this.singableCache.list;
+    const list = this.notes.filter((note) => !note.rough);
+    this.singableCache = { source: this.notes, list };
+    return list;
   }
 
   selectSource(key) {
@@ -400,7 +453,7 @@ class VocalHighway {
       if (!resp.ok) throw new Error(`request failed (${resp.status})`);
       const data = await resp.json();
       if (source.kind === 'notes') finish(this.makeRollView(data.notes));
-      else finish(this.makeMelodyView(Float32Array.from(data.midi), data.t0, data.dt, true));
+      else finish(this.makeMelodyView(Float32Array.from(data.midi), data.t0, data.dt, true, data));
     } catch (err) {
       console.warn(`Server could not read the ${source.label} (${err.message})`);
       const track = this.engine.tracks.get(source.trackId);
@@ -521,10 +574,21 @@ class VocalHighway {
       source: bar.querySelector('#highwaySource'),
       sourceWrap: bar.querySelector('#highwaySourceWrap'),
       detail: bar.querySelector('#highwayDetail'),
-      detailWrap: bar.querySelector('#highwayDetailWrap')
+      detailWrap: bar.querySelector('#highwayDetailWrap'),
+      roughWrap: bar.querySelector('#highwayRoughWrap'),
+      rough: bar.querySelector('#highwayRough')
     };
     this.barEls = els;
     els.source.addEventListener('change', () => this.selectSource(els.source.value));
+    if (els.rough) {
+      els.rough.addEventListener('change', () => {
+        this.roughChoice = els.rough.checked;
+        this.chooseRough();
+        this.applyKeyRange();
+        this.lastKey = '';
+        if (this.coach) this.coach.sourceChanged();
+      });
+    }
     // The slider runs from "fewer notes" (left) to "more notes" (right); the setting is the weakest
     // note strength that is still shown.
     els.detail.value = String(Math.round((0.7 - this.rollMinStrength) * 100));
@@ -706,25 +770,45 @@ class VocalHighway {
   }
 
   // The finished picture of one melody line: its bars, and how much of the pitch range to show.
-  makeMelodyView(midi, t0, dt, alreadyCleaned) {
+  makeMelodyView(midi, t0, dt, alreadyCleaned, extra) {
     // The server's track has had octave errors, breaths and stray blips removed already.
     const smooth = alreadyCleaned ? midi : this.medianSmooth(midi);
-    const notes = this.buildNotes(smooth, t0, dt);
-    const view = { state: 'ready', midi: smooth, t0, dt, notes };
+    const cleanNotes = this.buildNotes(smooth, t0, dt);
+    const view = { state: 'ready', midi: smooth, t0, dt, notes: cleanNotes, cleanNotes, roughNotes: [] };
 
-    const voiced = [];
-    for (let i = 0; i < smooth.length; i++) if (smooth[i]) voiced.push(smooth[i]);
-    if (voiced.length < 10 || !notes.length) {
-      view.state = 'nopitch';
+    // How much of the pitch range to show for a list of MIDI values (or null if there are too few).
+    const rangeOf = (values) => {
+      const voiced = values.filter((m) => m > 0).sort((a, b) => a - b);
+      if (voiced.length < 10) return null;
+      const pick = (q) => voiced[Math.min(voiced.length - 1, Math.floor(voiced.length * q))];
+      let lo = Math.floor(pick(0.03)) - 2;
+      let hi = Math.ceil(pick(0.97)) + 2;
+      while (hi - lo < 16) { lo--; hi++; }   // never zoom in tighter than about an octave and a half
+      return { min: Math.max(21, lo), max: Math.min(100, hi) };
+    };
+
+    // Growls and screams: the server's rough guesses, kept apart from the sung notes.
+    let rough = null;
+    if (extra && extra.rough_midi) {
+      rough = Float32Array.from(extra.rough_midi);
+      view.roughMidi = rough;
+      view.roughNotes = this.buildNotes(rough, t0, dt).map((note) => Object.assign(note, { rough: true }));
+      view.roughAuto = Boolean(extra.rough_auto);
+      view.rangeRough = rangeOf(Array.from(smooth).concat(Array.from(rough)));
+    }
+    view.rangeClean = rangeOf(Array.from(smooth));
+
+    const showingRough = view.roughNotes.length > 0 && (this.roughChoice === null ? view.roughAuto : this.roughChoice);
+    const range = showingRough && view.rangeRough ? view.rangeRough : view.rangeClean;
+    if (!range || (!cleanNotes.length && !showingRough)) {
+      if (!view.roughNotes.length) { view.state = 'nopitch'; return view; }
+      view.state = 'nopitch';        // nothing to show unless the singer asks for the rough guesses
+      view.baseMin = (view.rangeRough || { min: 48 }).min;
+      view.baseMax = (view.rangeRough || { max: 72 }).max;
       return view;
     }
-    voiced.sort((a, b) => a - b);
-    const pick = (q) => voiced[Math.min(voiced.length - 1, Math.floor(voiced.length * q))];
-    let lo = Math.floor(pick(0.03)) - 2;
-    let hi = Math.ceil(pick(0.97)) + 2;
-    while (hi - lo < 16) { lo--; hi++; }   // never zoom in tighter than about an octave and a half
-    view.baseMin = Math.max(21, lo);
-    view.baseMax = Math.min(100, hi);
+    view.baseMin = range.min;
+    view.baseMax = range.max;
     return view;
   }
 
@@ -940,8 +1024,16 @@ class VocalHighway {
         grad.addColorStop(1, colors[1]);
         ctx.fillStyle = grad;
       }
+      // A growl or scream: only a guess at a pitch, so it is drawn amber and dashed.
+      if (note.rough) ctx.fillStyle = active ? 'rgba(251, 191, 36, 0.9)' : past ? 'rgba(251, 191, 36, 0.18)' : 'rgba(251, 191, 36, 0.36)';
       this.roundedBar(x1, y, barW, barH);
       ctx.fill();
+      if (note.rough) {
+        ctx.setLineDash([5, 3]);
+        ctx.lineWidth = 1.4;
+        ctx.strokeStyle = 'rgba(251, 191, 36, 0.95)';
+        ctx.stroke();
+      }
       ctx.restore();
 
       // The singing coach marks each note once it has gone by: green hit, amber off, red missed.
@@ -978,6 +1070,28 @@ class VocalHighway {
       else { ctx.moveTo(x, y); drawing = true; }
     }
     ctx.stroke();
+
+    if (this.showRough && this.roughMidi) {
+      ctx.save();
+      ctx.strokeStyle = 'rgba(251, 191, 36, 0.85)';
+      ctx.setLineDash([4, 3]);
+      ctx.lineWidth = 1.3;
+      ctx.beginPath();
+      let roughDrawing = false;
+      let previous = 0;
+      for (let k = first; k <= Math.min(lastFrame, this.roughMidi.length - 1); k++) {
+        const m = this.roughMidi[k] ? this.roughMidi[k] + shift : 0;
+        if (!m || m < this.minMidi - 0.5 || m > this.maxMidi + 0.5) { roughDrawing = false; continue; }
+        const x = timeToX(this.t0 + k * this.dt);
+        const y = this.midiToY(m);
+        // A big jump is the guess changing its mind (often by an octave): do not draw a wall across it.
+        if (roughDrawing && Math.abs(m - previous) <= 4) ctx.lineTo(x, y);
+        else { ctx.moveTo(x, y); roughDrawing = true; }
+        previous = m;
+      }
+      ctx.stroke();
+      ctx.restore();
+    }
 
     // The "now" line and a dot on the pitch being sung right now.
     this.drawNowLine(hp);
@@ -1157,7 +1271,9 @@ class VocalHighway {
         idle: 'Highway: open a song to see the singing pitch here.',
         analyzing: `Reading the ${this.active ? this.active.label.toLowerCase() : 'pitch'}...`,
         nopitch: this.kind === 'notes' ? 'No clear notes were found in this stem.'
-          : this.kind === 'drums' ? 'No drum hits were found.' : 'No clear pitch was found in this stem.',
+          : this.kind === 'drums' ? 'No drum hits were found.'
+          : this.roughNotes.length ? 'No clear singing pitch here. Tick "Rough voice" above to see a guess at the growls.'
+          : 'No clear pitch was found in this stem.',
         error: 'Could not read the pitch of this stem.'
       };
       this.drawMessage(messages[this.state] || '');

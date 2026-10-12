@@ -24,7 +24,7 @@ import sys
 
 import numpy as np
 
-ANALYSIS_VERSION = 5          # bump this when the method changes, so saved results are redone
+ANALYSIS_VERSION = 6          # bump this when the method changes, so saved results are redone
 STEP_SECONDS = 256 / 16000    # SwiftF0 reports one pitch every 256 samples at 16 kHz
 
 # Singing range we accept (Hz). Lower than a bass voice or higher than a soprano is bleed.
@@ -57,6 +57,80 @@ def _runs(mask):
     padded = np.concatenate(([False], mask, [False]))
     edges = np.flatnonzero(padded[1:] != padded[:-1])
     return list(zip(edges[0::2], edges[1::2]))
+
+
+# Rough voices: growls, screams, harsh vocals. They are loud but hardly pitched, so the detector
+# above (made for sung notes) leaves them out and the highway stays empty. For those loud
+# stretches a second, much more forgiving estimate is made: "subharmonic summation" looks for the
+# base pitch whose overtones line up best with the strongest parts of the sound, which works
+# for a rough, noisy tone where a clean pitch detector gives up. It is a GUESS at the pitch of
+# a sound that has hardly any, so the highway shows it separately (dashed) and the coach does
+# not score it.
+ROUGH_FMIN_HZ = 55.0
+ROUGH_FMAX_HZ = 420.0
+ROUGH_HARMONICS = 8
+ROUGH_LOUD_BELOW_DB = 24       # same meaning as RESCUE_LOUD_BELOW_DB
+ROUGH_SMOOTH_RADIUS = 4        # frames: the median over about 140 ms steadies the guess
+ROUGH_MIN_SECONDS = 0.12
+ROUGH_AUTO_FRACTION = 0.5      # if more than this share of the loud frames has no clean pitch, show it by default
+
+
+def rough_voice(mono, rate, t0, midi):
+    """(rough MIDI per step, share of loud frames without a clean pitch). 0 = nothing rough here."""
+    n = len(midi)
+    rough = np.zeros(n)
+    if n == 0 or len(mono) == 0:
+        return rough, 0.0
+    hop_half = max(1, int(round(STEP_SECONDS * rate)))
+    n_fft = 1 << int(np.ceil(np.log2(0.09 * rate)))
+    centres = np.round((t0 + np.arange(n) * STEP_SECONDS) * rate).astype(np.int64)
+
+    # Loudness of every step (RMS over about 32 ms around it).
+    squares = np.concatenate(([0.0], np.cumsum(mono.astype(np.float64) ** 2)))
+    lo = np.clip(centres - hop_half, 0, len(mono))
+    hi = np.clip(centres + hop_half, 0, len(mono))
+    rms = np.sqrt((squares[hi] - squares[lo]) / np.maximum(1, hi - lo))
+    db = 20 * np.log10(rms + 1e-9)
+    active = db > -60
+    if not active.any():
+        return rough, 0.0
+    level = np.percentile(db[active], 90)
+    loud = db >= level - ROUGH_LOUD_BELOW_DB
+    candidate = loud & (midi <= 0)
+    fraction = float(candidate.sum() / max(1, loud.sum()))
+    if not candidate.any():
+        return rough, fraction
+
+    f0s = ROUGH_FMIN_HZ * 2 ** (np.arange(int(12 * np.log2(ROUGH_FMAX_HZ / ROUGH_FMIN_HZ) * 4) + 1) / 48.0)
+    freqs = np.fft.rfftfreq(n_fft, 1.0 / rate)
+    weights = 0.84 ** np.arange(ROUGH_HARMONICS)
+    smooth_bins = max(3, int(200.0 / freqs[1]))
+    kernel = np.ones(smooth_bins) / smooth_bins
+    window = np.hanning(n_fft).astype(np.float32)
+    padded = np.concatenate((np.zeros(n_fft // 2, dtype=np.float32), mono.astype(np.float32), np.zeros(n_fft, dtype=np.float32)))
+    guess = np.zeros(n)
+    for i in np.flatnonzero(candidate):
+        start = int(centres[i])                        # padded index of (centre - n_fft/2)
+        spectrum = np.log1p(np.abs(np.fft.rfft(padded[start:start + n_fft] * window)) * 30.0)
+        spectrum = np.maximum(0.0, spectrum - np.convolve(spectrum, kernel, mode="same"))   # keep the peaks
+        score = np.zeros(len(f0s))
+        for h in range(ROUGH_HARMONICS):
+            score += weights[h] * np.interp((h + 1) * f0s, freqs, spectrum)
+        guess[i] = 69.0 + 12.0 * np.log2(f0s[int(score.argmax())] / 440.0)
+
+    # Steady the guess inside every stretch (median of the neighbours that have a guess) ...
+    steady = np.zeros(n)
+    for start, end in _runs(candidate):
+        piece = guess[start:end]
+        for k in range(len(piece)):
+            a, b = max(0, k - ROUGH_SMOOTH_RADIUS), min(len(piece), k + ROUGH_SMOOTH_RADIUS + 1)
+            steady[start + k] = np.median(piece[a:b])
+    # ... and drop stretches too short to be a voice.
+    min_frames = int(round(ROUGH_MIN_SECONDS / STEP_SECONDS))
+    for start, end in _runs(candidate):
+        if end - start >= min_frames:
+            rough[start:end] = steady[start:end]
+    return rough, fraction
 
 
 def repair_octaves(midi, voiced, singer_median):
@@ -249,7 +323,7 @@ def instrument_paths(vocal_path):
 # (a bass guitar's low E is 41 Hz): the audio is declared to be at half its real sample rate,
 # so every pitch is heard one octave higher, and the result is divided by two again.
 PROFILES = {
-    "vocals": {"fmin": FMIN_HZ, "fmax": FMAX_HZ},
+    "vocals": {"fmin": FMIN_HZ, "fmax": FMAX_HZ, "rough": True},
     "bass": {"fmin": 34.0, "fmax": 260.0, "octave_up": True,            # low E (41 Hz) up to about C4
              "high": {"fmin": 240.0, "fmax": 900.0}},                    # then a second pass for high notes and solos
     "melody": {"fmin": 75.0, "fmax": 1400.0},     # lead guitar, guitar, anything single-note
@@ -317,13 +391,23 @@ def analyze_file(path, instruments=None, profile=None):
             midi, ghosts_removed = bleed_check.remove_ghost_notes(midi, STEP_SECONDS, path, instruments, t0)
         except Exception as exc:      # the check is a bonus: never lose the pitch because of it
             print(f"Ghost-note check skipped: {exc}", file=sys.stderr)
-    return {
+    result = {
         "version": ANALYSIS_VERSION,
         "t0": t0,
         "dt": STEP_SECONDS,
         "ghost_notes_removed": ghosts_removed,
         "midi": [round(float(m), 2) for m in midi],
     }
+    if profile.get("rough"):
+        try:
+            rough, fraction = rough_voice(mono, rate, t0, np.asarray(midi, dtype=float))
+            if (rough > 0).any():
+                result["rough_midi"] = [round(float(m), 1) for m in rough]
+            result["unpitched_loud"] = round(fraction, 3)
+            result["rough_auto"] = bool(fraction > ROUGH_AUTO_FRACTION)
+        except Exception as exc:      # a bonus: never lose the clean pitch because of it
+            print(f"Rough-voice estimate skipped: {exc}", file=sys.stderr)
+    return result
 
 def _signature(wav_path, instruments):
     return {"source_mtime": os.path.getmtime(wav_path),

@@ -1097,7 +1097,11 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
                     self.send_json({"notes": result["notes"]})
                     return
                 result = module.cached_analysis(wav_path, os.path.join(OUTPUT_DIR, song_id, stem + ".pitch.json"))
-            self.send_json({"t0": result["t0"], "dt": result["dt"], "midi": result["midi"]})
+            payload = {"t0": result["t0"], "dt": result["dt"], "midi": result["midi"]}
+            for key in ("rough_midi", "rough_auto", "unpitched_loud"):   # growls and screams, when there are any
+                if key in result:
+                    payload[key] = result[key]
+            self.send_json(payload)
             return
         elif parsed.path.startswith("/api/hits/"):
             # When the drums hit (kick, snare, hi-hat...), for the drum lane of the highway.
