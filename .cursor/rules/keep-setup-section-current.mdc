@@ -1,0 +1,17 @@
+---
+description: Keep the README's "Setting it up on another computer" section current as the app changes
+alwaysApply: true
+---
+
+# Keep the setup section current
+
+The README has a section **"Setting it up on another computer"**. Whenever a change affects how someone
+installs or sets up Stems Studio, update that section in the same commit and refresh its "Last checked" date:
+
+- prerequisites (Git, Python, browser, GPU), `Install.bat` / `Install.command` steps, optional installs
+- new files or settings a new computer needs (for example `settings.json` / `STEMS_STUDIO_LIBRARY`)
+- changes to where the library lives or how song folders are named
+- the update check, or anything that makes versions on different computers incompatible
+- model downloads or other first-run steps
+
+Say honestly what has and has not been tested (clean machine, Mac).

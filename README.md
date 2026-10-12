@@ -173,6 +173,18 @@ The library and all stems are stored outside the code folder, so git never touch
 
 If something goes wrong at startup, the details are in `stems-studio.log` in that folder.
 
+### Setting it up on another computer
+*(Last checked against the app on 2026-10-12. Not yet tried on a clean machine; Mac not tested.)*
+
+1. Install **Git** and **Chrome or Edge**. Python 3.12 is fetched for you if the PC has Python or the `py` launcher; if the installer says it cannot, install Python from python.org (tick "Add python.exe to PATH").
+2. The repository is private, so the person needs a GitHub account that has been invited to `Zither-Labs/stems-studio`. Git asks them to sign in the first time.
+3. Get the app: `git clone https://github.com/Zither-Labs/stems-studio.git C:\Music\StemsStudio` (any folder works; avoid OneDrive folders). Do **not** copy the `.venv` or `.venv-roformer` folders from another computer; they only work where they were made.
+4. Double-click **`Install.bat`** (Mac: `Install.command`). It builds the app's own Python environment, installs the GPU version of PyTorch if there is an NVIDIA card (otherwise it runs on the CPU, slowly), the stem maker and the extras, offers the optional "cleaner vocals" and drum splitting, and makes the **Stems Studio** shortcut. The first time takes several minutes; safe to run again.
+5. Open **Stems Studio** from the shortcut. The first split downloads the separation model.
+6. **To see the same songs as another computer**, point it at the shared library (see "Keeping the library on another drive" above): create `%LOCALAPPDATA%\StemsStudio\settings.json` with `{"library_dir": "Z:\\Music\\Stems"}` (the drive has to be connected there too). Without this, each computer has its own library, starting empty.
+7. Updates: when GitHub has a newer version, a bar appears in the app with an **Update now** button (see "Update check"). Keep every computer that shares a library on the same version.
+
+
 ---
 
 ## ⌨️ Keyboard Shortcuts
