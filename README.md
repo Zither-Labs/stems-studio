@@ -47,7 +47,7 @@ The bar at the top of the screen has four buttons.
 The app starts the engine for you; the window tells you if it cannot reach it.
 
 ### 📚 My Library (never split the same song twice)
-Every song you create is saved automatically in a small database on your computer (`library.db` in the data folder described below, with the stem files beside it). Click **"📚 My Library"** to see them all, open one instantly, or delete the ones you no longer need.
+Every song you create is saved automatically in a small database on your computer (`library.db` in the library folder described below, with one folder per song beside it, named like `Audioslave - Like A Stone`, holding that song's stems as ordinary `.wav` files you can open in any other program). Click **"📚 My Library"** to see them all, open one instantly, or delete the ones you no longer need.
 
 If you run **Create Stems** on a song that is already in the library, it is opened straight away instead of being processed again. This works for the same audio file even if you renamed it, and for the same YouTube video even if the link looks different. The library is stored only on this computer and is not uploaded to GitHub.
 
@@ -169,7 +169,7 @@ The library and all stems are stored outside the code folder, so git never touch
 - Mac: `~/Library/Application Support/StemsStudio`
 - Linux: `~/.local/share/stems-studio`
 
-**Keeping the library on another drive (for example a network drive shared by several computers).** Create a file `settings.json` in that data folder containing `{"library_dir": "Z:\\Music\\Stems"}` (use your own folder), or set the environment variable `STEMS_STUDIO_LIBRARY` to the folder. The songs, stems and `library.db` then live there, and every computer pointed at the same folder sees the same songs. To move an existing library, close the app and copy the contents of the `library` folder in the data folder into the new folder first. If the folder cannot be reached when the app starts (the drive is off, for example), the app tells you and uses the computer's own library until it is back. Only the library is moved: the downloaded models stay on each computer. Two computers can open the library at once, but do not split or clean songs on both at the same moment.
+**Keeping the library on another drive (for example a network drive shared by several computers).** Create a file `settings.json` in that data folder containing `{"library_dir": "Z:\\Music\\Stems"}` (use your own folder), or set the environment variable `STEMS_STUDIO_LIBRARY` to the folder. The songs, stems and `library.db` then live there, and every computer pointed at the same folder sees the same songs. To move an existing library, close the app and copy the contents of the `library` folder in the data folder into the new folder first. If the folder cannot be reached when the app starts (the drive is off, for example), the app tells you and uses the computer's own library until it is back. Only the library is moved: the downloaded models stay on each computer. Update every computer that uses the same library to the same version of the app, since the song folder names changed (older versions looked for code-like names such as `d0d43c0c`). Two computers can open the library at once, but do not split or clean songs on both at the same moment.
 
 If something goes wrong at startup, the details are in `stems-studio.log` in that folder.
 

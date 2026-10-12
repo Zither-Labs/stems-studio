@@ -176,6 +176,11 @@ def init_library():
         conn.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_songs_key ON songs(content_key, model, preset)"
         )
+        # The folder a song lives in, by its readable name ("Audioslave - Like A Stone"). Older libraries
+        # used the song's code (like d0d43c0c); those folders are renamed below.
+        if "folder" not in [col["name"] for col in conn.execute("PRAGMA table_info(songs)")]:
+            conn.execute("ALTER TABLE songs ADD COLUMN folder TEXT")
+    tidy_folder_names()
 
 
 def youtube_content_key(url):
@@ -187,8 +192,62 @@ def file_content_key(file_bytes):
     return "file:" + hashlib.sha256(file_bytes).hexdigest()
 
 
+def row_dir(row):
+    return os.path.join(OUTPUT_DIR, row["folder"] or row["id"])
+
+
 def song_dir(song_id):
-    return os.path.join(OUTPUT_DIR, song_id)
+    """The folder of a saved song (a song still being made has its code as the folder name)."""
+    try:
+        with library_db() as conn:
+            row = conn.execute("SELECT id, folder FROM songs WHERE id = ?", (song_id,)).fetchone()
+    except sqlite3.Error:
+        row = None
+    return row_dir(row) if row else os.path.join(OUTPUT_DIR, song_id)
+
+
+UNSAFE_NAME_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+RESERVED_NAMES = {"con", "prn", "aux", "nul", *(f"com{n}" for n in range(1, 10)), *(f"lpt{n}" for n in range(1, 10))}
+
+
+def folder_name_for(text):
+    """A name that is safe as a folder name on Windows, Mac and the NAS ("Would?" becomes "Would")."""
+    name = UNSAFE_NAME_CHARS.sub("", text or "")
+    name = re.sub(r"\s+", " ", name).strip()[:90].rstrip(". ")
+    if not name or name.lower() in RESERVED_NAMES:
+        name = (name + " song").strip()
+    return name
+
+
+def name_song_folder(song_id):
+    """Give a saved song a readable folder name. If anything goes wrong the old name just stays."""
+    try:
+        with library_db() as conn:
+            row = conn.execute("SELECT * FROM songs WHERE id = ?", (song_id,)).fetchone()
+        if not row:
+            return
+        current = row_dir(row)
+        if not os.path.isdir(current):
+            return
+        base = folder_name_for(display_title(row))
+        name, number = base, 2
+        while name != (row["folder"] or row["id"]) and os.path.exists(os.path.join(OUTPUT_DIR, name)):
+            name, number = f"{base} ({number})", number + 1
+        if name == (row["folder"] or row["id"]):
+            return
+        os.rename(current, os.path.join(OUTPUT_DIR, name))
+        with library_db() as conn:
+            conn.execute("UPDATE songs SET folder = ? WHERE id = ?", (name, song_id))
+    except Exception:
+        traceback.print_exc()
+
+
+def tidy_folder_names():
+    """Rename old code-named song folders (once)."""
+    with library_db() as conn:
+        pending = [r["id"] for r in conn.execute("SELECT id FROM songs WHERE folder IS NULL OR folder = ''")]
+    for song_id in pending:
+        name_song_folder(song_id)
 
 
 # "05 - Like A Stone", "05. Like A Stone", "Track 5 - Like A Stone", "05 Like A Stone": the number is dropped.
@@ -204,7 +263,7 @@ def display_title(row):
     """What the library shows: 'Artist - Track name', with no track number. Uses the file's tags when known."""
     title = without_track_number(row["title"])
     try:
-        with open(os.path.join(song_dir(row["id"]), "meta.json"), "r", encoding="utf-8") as handle:
+        with open(os.path.join(row_dir(row), "meta.json"), "r", encoding="utf-8") as handle:
             meta = json.load(handle)
     except (OSError, ValueError):
         meta = {}
@@ -232,15 +291,16 @@ def row_to_summary(row):
         "size_bytes": row["size_bytes"],
         "drums_split": any(s["id"].startswith("drums_") for s in stems),
         "drums_can_split": any(s["id"] == "drums" for s in stems)
-                           and os.path.isfile(os.path.join(song_dir(row["id"]), "drums.wav")),
+                           and os.path.isfile(os.path.join(row_dir(row), "drums.wav")),
         "vocals_can_clean": not row["preset"].endswith(CLEAN_VOCALS_SUFFIX)
-                            and not os.path.isfile(os.path.join(song_dir(row["id"]), CLEANED_VOCALS_MARKER)),
+                            and not os.path.isfile(os.path.join(row_dir(row), CLEANED_VOCALS_MARKER)),
     }
 
 
-def stems_files_exist(song_id, stems):
+def stems_files_exist(song_id, stems, folder=None):
+    folder = folder or song_dir(song_id)
     return bool(stems) and all(
-        os.path.isfile(os.path.join(song_dir(song_id), os.path.basename(s["url"]))) for s in stems
+        os.path.isfile(os.path.join(folder, os.path.basename(s["url"]))) for s in stems
     )
 
 
@@ -254,7 +314,7 @@ def find_cached_song(content_key, model, preset):
         if not row:
             return None
         stems = json.loads(row["stems_json"])
-        if not stems_files_exist(row["id"], stems):
+        if not stems_files_exist(row["id"], stems, row_dir(row)):
             conn.execute("DELETE FROM songs WHERE id = ?", (row["id"],))
             return None
         return {"id": row["id"], "title": display_title(row), "stems": stems}
@@ -282,7 +342,7 @@ def list_songs():
     with library_db() as conn:
         rows = conn.execute("SELECT * FROM songs ORDER BY created_at DESC").fetchall()
         for row in rows:
-            if stems_files_exist(row["id"], json.loads(row["stems_json"])):
+            if stems_files_exist(row["id"], json.loads(row["stems_json"]), row_dir(row)):
                 songs.append(row_to_summary(row))
             else:
                 conn.execute("DELETE FROM songs WHERE id = ?", (row["id"],))
@@ -295,7 +355,7 @@ def get_song(song_id):
     if not row:
         return None
     stems = json.loads(row["stems_json"])
-    if not stems_files_exist(song_id, stems):
+    if not stems_files_exist(song_id, stems, row_dir(row)):
         return None
     summary = row_to_summary(row)
     summary["stems"] = stems
@@ -303,9 +363,10 @@ def get_song(song_id):
 
 
 def delete_song(song_id):
+    folder = song_dir(song_id)
     with library_db() as conn:
         deleted = conn.execute("DELETE FROM songs WHERE id = ?", (song_id,)).rowcount
-    shutil.rmtree(song_dir(song_id), ignore_errors=True)
+    shutil.rmtree(folder, ignore_errors=True)
     return deleted > 0
 
 
@@ -466,7 +527,7 @@ def save_song_lyrics(song_folder, tags, fallback_name, extra):
 
 def load_song_lyrics(song_id):
     """The saved lyrics for a song, as the page wants them (never raises)."""
-    folder = os.path.join(OUTPUT_DIR, song_id)
+    folder = song_dir(song_id)
     payload = {"found": False, "meta": {}}
     try:
         with open(os.path.join(folder, "meta.json"), "r", encoding="utf-8") as handle:
@@ -1027,6 +1088,7 @@ def run_separation_job(job_id, source_type, source_val, model="htdemucs_6s", pre
         if content_key:
             save_song(job_id, job.get("title", "Untitled"), source_type, source_label,
                       content_key, model, library_preset, stems_result)
+            name_song_folder(job_id)
 
         job["stems"] = stems_result
         job["progress"] = 100
@@ -1151,7 +1213,7 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
             # /api/notes/<id>?stem=piano: every note of a chord or piano stem (piano-roll mode).
             song_id = parsed.path.split("/")[3]
             stem = (urllib.parse.parse_qs(parsed.query).get("stem") or ["vocals"])[0]
-            wav_path = os.path.join(OUTPUT_DIR, song_id, stem + ".wav")
+            wav_path = os.path.join(song_dir(song_id), stem + ".wav")
             if not SONG_ID_RE.match(song_id) or stem not in HIGHWAY_STEMS or not os.path.isfile(wav_path):
                 self.send_json({"error": f"No {stem} stem found for this song"}, 404)
                 return
@@ -1166,10 +1228,10 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
                 return
             with PITCH_LOCK:   # one analysis at a time; a second request waits and then reads the saved result
                 if polyphonic_request:
-                    result = module.cached_notes(wav_path, os.path.join(OUTPUT_DIR, song_id, stem + ".notes.json"))
+                    result = module.cached_notes(wav_path, os.path.join(song_dir(song_id), stem + ".notes.json"))
                     self.send_json({"notes": result["notes"]})
                     return
-                result = module.cached_analysis(wav_path, os.path.join(OUTPUT_DIR, song_id, stem + ".pitch.json"))
+                result = module.cached_analysis(wav_path, os.path.join(song_dir(song_id), stem + ".pitch.json"))
             payload = {"t0": result["t0"], "dt": result["dt"], "midi": result["midi"]}
             for key in ("rough_midi", "rough_auto", "unpitched_loud"):   # growls and screams, when there are any
                 if key in result:
@@ -1179,7 +1241,7 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
         elif parsed.path.startswith("/api/hits/"):
             # When the drums hit (kick, snare, hi-hat...), for the drum lane of the highway.
             song_id = parsed.path.split("/")[3]
-            folder = os.path.join(OUTPUT_DIR, song_id)
+            folder = song_dir(song_id)
             if not SONG_ID_RE.match(song_id) or not os.path.isdir(folder):
                 self.send_json({"error": "Song not found"}, 404)
                 return
@@ -1199,7 +1261,7 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
         elif parsed.path.startswith("/api/analysis/"):
             # Key and chords of a song, found from its separated stems.
             song_id = parsed.path.split("/")[3]
-            folder = os.path.join(OUTPUT_DIR, song_id)
+            folder = song_dir(song_id)
             if not SONG_ID_RE.match(song_id) or not os.path.isdir(folder):
                 self.send_json({"error": "Song not found"}, 404)
                 return
@@ -1224,7 +1286,7 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
         elif parsed.path.startswith("/api/lyrics/"):
             parts = parsed.path.split("/")
             song_id = parts[3] if len(parts) > 3 else ""
-            if not SONG_ID_RE.match(song_id) or not os.path.isdir(os.path.join(OUTPUT_DIR, song_id)):
+            if not SONG_ID_RE.match(song_id) or not os.path.isdir(song_dir(song_id)):
                 self.send_json({"error": "Song not found"}, 404)
                 return
             if len(parts) > 4 and parts[4] == "find":
@@ -1244,7 +1306,7 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
                 if not result:
                     self.send_json({"found": False, "meta": {"artist": artist, "title": title}})
                     return
-                folder = os.path.join(OUTPUT_DIR, song_id)
+                folder = song_dir(song_id)
                 write_json_file(os.path.join(folder, "lyrics.json"), result)
                 write_json_file(os.path.join(folder, "meta.json"), {"artist": artist or result["matched"].get("artist"),
                                                                     "title": title, "album": result["matched"].get("album"),
@@ -1257,7 +1319,7 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
             if len(parts) >= 5:
                 job_id = parts[3]
                 filename = parts[4]
-                file_path = os.path.join(OUTPUT_DIR, job_id, filename)
+                file_path = os.path.join(song_dir(job_id), filename)
 
                 if SONG_ID_RE.match(job_id) and filename.endswith(".wav") and os.path.isfile(file_path):
                     self.send_response(200)
