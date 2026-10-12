@@ -24,7 +24,7 @@ import sys
 
 import numpy as np
 
-ANALYSIS_VERSION = 3          # bump this when the method changes, so saved results are redone
+ANALYSIS_VERSION = 4          # bump this when the method changes, so saved results are redone
 STEP_SECONDS = 256 / 16000    # SwiftF0 reports one pitch every 256 samples at 16 kHz
 
 # Singing range we accept (Hz). Lower than a bass voice or higher than a soprano is bleed.
@@ -234,8 +234,23 @@ def clean_track(hz, confidence, loudness_db):
     return midi
 
 
-def analyze_file(path):
-    """Read a vocal stem (any WAV/FLAC) and return {"dt", "t0", "midi"} for the highway."""
+# The other stems of a song, used to spot instruments that leaked into the vocal stem.
+INSTRUMENT_STEMS = ("guitar", "guitar_lead", "guitar_rhythm", "piano", "other")
+
+
+def instrument_paths(vocal_path):
+    """Paths of the instrument stems that sit next to the vocal stem (the ones that exist)."""
+    folder = os.path.dirname(os.path.abspath(vocal_path))
+    paths = [os.path.join(folder, name + ".wav") for name in INSTRUMENT_STEMS]
+    return [p for p in paths if os.path.isfile(p)]
+
+
+def analyze_file(path, instruments=None):
+    """Read a vocal stem (any WAV/FLAC) and return {"dt", "t0", "midi"} for the highway.
+
+    instruments: paths of the song's other stems. When given, notes that look like an instrument
+    leaking into the vocal stem (ghost notes) are removed. See bleed_check.py.
+    """
     import soundfile as sf
     from swift_f0 import SwiftF0
 
@@ -244,33 +259,49 @@ def analyze_file(path):
     detector = SwiftF0(threads=4, spin=False)
     result = detector.detect(mono, rate, fmin=FMIN_HZ, fmax=FMAX_HZ)
     midi = clean_track(result.pitch_hz, result.confidence, result.loudness_db)
+    t0 = float(result.timestamps[0]) if len(result.timestamps) else 0.0
+
+    ghosts_removed = 0
+    if instruments:
+        try:
+            import bleed_check
+            midi, ghosts_removed = bleed_check.remove_ghost_notes(midi, STEP_SECONDS, path, instruments, t0)
+        except Exception as exc:      # the check is a bonus: never lose the pitch because of it
+            print(f"Ghost-note check skipped: {exc}", file=sys.stderr)
     return {
         "version": ANALYSIS_VERSION,
-        "t0": float(result.timestamps[0]) if len(result.timestamps) else 0.0,
+        "t0": t0,
         "dt": STEP_SECONDS,
+        "ghost_notes_removed": ghosts_removed,
         "midi": [round(float(m), 2) for m in midi],
     }
 
 
+def _signature(wav_path, instruments):
+    return {"source_mtime": os.path.getmtime(wav_path),
+            "instrument_mtimes": {os.path.basename(p): os.path.getmtime(p) for p in instruments}}
+
+
 def cached_analysis(wav_path, cache_path):
     """analyze_file(), remembered next to the song so it only has to run once."""
+    instruments = instrument_paths(wav_path)
+    signature = _signature(wav_path, instruments)
     try:
         with open(cache_path, "r", encoding="utf-8") as handle:
             saved = json.load(handle)
-        if saved.get("version") == ANALYSIS_VERSION and saved.get("source_mtime") == os.path.getmtime(wav_path):
+        if saved.get("version") == ANALYSIS_VERSION and all(saved.get(k) == v for k, v in signature.items()):
             return saved
     except (OSError, ValueError):
         pass
-    result = analyze_file(wav_path)
-    result["source_mtime"] = os.path.getmtime(wav_path)
+    result = analyze_file(wav_path, instruments)
+    result.update(signature)
     tmp = cache_path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as handle:
         json.dump(result, handle)
     os.replace(tmp, cache_path)
     return result
 
-
 if __name__ == "__main__":
-    out = analyze_file(sys.argv[1])
+    out = analyze_file(sys.argv[1], instrument_paths(sys.argv[1]))
     voiced = sum(1 for m in out["midi"] if m)
     print(f"{len(out['midi'])} frames, {voiced} voiced")
