@@ -24,7 +24,7 @@ import sys
 
 import numpy as np
 
-ANALYSIS_VERSION = 4          # bump this when the method changes, so saved results are redone
+ANALYSIS_VERSION = 5          # bump this when the method changes, so saved results are redone
 STEP_SECONDS = 256 / 16000    # SwiftF0 reports one pitch every 256 samples at 16 kHz
 
 # Singing range we accept (Hz). Lower than a bass voice or higher than a soprano is bleed.
@@ -250,7 +250,8 @@ def instrument_paths(vocal_path):
 # so every pitch is heard one octave higher, and the result is divided by two again.
 PROFILES = {
     "vocals": {"fmin": FMIN_HZ, "fmax": FMAX_HZ},
-    "bass": {"fmin": 38.0, "fmax": 330.0, "octave_up": True},
+    "bass": {"fmin": 34.0, "fmax": 260.0, "octave_up": True,            # low E (41 Hz) up to about C4
+             "high": {"fmin": 240.0, "fmax": 900.0}},                    # then a second pass for high notes and solos
     "melody": {"fmin": 75.0, "fmax": 1400.0},     # lead guitar, guitar, anything single-note
 }
 
@@ -259,6 +260,24 @@ def profile_for(stem_name):
     if stem_name == "vocals":
         return PROFILES["vocals"]
     return PROFILES.get(stem_name, PROFILES["melody"])
+
+
+def _track(detector, mono, rate, profile):
+    """One pitch pass over the audio in the profile's range: (cleaned MIDI per step, time of the first step)."""
+    fmin, fmax = profile["fmin"], profile["fmax"]
+    if profile.get("octave_up"):
+        # Declared at twice the rate the audio sounds an octave higher and half as long, so the
+        # detector's 16 ms steps are 32 ms of real time: each result is repeated twice.
+        result = detector.detect(mono, rate * 2.0, fmin=fmin * 2, fmax=fmax * 2)
+        hz = np.repeat(result.pitch_hz / 2.0, 2)
+        confidence = np.repeat(result.confidence, 2)
+        loudness = np.repeat(result.loudness_db, 2)
+        t0 = float(result.timestamps[0]) * 2.0 if len(result.timestamps) else 0.0
+    else:
+        result = detector.detect(mono, rate, fmin=fmin, fmax=fmax)
+        hz, confidence, loudness = result.pitch_hz, result.confidence, result.loudness_db
+        t0 = float(result.timestamps[0]) if len(result.timestamps) else 0.0
+    return clean_track(hz, confidence, loudness, fmin, fmax), t0
 
 
 def analyze_file(path, instruments=None, profile=None):
@@ -272,23 +291,24 @@ def analyze_file(path, instruments=None, profile=None):
     from swift_f0 import SwiftF0
 
     profile = profile or PROFILES["vocals"]
-    fmin, fmax = profile["fmin"], profile["fmax"]
     audio, rate = sf.read(path, dtype="float32", always_2d=True)
     mono = audio.mean(axis=1)
     detector = SwiftF0(threads=4, spin=False)
-    if profile.get("octave_up"):
-        # Declared at twice the rate the audio sounds an octave higher and half as long, so the
-        # detector's 16 ms steps are 32 ms of real time: each result is repeated twice.
-        result = detector.detect(mono, rate * 2.0, fmin=fmin * 2, fmax=fmax * 2)
-        hz = np.repeat(result.pitch_hz / 2.0, 2)
-        confidence = np.repeat(result.confidence, 2)
-        loudness = np.repeat(result.loudness_db, 2)
-        t0 = float(result.timestamps[0]) * 2.0 if len(result.timestamps) else 0.0
-    else:
-        result = detector.detect(mono, rate, fmin=fmin, fmax=fmax)
-        hz, confidence, loudness = result.pitch_hz, result.confidence, result.loudness_db
-        t0 = float(result.timestamps[0]) if len(result.timestamps) else 0.0
-    midi = clean_track(hz, confidence, loudness, fmin, fmax)
+    midi, t0 = _track(detector, mono, rate, profile)
+    if profile.get("high"):
+        # A second, ordinary pass for notes above the main range. The detector tends to choose
+        # the wrong octave when one search range is very wide, so the range is covered in two
+        # passes. The high pass only fills moments the main pass left empty, and only with
+        # notes at least as high as the main range's top, so it cannot turn a low note's
+        # overtone into a note.
+        high = profile["high"]
+        high_midi, high_t0 = _track(detector, mono, rate, high)
+        offset = int(round((high_t0 - t0) / STEP_SECONDS))
+        floor = 12 * np.log2(profile["fmax"] / 440.0) + 69 - 0.5
+        for i in range(len(midi)):
+            j = i - offset
+            if midi[i] <= 0 and 0 <= j < len(high_midi) and high_midi[j] >= floor:
+                midi[i] = high_midi[j]
 
     ghosts_removed = 0
     if instruments:

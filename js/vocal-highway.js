@@ -445,7 +445,7 @@ class VocalHighway {
     while (hi - lo < 16) { lo--; hi++; }
     return {
       state: 'ready', midi: null, t0: 0, dt: 0.02, notes: [], rawRoll: raw,
-      baseMin: Math.max(24, lo), baseMax: Math.min(100, hi)
+      baseMin: Math.max(21, lo), baseMax: Math.min(100, hi)
     };
   }
 
@@ -723,7 +723,7 @@ class VocalHighway {
     let lo = Math.floor(pick(0.03)) - 2;
     let hi = Math.ceil(pick(0.97)) + 2;
     while (hi - lo < 16) { lo--; hi++; }   // never zoom in tighter than about an octave and a half
-    view.baseMin = Math.max(24, lo);
+    view.baseMin = Math.max(21, lo);
     view.baseMax = Math.min(100, hi);
     return view;
   }
@@ -738,7 +738,7 @@ class VocalHighway {
       while ((((lo % 12) + 12) % 12) !== this.tonic) lo--;
       while ((((hi % 12) + 12) % 12) !== this.tonic) hi++;
     }
-    this.minMidi = Math.max(24, lo);
+    this.minMidi = Math.max(21, lo);
     this.maxMidi = Math.min(108, hi);
   }
 
