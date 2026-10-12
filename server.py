@@ -38,7 +38,7 @@ except Exception:
     pass
 
 APP_NAME = "stems-studio"
-APP_VERSION = 6
+APP_VERSION = 7
 PORT = 8099
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -57,8 +57,47 @@ def default_data_dir():
 
 
 DATA_DIR = default_data_dir()
-OUTPUT_DIR = os.path.join(DATA_DIR, "library")
+LOCAL_LIBRARY_DIR = os.path.join(DATA_DIR, "library")
+OUTPUT_DIR = LOCAL_LIBRARY_DIR
+SETTINGS_PATH = os.path.join(DATA_DIR, "settings.json")
+LIBRARY_NOTE = ""        # shown to the user when the chosen library folder could not be used
 os.makedirs(DATA_DIR, exist_ok=True)
+
+
+def chosen_library_dir():
+    """The folder the user wants the song library in (for example a network drive), or None for the default.
+
+    Either the STEMS_STUDIO_LIBRARY environment variable, or "library_dir" in settings.json
+    (in the app's data folder, so each computer can choose its own).
+    """
+    wanted = os.environ.get("STEMS_STUDIO_LIBRARY")
+    if not wanted:
+        try:
+            with open(SETTINGS_PATH, "r", encoding="utf-8") as handle:
+                wanted = json.load(handle).get("library_dir")
+        except (OSError, ValueError, AttributeError):
+            wanted = None
+    return os.path.expandvars(wanted).strip() if wanted else None
+
+
+def use_library_dir(wanted):
+    """Switch to the chosen folder if it can be written to; otherwise stay local and say why."""
+    global OUTPUT_DIR, LIBRARY_NOTE
+    try:
+        os.makedirs(wanted, exist_ok=True)
+        probe = os.path.join(wanted, ".write-test")
+        with open(probe, "w") as handle:
+            handle.write("ok")
+        os.remove(probe)
+        OUTPUT_DIR = wanted
+    except OSError as exc:
+        LIBRARY_NOTE = (f"The library folder {wanted} cannot be reached ({exc.strerror or exc}). "
+                        "Using this computer's own library until it is back.")
+
+
+_wanted_library = chosen_library_dir()
+if _wanted_library:
+    use_library_dir(_wanted_library)
 
 # Earlier versions kept the library inside the code folder; move it across once.
 _LEGACY_OUTPUT_DIR = os.path.join(BASE_DIR, "separated_output")
@@ -1070,7 +1109,7 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
             return
 
         elif parsed.path == "/api/library":
-            self.send_json({"songs": list_songs()})
+            self.send_json({"songs": list_songs(), "folder": OUTPUT_DIR, "note": LIBRARY_NOTE})
             return
 
         elif parsed.path.startswith("/api/library/"):
@@ -1088,7 +1127,8 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
                 dev_info = {"device": "unknown", "device_name": "", "cuda_available": False, "pending": True}
             self.send_json(dict(dev_info, library=True, app=APP_NAME, version=APP_VERSION,
                                 clean_vocals_available=roformer_cli() is not None,
-                                drum_split_available=roformer_cli() is not None))
+                                drum_split_available=roformer_cli() is not None,
+                                library_dir=OUTPUT_DIR, library_note=LIBRARY_NOTE))
             return
 
         elif parsed.path == "/api/status":

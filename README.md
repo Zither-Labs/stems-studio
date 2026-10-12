@@ -169,6 +169,8 @@ The library and all stems are stored outside the code folder, so git never touch
 - Mac: `~/Library/Application Support/StemsStudio`
 - Linux: `~/.local/share/stems-studio`
 
+**Keeping the library on another drive (for example a network drive shared by several computers).** Create a file `settings.json` in that data folder containing `{"library_dir": "Z:\\Music\\Stems"}` (use your own folder), or set the environment variable `STEMS_STUDIO_LIBRARY` to the folder. The songs, stems and `library.db` then live there, and every computer pointed at the same folder sees the same songs. To move an existing library, close the app and copy the contents of the `library` folder in the data folder into the new folder first. If the folder cannot be reached when the app starts (the drive is off, for example), the app tells you and uses the computer's own library until it is back. Only the library is moved: the downloaded models stay on each computer. Two computers can open the library at once, but do not split or clean songs on both at the same moment.
+
 If something goes wrong at startup, the details are in `stems-studio.log` in that folder.
 
 ---

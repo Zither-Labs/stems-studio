@@ -784,6 +784,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const librarySummary = document.getElementById('librarySummary');
 
   let librarySongs = [];
+  let libraryFolder = '';
   let libraryOpening = false;
 
   function formatBytes(bytes) {
@@ -805,7 +806,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     librarySearch.style.display = librarySongs.length > 5 ? '' : 'none';
     librarySummary.textContent = librarySongs.length
-      ? `${librarySongs.length} song${librarySongs.length === 1 ? '' : 's'} saved, using ${formatBytes(librarySongs.reduce((n, s) => n + s.size_bytes, 0))} on this computer.`
+      ? `${librarySongs.length} song${librarySongs.length === 1 ? '' : 's'} saved, using ${formatBytes(librarySongs.reduce((n, s) => n + s.size_bytes, 0))} in ${libraryFolder || 'the library'}.`
       : '';
 
     if (!songs.length) {
@@ -879,7 +880,10 @@ document.addEventListener('DOMContentLoaded', () => {
         throw new Error(await explainServerProblem(null, err));
       }
       if (!resp.ok) throw new Error(await explainServerProblem(resp));
-      librarySongs = (await resp.json()).songs;
+      const listing = await resp.json();
+      librarySongs = listing.songs;
+      libraryFolder = listing.folder || '';
+      if (listing.note) showToast(listing.note, 'error');
       renderLibrary();
     } catch (err) {
       librarySongs = [];
