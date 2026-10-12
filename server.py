@@ -28,6 +28,8 @@ import urllib.parse
 import urllib.request
 import uuid
 
+import updater
+
 # Auto-configure bundled ffmpeg
 try:
     import static_ffmpeg
@@ -36,7 +38,7 @@ except Exception:
     pass
 
 APP_NAME = "stems-studio"
-APP_VERSION = 4
+APP_VERSION = 5
 PORT = 8099
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -1036,6 +1038,10 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.send_json({"ok": True})
             return
 
+        elif parsed.path == "/api/update":
+            self.send_json(updater.get_state())
+            return
+
         elif parsed.path == "/api/library":
             self.send_json({"songs": list_songs()})
             return
@@ -1208,6 +1214,19 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
                 LIFECYCLE.closing()
             self.send_response(204)
             self.end_headers()
+            return
+
+        if parsed.path in ("/api/update/check", "/api/update/apply"):
+            # Only the app's own page may ask for this (another website could otherwise poke the local server).
+            origin = self.headers.get("Origin")
+            if origin and origin not in (f"http://127.0.0.1:{self.server.server_address[1]}",
+                                         f"http://localhost:{self.server.server_address[1]}"):
+                self.send_json({"error": "Not allowed"}, 403)
+                return
+            if parsed.path.endswith("/check"):
+                self.send_json(updater.check())
+            else:
+                self.send_json(updater.apply())
             return
 
         if parsed.path == "/api/separate":
@@ -1486,6 +1505,7 @@ def serve(httpd, quit_with_window=True):
     """Serve until the app window closes (or forever, for development)."""
     global LIFECYCLE
     warm_up_device_info()
+    updater.start_background_checks()
     if quit_with_window:
         LIFECYCLE = Lifecycle(httpd)
         threading.Thread(target=LIFECYCLE.watch, daemon=True).start()

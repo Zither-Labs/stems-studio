@@ -2143,3 +2143,41 @@ kbd {
   padding: 1px 4px;
 }
 
+/* Update bar */
+.update-bar {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  max-width: min(640px, 92vw);
+  background: var(--bg-surface-hover);
+  color: var(--text-primary);
+  border: 1px solid var(--accent-cyan);
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 0.85rem;
+  z-index: 210;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+}
+.update-bar[hidden], .update-bar-more[hidden], .update-bar-btn[hidden] { display: none; }
+.update-bar-main { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.update-bar-btn {
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--text-muted);
+  border-radius: 6px;
+  padding: 3px 10px;
+  cursor: pointer;
+  font: inherit;
+}
+.update-bar-btn.primary { background: var(--accent-cyan); border-color: var(--accent-cyan); color: #04121c; font-weight: 600; }
+.update-bar-btn:disabled { opacity: 0.6; cursor: default; }
+.update-bar-more {
+  margin: 8px 0 0;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 0.78rem;
+  white-space: pre-wrap;
+  max-height: 140px;
+  overflow: auto;
+}

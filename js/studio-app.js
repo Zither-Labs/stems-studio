@@ -1853,4 +1853,59 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
+
+  // --- Updates: the server checks GitHub in the background; this shows a bar when something newer exists ---
+  const updateBar = document.getElementById('updateBar');
+  if (updateBar) {
+    const updateText = document.getElementById('updateText');
+    const updateNow = document.getElementById('updateNow');
+    const updateLater = document.getElementById('updateLater');
+    const updateMore = document.getElementById('updateMore');
+    let updateBusy = false;
+
+    const showUpdate = (info) => {
+      const n = info.behind || 0;
+      updateText.textContent = `A new version of Stems Studio is available (${n} update${n === 1 ? '' : 's'}).`;
+      updateMore.textContent = (info.changes || []).map(line => '\u2022 ' + line).join('\n');
+      updateMore.hidden = !info.changes || !info.changes.length;
+      updateNow.hidden = false;
+      updateNow.disabled = false;
+      updateLater.hidden = false;
+      updateBar.hidden = false;
+    };
+
+    updateLater.addEventListener('click', () => { updateBar.hidden = true; });
+
+    updateNow.addEventListener('click', async () => {
+      if (updateBusy) return;
+      updateBusy = true;
+      updateNow.disabled = true;
+      updateText.textContent = 'Updating...';
+      try {
+        const res = await fetch('/api/update/apply', { method: 'POST' });
+        const out = await res.json();
+        updateText.textContent = out.message + (out.run_install ? ' The setup changed too: run Install.bat once after reopening.' : '');
+        updateMore.hidden = true;
+        updateNow.hidden = out.ok;
+        updateNow.disabled = false;
+        updateLater.hidden = out.ok;
+        if (!out.ok) updateLater.hidden = false;
+      } catch (err) {
+        updateText.textContent = 'The update could not be started.';
+        updateNow.disabled = false;
+      }
+      updateBusy = false;
+    });
+
+    (async () => {
+      for (let attempt = 0; attempt < 8; attempt++) {
+        await new Promise(resolve => setTimeout(resolve, attempt === 0 ? 7000 : 5000));
+        try {
+          const info = await (await fetch('/api/update')).json();
+          if (info.state === 'available') { showUpdate(info); return; }
+          if (info.state !== 'idle' && info.state !== 'checking') return;
+        } catch (err) { return; }
+      }
+    })();
+  }
 });
