@@ -843,17 +843,28 @@ document.addEventListener('DOMContentLoaded', () => {
         del.textContent = 'Delete';
       });
 
+      item.append(main);
+      if (song.vocals_can_clean && cleanVocalsInstalled) {
+        const clean = document.createElement('button');
+        clean.type = 'button';
+        clean.className = 'library-item-action';
+        clean.textContent = 'Clean vocals';
+        clean.title = 'Make the vocal again with the better model, so less guitar leaks into it (takes a couple of minutes). What it removes is moved to the guitar stem.';
+        clean.addEventListener('click', () => runLibraryJob(song, clean, meta, 'clean-vocals',
+          'Making a cleaner vocal...', 'Cleaned the vocals of', 'Could not clean the vocals:'));
+        item.append(clean);
+      }
       if (song.drums_can_split && drumSplitInstalled) {
         const split = document.createElement('button');
         split.type = 'button';
         split.className = 'library-item-action';
         split.textContent = 'Split drums';
         split.title = 'Split the drums into kick, snare, toms, hi-hat, ride and crash (takes about a minute)';
-        split.addEventListener('click', () => splitLibraryDrums(song, split, meta));
-        item.append(main, split, del);
-      } else {
-        item.append(main, del);
+        split.addEventListener('click', () => runLibraryJob(song, split, meta, 'split-drums',
+          'Splitting the drums...', 'Split the drums of', 'Could not split the drums:'));
+        item.append(split);
       }
+      item.append(del);
       libraryList.appendChild(item);
     }
   }
@@ -883,7 +894,12 @@ document.addEventListener('DOMContentLoaded', () => {
     // The "Split drums" buttons need to know whether the extra tool is installed.
     fetch('/api/engine')
       .then(resp => (resp.ok ? resp.json() : null))
-      .then(info => { if (info) drumSplitInstalled = info.drum_split_available === true; })
+      .then(info => {
+        if (info) {
+          drumSplitInstalled = info.drum_split_available === true;
+          cleanVocalsInstalled = info.clean_vocals_available === true;
+        }
+      })
       .catch(() => {})
       .then(() => refreshLibrary());
   }
@@ -912,27 +928,28 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // Splits the drums of a saved song, showing the progress in its row.
-  async function splitLibraryDrums(song, button, meta) {
+  // Runs a slow job on a saved song (splitting its drums, making its vocal cleaner), showing the
+  // progress in the song's row.
+  async function runLibraryJob(song, button, meta, endpoint, doing, done, failed) {
     button.disabled = true;
     try {
-      const resp = await fetch(`/api/library/${encodeURIComponent(song.id)}/split-drums`, { method: 'POST' });
+      const resp = await fetch(`/api/library/${encodeURIComponent(song.id)}/${endpoint}`, { method: 'POST' });
       const started = await resp.json();
       if (!resp.ok) throw new Error(started.error || `error ${resp.status}`);
       for (;;) {
         await new Promise(resolve => setTimeout(resolve, 1000));
         const job = await (await fetch(`/api/status?job_id=${encodeURIComponent(started.job_id)}`)).json();
-        if (job.status === 'error') throw new Error(job.error || 'Could not split the drums.');
+        if (job.status === 'error') throw new Error(job.error || failed);
         if (job.status === 'not_found') throw new Error('The stem maker restarted. Please try again.');
-        meta.textContent = `${job.message || 'Splitting the drums...'} (${job.progress || 0}%)`;
+        meta.textContent = `${job.message || doing} (${job.progress || 0}%)`;
         if (job.status === 'completed') break;
       }
-      showToast(`Split the drums of "${song.title}". Open it to see the new stems.`, 'success');
+      showToast(`${done} "${song.title}". Open it to hear the difference.`, 'success');
       await refreshLibrary();
     } catch (err) {
       console.error(err);
       button.disabled = false;
-      showToast(`Could not split the drums: ${err.message}`, 'error');
+      showToast(`${failed} ${err.message}`, 'error');
     }
   }
 

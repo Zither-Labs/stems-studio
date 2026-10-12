@@ -165,6 +165,8 @@ def row_to_summary(row):
         "drums_split": any(s["id"].startswith("drums_") for s in stems),
         "drums_can_split": any(s["id"] == "drums" for s in stems)
                            and os.path.isfile(os.path.join(song_dir(row["id"]), "drums.wav")),
+        "vocals_can_clean": not row["preset"].endswith(CLEAN_VOCALS_SUFFIX)
+                            and not os.path.isfile(os.path.join(song_dir(row["id"]), CLEANED_VOCALS_MARKER)),
     }
 
 
@@ -292,6 +294,7 @@ VALID_MODELS = ("htdemucs", "htdemucs_6s")
 VALID_PRESETS = ("standard", "nepali_folk")
 GUITAR_SPLIT_SUFFIX = "+gsplit"
 CLEAN_VOCALS_SUFFIX = "+clean"
+CLEANED_VOCALS_MARKER = "vocals.cleaned.json"   # written when a saved song got its vocal re-made
 
 
 def clean_choices(model, preset, split_guitar=False, clean_vocals=False):
@@ -636,6 +639,100 @@ def run_drum_split_job(job_id, song_id):
         job["status"] = "error"
         job["error"] = str(e)
         job["message"] = f"Error: {e}"
+
+def run_clean_vocals_job(job_id, song_id):
+    """Re-make the vocal of a song that is already in the library, with the Roformer model.
+
+    The library keeps no copy of the original file, so the song is put back together from its own
+    stems (their sum is the song, to within rounding). Whatever the new vocal no longer holds (the
+    guitar that had leaked into it) goes to the guitar stem, or to Other, so the stems still add up.
+    """
+    import numpy as np
+    import soundfile as sf
+
+    job = JOBS[job_id]
+    folder = song_dir(song_id)
+    work = os.path.join(folder, "cleanvocals")
+    try:
+        song = get_song(song_id)
+        if not song:
+            raise Exception("Song not found in the library.")
+        files = {s["id"]: os.path.join(folder, os.path.basename(s["url"])) for s in song["stems"]}
+        if "vocals" not in files or not all(os.path.isfile(f) for f in files.values()):
+            raise Exception("This song's stems are not all on disk.")
+        job["message"] = "Putting the song back together..."
+        job["progress"] = 3
+        mix = None
+        rate = None
+        for path in files.values():
+            data, sr = sf.read(path, dtype="float32", always_2d=True)
+            rate = rate or sr
+            if sr != rate:
+                raise Exception("The stems have different sample rates.")
+            if mix is None:
+                mix = data.copy()
+            else:
+                frames = min(len(mix), len(data))
+                mix[:frames] += data[:frames]
+        peak = float(np.abs(mix).max())
+        scale = 1.0 / peak if peak > 0.98 else 1.0       # the model must not get a clipped mix
+        os.makedirs(work, exist_ok=True)
+        mix_path = os.path.join(work, "mix.wav")
+        sf.write(mix_path, mix * scale, rate, subtype="FLOAT")
+        del mix
+
+        new_vocals_path, _instrumental = run_roformer(mix_path, work, job)
+        new_vocals, sr = sf.read(new_vocals_path, dtype="float32", always_2d=True)
+        if sr != rate:
+            raise Exception("The new vocal has a different sample rate.")
+        new_vocals = new_vocals / scale
+        job["message"] = "Saving..."
+        job["progress"] = 90
+
+        old_vocals, _ = sf.read(files["vocals"], dtype="float32", always_2d=True)
+        frames = len(old_vocals)
+        if len(new_vocals) < frames:
+            new_vocals = np.pad(new_vocals, ((0, frames - len(new_vocals)), (0, 0)))
+        new_vocals = new_vocals[:frames]
+        if new_vocals.shape[1] != old_vocals.shape[1]:
+            new_vocals = np.repeat(new_vocals[:, :1], old_vocals.shape[1], axis=1)
+        leftover = old_vocals - new_vocals
+        home_id = next((k for k in ("guitar", "other") if k in files), None)
+        if home_id:
+            home, _ = sf.read(files[home_id], dtype="float32", always_2d=True)
+            n = min(len(home), frames)
+            home[:n] += leftover[:n]
+            sf.write(files[home_id], np.clip(home, -1.0, 1.0), rate, subtype="PCM_16")
+        sf.write(files["vocals"], np.clip(new_vocals, -1.0, 1.0), rate, subtype="PCM_16")
+
+        stems = song["stems"]
+        empty = find_empty_stems(folder, [os.path.basename(s["url"]) for s in stems])
+        for s in stems:
+            s["empty"] = os.path.basename(s["url"]) in empty
+        update_song_stems(song_id, stems)
+        with open(os.path.join(folder, CLEANED_VOCALS_MARKER), "w", encoding="utf-8") as handle:
+            json.dump({"model": ROFORMER_MODEL, "leftover_went_to": home_id}, handle)
+        job["stems"] = stems
+        job["title"] = song["title"]
+        job["progress"] = 100
+        job["status"] = "completed"
+        job["message"] = "Vocals cleaned."
+    except Exception as e:
+        traceback.print_exc()
+        job["status"] = "error"
+        job["error"] = str(e)
+        job["message"] = f"Error: {e}"
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
+def busy_job_for(song_id):
+    """The running job (split drums / clean vocals) that is working on this song, if any."""
+    for other in list(JOBS.values()):
+        if other.get("song_busy") == song_id and other.get("status") == "processing":
+            return other
+    return None
+
 
 def run_separation_job(job_id, source_type, source_val, model="htdemucs_6s", preset="nepali_folk",
                        content_key=None, source_label="", title=None, split_drums=False):
@@ -1240,15 +1337,41 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
                 self.send_json({"error": "Splitting the drums needs the optional extra tool. Close Stems Studio and run the "
                                          "installer again, and say yes to cleaner vocals."}, 501)
                 return
-            for other in list(JOBS.values()):
-                # Two splits of the same song at once would overwrite each other's files.
-                if other.get("split_song") == song_id and other.get("status") == "processing":
-                    self.send_json({"job_id": other["id"]})
-                    return
+            # Two jobs on the same song at once would overwrite each other's files.
+            busy = busy_job_for(song_id)
+            if busy:
+                if busy.get("song_task") == "split-drums":
+                    self.send_json({"job_id": busy["id"]})
+                else:
+                    self.send_json({"error": "This song is being worked on. Wait for that to finish."}, 409)
+                return
             job_id = str(uuid.uuid4())[:8]
             JOBS[job_id] = {"id": job_id, "status": "processing", "progress": 2, "message": "Starting...", "stems": [],
-                            "split_song": song_id}
+                            "song_busy": song_id, "song_task": "split-drums"}
             threading.Thread(target=run_drum_split_job, args=(job_id, song_id), daemon=True).start()
+            self.send_json({"job_id": job_id})
+            return
+
+        if parsed.path.startswith("/api/library/") and parsed.path.endswith("/clean-vocals"):
+            song_id = parsed.path.split("/")[3]
+            if not SONG_ID_RE.match(song_id) or not get_song(song_id):
+                self.send_json({"error": "Song not found in library"}, 404)
+                return
+            if not roformer_cli():
+                self.send_json({"error": "Cleaner vocals needs the optional extra tool. Close Stems Studio and run the "
+                                         "installer again, and say yes to cleaner vocals."}, 501)
+                return
+            busy = busy_job_for(song_id)
+            if busy:
+                if busy.get("song_task") == "clean-vocals":
+                    self.send_json({"job_id": busy["id"]})
+                else:
+                    self.send_json({"error": "This song is being worked on. Wait for that to finish."}, 409)
+                return
+            job_id = str(uuid.uuid4())[:8]
+            JOBS[job_id] = {"id": job_id, "status": "processing", "progress": 2, "message": "Starting...", "stems": [],
+                            "song_busy": song_id, "song_task": "clean-vocals"}
+            threading.Thread(target=run_clean_vocals_job, args=(job_id, song_id), daemon=True).start()
             self.send_json({"job_id": job_id})
             return
 
