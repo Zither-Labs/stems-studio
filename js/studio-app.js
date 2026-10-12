@@ -368,6 +368,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let createBusy = false;
   let stemMakerReady = false;
   let cleanVocalsInstalled = false;   // from the server: is the Roformer tool installed?
+  let drumSplitInstalled = false;     // the same tool also splits the drums
   let createRunId = 0;
 
   function refreshCreateButton() {
@@ -433,7 +434,10 @@ document.addEventListener('DOMContentLoaded', () => {
       if (checkId !== stemMakerCheckId) return;
       stemMakerReady = true;
       cleanVocalsInstalled = info.clean_vocals_available === true;
+      const drumSplitChanged = drumSplitInstalled !== (info.drum_split_available === true);
+      drumSplitInstalled = info.drum_split_available === true;
       syncCleanVocalsAvailability();
+      if (drumSplitChanged) refreshLibrary();
       if (info.pending) {
         // The server is still loading its AI engine; you can already start.
         createStemsEngineNote.textContent = 'Ready. Still checking for your graphics card in the background...';
@@ -573,7 +577,7 @@ document.addEventListener('DOMContentLoaded', () => {
       for (const stem of shown) {
         const file = /\/api\/stems\/[0-9a-f]{8}\/([a-z_]+)\.wav/.exec(stem.url || '');
         if (!file || !songId) continue;
-        const keepOwnId = stem.id === 'guitar_lead' || stem.id === 'guitar_rhythm';
+        const keepOwnId = stem.id === 'guitar_lead' || stem.id === 'guitar_rhythm' || stem.id.startsWith('drums_');
         const trackId = !keepOwnId && stem.stemType && stem.stemType !== 'custom' ? stem.stemType : stem.id;
         followable.push({ file: file[1], trackId });
       }
@@ -591,7 +595,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const decoded = await engine.ctx.decodeAudioData(await audioResp.arrayBuffer());
       // Karaoke, Acapella, Analyze and Compare look tracks up by type (e.g. "vocal").
       // The two halves of a split guitar share a type, so they keep their own ids.
-      const keepOwnId = stem.id === 'guitar_lead' || stem.id === 'guitar_rhythm';
+      const keepOwnId = stem.id === 'guitar_lead' || stem.id === 'guitar_rhythm' || stem.id.startsWith('drums_');
       const trackId = !keepOwnId && stem.stemType && stem.stemType !== 'custom' ? stem.stemType : stem.id;
       engine.addTrack(trackId, stem.name, stem.stemType, decoded);
     }
@@ -610,12 +614,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const folk = document.getElementById('createFolkNames');
     const split = document.getElementById('createGuitarSplit');
     const clean = document.getElementById('createCleanVocals');
+    const drums = document.getElementById('createSplitDrums');
     const model = checked && checked.value === '4' ? 'htdemucs' : 'htdemucs_6s';
     return {
       model,
       preset: folk && folk.checked ? 'nepali_folk' : 'standard',
       guitarSplit: model === 'htdemucs_6s' && Boolean(split && split.checked),
-      cleanVocals: cleanVocalsInstalled && Boolean(clean && clean.checked)
+      cleanVocals: cleanVocalsInstalled && Boolean(clean && clean.checked),
+      splitDrums: drumSplitInstalled && Boolean(drums && drums.checked)
     };
   }
 
@@ -637,6 +643,13 @@ document.addEventListener('DOMContentLoaded', () => {
     clean.disabled = !cleanVocalsInstalled;
     label.classList.toggle('disabled', !cleanVocalsInstalled);
     label.title = cleanVocalsInstalled ? '' : 'Not installed yet. Close Stems Studio and run the installer (Install.bat), and say yes to cleaner vocals.';
+    const drums = document.getElementById('createSplitDrums');
+    const drumsLabel = document.getElementById('createSplitDrumsLabel');
+    if (drums && drumsLabel) {
+      drums.disabled = !drumSplitInstalled;
+      drumsLabel.classList.toggle('disabled', !drumSplitInstalled);
+      drumsLabel.title = drumSplitInstalled ? '' : 'Not installed yet. Close Stems Studio and run the installer (Install.bat), and say yes to cleaner vocals: the same extra tool splits the drums.';
+    }
   }
 
   function restoreCreateOptions() {
@@ -650,6 +663,8 @@ document.addEventListener('DOMContentLoaded', () => {
       if (split) split.checked = saved.guitarSplit === true;
       const clean = document.getElementById('createCleanVocals');
       if (clean) clean.checked = saved.cleanVocals === true;
+      const drums = document.getElementById('createSplitDrums');
+      if (drums) drums.checked = saved.splitDrums === true;
     } catch (err) { /* private mode or corrupt value: keep the defaults */ }
   }
 
@@ -661,14 +676,15 @@ document.addEventListener('DOMContentLoaded', () => {
         stems: model === 'htdemucs' ? 4 : 6,
         folk: preset === 'nepali_folk',
         guitarSplit: Boolean(split && split.checked),
-        cleanVocals: Boolean(document.getElementById('createCleanVocals') && document.getElementById('createCleanVocals').checked)
+        cleanVocals: Boolean(document.getElementById('createCleanVocals') && document.getElementById('createCleanVocals').checked),
+        splitDrums: Boolean(document.getElementById('createSplitDrums') && document.getElementById('createSplitDrums').checked)
       }));
     } catch (err) { /* ignore */ }
   }
 
   restoreCreateOptions();
   syncGuitarSplitAvailability();
-  document.querySelectorAll('input[name="createStemCount"], #createFolkNames, #createGuitarSplit, #createCleanVocals')
+  document.querySelectorAll('input[name="createStemCount"], #createFolkNames, #createGuitarSplit, #createCleanVocals, #createSplitDrums')
     .forEach(el => el.addEventListener('change', () => {
       syncGuitarSplitAvailability();
       saveCreateOptions();
@@ -697,12 +713,13 @@ document.addEventListener('DOMContentLoaded', () => {
         formData.append('preset', options.preset);
         formData.append('guitar_split', options.guitarSplit ? '1' : '0');
         formData.append('clean_vocals', options.cleanVocals ? '1' : '0');
+        formData.append('split_drums', options.splitDrums ? '1' : '0');
         resp = await fetch('/api/separate', { method: 'POST', body: formData });
       } else {
         resp = await fetch('/api/separate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ youtube_url: url, model: options.model, preset: options.preset, guitar_split: options.guitarSplit, clean_vocals: options.cleanVocals })
+          body: JSON.stringify({ youtube_url: url, model: options.model, preset: options.preset, guitar_split: options.guitarSplit, clean_vocals: options.cleanVocals, split_drums: options.splitDrums })
         });
       }
       if (!resp.ok) throw new Error(`The stem maker refused the request (${resp.status}).`);
@@ -826,7 +843,17 @@ document.addEventListener('DOMContentLoaded', () => {
         del.textContent = 'Delete';
       });
 
-      item.append(main, del);
+      if (song.drums_can_split && drumSplitInstalled) {
+        const split = document.createElement('button');
+        split.type = 'button';
+        split.className = 'library-item-action';
+        split.textContent = 'Split drums';
+        split.title = 'Split the drums into kick, snare, toms, hi-hat, ride and crash (takes about a minute)';
+        split.addEventListener('click', () => splitLibraryDrums(song, split, meta));
+        item.append(main, split, del);
+      } else {
+        item.append(main, del);
+      }
       libraryList.appendChild(item);
     }
   }
@@ -853,7 +880,12 @@ document.addEventListener('DOMContentLoaded', () => {
   function openLibraryDialog() {
     librarySearch.value = '';
     libraryModal.classList.add('open');
-    refreshLibrary();
+    // The "Split drums" buttons need to know whether the extra tool is installed.
+    fetch('/api/engine')
+      .then(resp => (resp.ok ? resp.json() : null))
+      .then(info => { if (info) drumSplitInstalled = info.drum_split_available === true; })
+      .catch(() => {})
+      .then(() => refreshLibrary());
   }
 
   function closeLibraryDialog() {
@@ -877,6 +909,30 @@ document.addEventListener('DOMContentLoaded', () => {
       refreshLibrary();
     } finally {
       libraryOpening = false;
+    }
+  }
+
+  // Splits the drums of a saved song, showing the progress in its row.
+  async function splitLibraryDrums(song, button, meta) {
+    button.disabled = true;
+    try {
+      const resp = await fetch(`/api/library/${encodeURIComponent(song.id)}/split-drums`, { method: 'POST' });
+      const started = await resp.json();
+      if (!resp.ok) throw new Error(started.error || `error ${resp.status}`);
+      for (;;) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        const job = await (await fetch(`/api/status?job_id=${encodeURIComponent(started.job_id)}`)).json();
+        if (job.status === 'error') throw new Error(job.error || 'Could not split the drums.');
+        if (job.status === 'not_found') throw new Error('The stem maker restarted. Please try again.');
+        meta.textContent = `${job.message || 'Splitting the drums...'} (${job.progress || 0}%)`;
+        if (job.status === 'completed') break;
+      }
+      showToast(`Split the drums of "${song.title}". Open it to see the new stems.`, 'success');
+      await refreshLibrary();
+    } catch (err) {
+      console.error(err);
+      button.disabled = false;
+      showToast(`Could not split the drums: ${err.message}`, 'error');
     }
   }
 
@@ -1030,7 +1086,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   btnPresetRhythm.addEventListener('click', () => {
     for (const track of engine.tracks.values()) {
-      track.isSoloed = (track.id === 'drums' || track.id === 'bass');
+      track.isSoloed = (track.id === 'drums' || track.id.startsWith('drums_') || track.id === 'bass');
       track.isMuted = false;
     }
     engine.updateMuteSoloStates();

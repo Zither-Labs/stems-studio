@@ -1787,6 +1787,27 @@ kbd {
   margin-top: 0.15rem;
 }
 
+.library-item-action {
+  background: none;
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.14));
+  color: var(--text-muted);
+  border-radius: var(--radius-md);
+  padding: 0.35rem 0.5rem;
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-family: inherit;
+}
+
+.library-item-action:hover:not(:disabled) {
+  color: var(--text-primary, #fff);
+  border-color: rgba(167, 139, 250, 0.6);
+}
+
+.library-item-action:disabled {
+  opacity: 0.5;
+  cursor: progress;
+}
+
 .library-item-delete {
   background: none;
   border: 1px solid transparent;

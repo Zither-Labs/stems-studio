@@ -36,7 +36,7 @@ except Exception:
     pass
 
 APP_NAME = "stems-studio"
-APP_VERSION = 3
+APP_VERSION = 4
 PORT = 8099
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -162,6 +162,9 @@ def row_to_summary(row):
         "created_at": row["created_at"],
         "stem_count": sum(1 for s in stems if not s.get("empty")),
         "size_bytes": row["size_bytes"],
+        "drums_split": any(s["id"].startswith("drums_") for s in stems),
+        "drums_can_split": any(s["id"] == "drums" for s in stems)
+                           and os.path.isfile(os.path.join(song_dir(row["id"]), "drums.wav")),
     }
 
 
@@ -242,12 +245,12 @@ init_library()
 JOBS = {}
 
 NEPALI_FOLK_STEM_MAP = {
-    "vocals": {"name": "Vocals / स्वर", "type": "vocal", "desc": "Lead Vocals & Chorus"},
-    "drums": {"name": "Madal & Percussion / मादल", "type": "drums", "desc": "Madal (Baya/Dahina), Tabla, Dholak"},
-    "other": {"name": "Sarangi & Bansuri / सारङ्गी-बाँसुरी", "type": "other", "desc": "Folk Fiddle, Bamboo Flute, Lead"},
-    "piano": {"name": "Harmonium & Keys / हार्मोनियम", "type": "piano", "desc": "Bellows Harmonium & Drone"},
-    "guitar": {"name": "Acoustic Pluck / टुङ्ना-गितार", "type": "guitar", "desc": "Tungna, Sarod, Acoustic Guitar"},
-    "bass": {"name": "Bass & Low-End / बास", "type": "bass", "desc": "Sub Bass & Low Frequencies"}
+    "vocals": {"name": "Vocals / à¤¸à¥à¤µà¤°", "type": "vocal", "desc": "Lead Vocals & Chorus"},
+    "drums": {"name": "Madal & Percussion / à¤®à¤¾à¤¦à¤²", "type": "drums", "desc": "Madal (Baya/Dahina), Tabla, Dholak"},
+    "other": {"name": "Sarangi & Bansuri / à¤¸à¤¾à¤°à¤™à¥à¤—à¥€-à¤¬à¤¾à¤à¤¸à¥à¤°à¥€", "type": "other", "desc": "Folk Fiddle, Bamboo Flute, Lead"},
+    "piano": {"name": "Harmonium & Keys / à¤¹à¤¾à¤°à¥à¤®à¥‹à¤¨à¤¿à¤¯à¤®", "type": "piano", "desc": "Bellows Harmonium & Drone"},
+    "guitar": {"name": "Acoustic Pluck / à¤Ÿà¥à¤™à¥à¤¨à¤¾-à¤—à¤¿à¤¤à¤¾à¤°", "type": "guitar", "desc": "Tungna, Sarod, Acoustic Guitar"},
+    "bass": {"name": "Bass & Low-End / à¤¬à¤¾à¤¸", "type": "bass", "desc": "Sub Bass & Low Frequencies"}
 }
 
 STANDARD_6S_STEM_MAP = {
@@ -283,7 +286,7 @@ GUITAR_SPLIT_MAP = {
                       "desc": "Guitar parts panned left and right, usually the rhythm guitars"},
 }
 
-STEM_ORDER = ["vocals", "drums", "bass", "guitar", "guitar_lead", "guitar_rhythm", "piano", "other"]
+STEM_ORDER = ["vocals", "drums", "drums_kick", "drums_snare", "drums_hh", "drums_toms", "drums_ride", "drums_crash", "bass", "guitar", "guitar_lead", "guitar_rhythm", "piano", "other"]
 
 VALID_MODELS = ("htdemucs", "htdemucs_6s")
 VALID_PRESETS = ("standard", "nepali_folk")
@@ -317,6 +320,7 @@ def truthy(value):
 # but kept on disk, so they can still be shown.
 EMPTY_STEM_ABS_DB = -50.0
 EMPTY_STEM_SHARE = 0.01
+EMPTY_DRUM_PART_SHARE = 0.002   # a drum part with less than this share of the kit's energy is hidden
 
 
 def find_empty_stems(stems_dir, stem_files):
@@ -341,10 +345,17 @@ def find_empty_stems(stems_dir, stem_files):
         everything = sum(energy.values())
         if everything <= 0:
             return set()
-        empty = {
-            name for name in stem_files
-            if loudness_db[name] < EMPTY_STEM_ABS_DB or energy[name] / everything < EMPTY_STEM_SHARE
-        }
+        # The parts of a split drum kit are judged against the kit, not the whole song: a hi-hat
+        # is quiet next to the vocal, but it is not empty.
+        kit = sum(e for n, e in energy.items() if n.startswith("drums_"))
+        empty = set()
+        for name in stem_files:
+            if name.startswith("drums_") and kit > 0:
+                share = energy[name] / kit
+                if loudness_db[name] < EMPTY_STEM_ABS_DB or share < EMPTY_DRUM_PART_SHARE:
+                    empty.add(name)
+            elif loudness_db[name] < EMPTY_STEM_ABS_DB or energy[name] / everything < EMPTY_STEM_SHARE:
+                empty.add(name)
         # Never hide so much that almost nothing is left.
         keep = sorted(stem_files, key=lambda n: energy[n], reverse=True)[:2]
         return empty - set(keep)
@@ -493,18 +504,20 @@ def warm_up_device_info():
     threading.Thread(target=get_device_info, daemon=True).start()
 
 
-def run_roformer(audio_file, job_dir, job):
-    """Make the vocal with the Roformer model. Returns (vocals wav, instrumental wav)."""
+def run_audio_separator(audio_file, model, out_dir, job, base, span, label, download_note):
+    """Run one model of the optional audio-separator tool. Returns the list of WAV files it wrote.
+
+    base/span: where this step sits on the job's progress bar. label: what the message says.
+    """
     cli = roformer_cli()
     if not cli:
-        raise Exception("Cleaner vocals is not installed. Close Stems Studio and run the installer "
+        raise Exception("This needs the optional extra tool. Close Stems Studio and run the installer "
                         "again, and say yes to 'cleaner vocals' (Install.bat on Windows, "
-                        "Install.command on Mac/Linux). Or untick it to use the normal stem maker.")
-    out_dir = os.path.join(job_dir, "roformer")
+                        "Install.command on Mac/Linux).")
     models_dir = os.path.join(DATA_DIR, "models")
     os.makedirs(out_dir, exist_ok=True)
     os.makedirs(models_dir, exist_ok=True)
-    cmd = [cli, audio_file, "-m", ROFORMER_MODEL, "--model_file_dir", models_dir,
+    cmd = [cli, audio_file, "-m", model, "--model_file_dir", models_dir,
            "--output_dir", out_dir, "--output_format", "WAV"]
     env = dict(os.environ, PYTORCH_ENABLE_MPS_FALLBACK="1", PYTHONIOENCODING="utf-8")
     process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
@@ -518,34 +531,114 @@ def run_roformer(audio_file, job_dir, job):
                 continue
             recent_output = (recent_output + [piece])[-6:]
             if "Downloading" in piece or "download" in piece.lower():
-                job["message"] = "Downloading the cleaner-vocals model (one time, about 600 MB)..."
+                job["message"] = download_note
             if "%" in piece and "|" in piece:
                 try:
                     pct = int(piece.split("%")[0].split()[-1])
-                    job["progress"] = 12 + int(pct * 0.35)
-                    job["message"] = f"Making a cleaner vocal: {pct}%"
+                    job["progress"] = base + int(pct * span / 100)
+                    job["message"] = f"{label}: {pct}%"
                 except Exception:
                     pass
     process.wait()
     if process.returncode != 0:
-        raise Exception(f"Cleaner vocals failed (code {process.returncode}): {' | '.join(recent_output)}")
+        raise Exception(f"{label} failed (code {process.returncode}): {' | '.join(recent_output)}")
+    return [os.path.join(out_dir, n) for n in os.listdir(out_dir) if n.lower().endswith(".wav")]
 
+
+def run_roformer(audio_file, job_dir, job):
+    """Make the vocal with the Roformer model. Returns (vocals wav, instrumental wav)."""
+    files = run_audio_separator(
+        audio_file, ROFORMER_MODEL, os.path.join(job_dir, "roformer"), job, 12, 35,
+        "Making a cleaner vocal", "Downloading the cleaner-vocals model (one time, about 600 MB)...")
     vocals = instrumental = None
-    for name in os.listdir(out_dir):
-        lower = name.lower()
-        if not lower.endswith(".wav"):
-            continue
+    for path in files:
+        lower = os.path.basename(path).lower()
         if "(vocals)" in lower:
-            vocals = os.path.join(out_dir, name)
+            vocals = path
         elif "(instrumental)" in lower or "(other)" in lower or "(no_vocals)" in lower:
-            instrumental = os.path.join(out_dir, name)
+            instrumental = path
     if not vocals or not instrumental:
         raise Exception("Cleaner vocals did not produce the expected files.")
     return vocals, instrumental
 
 
+# Splitting the drums into kick, snare, toms, hi-hat, ride and crash (the DrumSep model by
+# aufr33 and jarredou), with the same optional tool as "cleaner vocals".
+DRUMSEP_MODEL = "MDX23C-DrumSep-aufr33-jarredou.ckpt"
+DRUM_PART_MAP = {
+    "drums_kick": {"name": "Kick", "type": "drums", "desc": "Bass drum", "part": "kick"},
+    "drums_snare": {"name": "Snare", "type": "drums", "desc": "Snare drum", "part": "snare"},
+    "drums_toms": {"name": "Toms", "type": "drums", "desc": "Tom-toms", "part": "toms"},
+    "drums_hh": {"name": "Hi-hat", "type": "drums", "desc": "Hi-hat", "part": "hh"},
+    "drums_ride": {"name": "Ride", "type": "drums", "desc": "Ride cymbal", "part": "ride"},
+    "drums_crash": {"name": "Crash", "type": "drums", "desc": "Crash cymbal", "part": "crash"},
+}
+
+
+def split_drums_in_folder(folder, job, base, span):
+    """Split folder/drums.wav into folder/drums_kick.wav, drums_snare.wav... Returns their file names."""
+    work = os.path.join(folder, "drumsep")
+    try:
+        files = run_audio_separator(
+            os.path.join(folder, "drums.wav"), DRUMSEP_MODEL, work, job, base, span,
+            "Splitting the drums", "Downloading the drum-splitting model (one time)...")
+        made = []
+        for stem_key, meta in DRUM_PART_MAP.items():
+            wanted = f"({meta['part']})"
+            source = next((f for f in files if wanted in os.path.basename(f).lower()), None)
+            if source:
+                shutil.move(source, os.path.join(folder, stem_key + ".wav"))
+                made.append(stem_key + ".wav")
+        if not made:
+            raise Exception("The drum splitter did not produce the expected files.")
+        return made
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
+def update_song_stems(song_id, stems):
+    size = sum(os.path.getsize(os.path.join(song_dir(song_id), os.path.basename(s["url"])))
+               for s in stems if os.path.isfile(os.path.join(song_dir(song_id), os.path.basename(s["url"]))))
+    with library_db() as conn:
+        conn.execute("UPDATE songs SET stems_json = ?, size_bytes = ? WHERE id = ?",
+                     (json.dumps(stems), size, song_id))
+
+
+def run_drum_split_job(job_id, song_id):
+    """Split the drums of a song that is already in the library."""
+    job = JOBS[job_id]
+    folder = song_dir(song_id)
+    try:
+        song = get_song(song_id)
+        if not song or not os.path.isfile(os.path.join(folder, "drums.wav")):
+            raise Exception("This song has no drum stem to split.")
+        job["message"] = "Splitting the drums..."
+        job["progress"] = 5
+        made = split_drums_in_folder(folder, job, 5, 90)
+        stems = [s for s in song["stems"] if s["id"] != "drums"]
+        for name in made:
+            key = os.path.splitext(name)[0]
+            meta = DRUM_PART_MAP[key]
+            stems.append({"id": key, "name": meta["name"], "stemType": meta["type"], "desc": meta["desc"],
+                          "empty": False, "url": f"/api/stems/{song_id}/{name}"})
+        stems.sort(key=lambda s: (STEM_ORDER.index(s["id"]) if s["id"] in STEM_ORDER else len(STEM_ORDER), s["id"]))
+        empty = find_empty_stems(folder, [os.path.basename(s["url"]) for s in stems])
+        for s in stems:
+            s["empty"] = os.path.basename(s["url"]) in empty
+        update_song_stems(song_id, stems)
+        job["stems"] = stems
+        job["title"] = song["title"]
+        job["progress"] = 100
+        job["status"] = "completed"
+        job["message"] = "Drums split."
+    except Exception as e:
+        traceback.print_exc()
+        job["status"] = "error"
+        job["error"] = str(e)
+        job["message"] = f"Error: {e}"
+
 def run_separation_job(job_id, source_type, source_val, model="htdemucs_6s", preset="nepali_folk",
-                       content_key=None, source_label="", title=None):
+                       content_key=None, source_label="", title=None, split_drums=False):
     job = JOBS[job_id]
     job_dir = os.path.join(OUTPUT_DIR, job_id)
     os.makedirs(job_dir, exist_ok=True)
@@ -703,6 +796,17 @@ def run_separation_job(job_id, source_type, source_val, model="htdemucs_6s", pre
                 # Keep the ordinary single guitar stem rather than failing the whole song.
                 traceback.print_exc()
 
+        if split_drums and "drums.wav" in stem_files and roformer_cli():
+            job["message"] = "Splitting the drums into kick, snare, hi-hat and cymbals..."
+            job["progress"] = 93
+            try:
+                parts = split_drums_in_folder(stems_source_dir, job, 93, 3)
+                # The whole drum track stays on disk (the highway can still use it); the parts replace it in the mixer.
+                shutil.copy2(os.path.join(stems_source_dir, "drums.wav"), os.path.join(job_dir, "drums.wav"))
+                stem_files = [f for f in stem_files if f != "drums.wav"] + parts
+            except Exception:
+                traceback.print_exc()      # keep the ordinary drum stem rather than failing the whole song
+
         # Pick mapping dictionary
         if preset == "nepali_folk":
             mapping = NEPALI_FOLK_STEM_MAP if model == "htdemucs_6s" else NEPALI_FOLK_4S_STEM_MAP
@@ -711,7 +815,7 @@ def run_separation_job(job_id, source_type, source_val, model="htdemucs_6s", pre
         else:
             mapping = STANDARD_4S_STEM_MAP
 
-        mapping = dict(mapping, **GUITAR_SPLIT_MAP)
+        mapping = dict(mapping, **GUITAR_SPLIT_MAP, **DRUM_PART_MAP)
         empty_files = find_empty_stems(stems_source_dir, stem_files)
 
         stems_result = []
@@ -845,7 +949,8 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
             if dev_info is None:
                 dev_info = {"device": "unknown", "device_name": "", "cuda_available": False, "pending": True}
             self.send_json(dict(dev_info, library=True, app=APP_NAME, version=APP_VERSION,
-                                clean_vocals_available=roformer_cli() is not None))
+                                clean_vocals_available=roformer_cli() is not None,
+                                drum_split_available=roformer_cli() is not None))
             return
 
         elif parsed.path == "/api/status":
@@ -889,6 +994,26 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
                 result = module.cached_analysis(wav_path, os.path.join(OUTPUT_DIR, song_id, stem + ".pitch.json"))
             self.send_json({"t0": result["t0"], "dt": result["dt"], "midi": result["midi"]})
             return
+        elif parsed.path.startswith("/api/hits/"):
+            # When the drums hit (kick, snare, hi-hat...), for the drum lane of the highway.
+            song_id = parsed.path.split("/")[3]
+            folder = os.path.join(OUTPUT_DIR, song_id)
+            if not SONG_ID_RE.match(song_id) or not os.path.isdir(folder):
+                self.send_json({"error": "Song not found"}, 404)
+                return
+            try:
+                drum_hits = separator_module("drum_hits")
+            except ImportError as exc:
+                self.send_json({"error": f"Drum finder is not installed: {exc}"}, 501)
+                return
+            with PITCH_LOCK:
+                result = drum_hits.cached_hits(folder, os.path.join(folder, "drums.hits.json"))
+            if not result:
+                self.send_json({"error": "This song has no drum stem"}, 404)
+                return
+            self.send_json({"lanes": result["lanes"], "approximate": result["approximate"]})
+            return
+
         elif parsed.path.startswith("/api/analysis/"):
             # Key and chords of a song, found from its separated stems.
             song_id = parsed.path.split("/")[3]
@@ -989,6 +1114,7 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
                 model, preset = clean_choices(data.get("model"), data.get("preset"),
                                               truthy(data.get("guitar_split", False)),
                                               truthy(data.get("clean_vocals", False)))
+                split_drums = truthy(data.get("split_drums", False))
 
                 if not youtube_url:
                     self.send_response(400)
@@ -1012,7 +1138,7 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
 
                 t = threading.Thread(
                     target=run_separation_job,
-                    args=(job_id, "youtube", youtube_url, model, preset, content_key, youtube_url),
+                    args=(job_id, "youtube", youtube_url, model, preset, content_key, youtube_url, None, split_drums),
                     daemon=True
                 )
                 t.start()
@@ -1034,6 +1160,7 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
                 preset = "standard"
                 guitar_split = False
                 clean_vocals = False
+                split_drums = False
                 file_bytes = None
                 file_name = "uploaded_audio.wav"
 
@@ -1048,6 +1175,8 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
                             guitar_split = truthy(part.get_payload(decode=True).decode("utf-8"))
                         elif 'name="clean_vocals"' in cd:
                             clean_vocals = truthy(part.get_payload(decode=True).decode("utf-8"))
+                        elif 'name="split_drums"' in cd:
+                            split_drums = truthy(part.get_payload(decode=True).decode("utf-8"))
                         elif 'name="file"' in cd:
                             fname = part.get_filename()
                             if fname:
@@ -1091,7 +1220,7 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
 
                 t = threading.Thread(
                     target=run_separation_job,
-                    args=(job_id, "file", uploaded_path, model, preset, content_key, original_name, title),
+                    args=(job_id, "file", uploaded_path, model, preset, content_key, original_name, title, split_drums),
                     daemon=True
                 )
                 t.start()
@@ -1101,6 +1230,27 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(json.dumps({"job_id": job_id}).encode("utf-8"))
                 return
+
+        if parsed.path.startswith("/api/library/") and parsed.path.endswith("/split-drums"):
+            song_id = parsed.path.split("/")[3]
+            if not SONG_ID_RE.match(song_id) or not get_song(song_id):
+                self.send_json({"error": "Song not found in library"}, 404)
+                return
+            if not roformer_cli():
+                self.send_json({"error": "Splitting the drums needs the optional extra tool. Close Stems Studio and run the "
+                                         "installer again, and say yes to cleaner vocals."}, 501)
+                return
+            for other in list(JOBS.values()):
+                # Two splits of the same song at once would overwrite each other's files.
+                if other.get("split_song") == song_id and other.get("status") == "processing":
+                    self.send_json({"job_id": other["id"]})
+                    return
+            job_id = str(uuid.uuid4())[:8]
+            JOBS[job_id] = {"id": job_id, "status": "processing", "progress": 2, "message": "Starting...", "stems": [],
+                            "split_song": song_id}
+            threading.Thread(target=run_drum_split_job, args=(job_id, song_id), daemon=True).start()
+            self.send_json({"job_id": job_id})
+            return
 
         self.send_error(404, "Endpoint not found")
 

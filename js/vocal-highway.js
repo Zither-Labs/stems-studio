@@ -78,6 +78,9 @@ const MINOR_DEGREES = [0, 2, 3, 5, 7, 8, 10];
 const FLAT_MAJOR_TONICS = [5, 10, 3, 8, 1, 6];
 const FLAT_MINOR_TONICS = [2, 7, 0, 5, 10, 3];
 
+// Colours of the drum lanes.
+const DRUM_COLORS = { kick: '#f43f5e', snare: '#f59e0b', toms: '#a855f7', hh: '#22d3ee', ride: '#38bdf8', crash: '#facc15' };
+
 // How each stem can be shown. "melody" suits instruments that play one note at a time.
 // "notes" is the piano roll, for chords and anything polyphonic.
 const HIGHWAY_SOURCES = {
@@ -153,6 +156,8 @@ class VocalHighway {
     this.kind = 'melody';
     this.roll = [];            // piano-roll mode: [{ start, end, midi, strength }]
     this.rollChords = [];      // chords worked out from the notes that sound together
+    this.lanes = [];           // drum mode: [{ id, label, hits: [[time, strength]...] }]
+    this.approximateDrums = false;
     this.rollMinStrength = this.loadNumber('stemsStudio.rollMinStrength', 0.4);
     this.shift = 0;            // semitones the engine's pitch control moves everything up or down
     this.coach = null;         // the singing coach draws on top of the highway (js/singing-coach.js)
@@ -286,7 +291,14 @@ class VocalHighway {
   buildSources(info) {
     if (!info) return [{ key: 'vocals:melody', file: 'vocals', trackId: 'vocal', kind: 'melody', label: 'Vocals', url: null }];
     const out = [];
+    let hasDrums = false;
     for (const stem of info.stems) {
+      // The whole drum track or its parts (kick, snare...) both give one drum-hits view.
+      if (stem.file === 'drums' || stem.file.startsWith('drums_')) {
+        if (!hasDrums) out.push({ key: 'drums:drums', file: 'drums', trackId: stem.trackId, kind: 'drums', label: 'Drums (hits)', songId: info.songId });
+        hasDrums = true;
+        continue;
+      }
       (HIGHWAY_SOURCES[stem.file] || []).forEach((mode) => {
         out.push({ key: `${stem.file}:${mode.kind}`, file: stem.file, trackId: stem.trackId, kind: mode.kind, label: mode.label, songId: info.songId });
       });
@@ -300,7 +312,8 @@ class VocalHighway {
     if (this.state === 'ready' || this.state === 'nopitch') {
       this.cache.set(this.active.key, {
         state: this.state, midi: this.midi, t0: this.t0, dt: this.dt, notes: this.notes,
-        baseMin: this.baseMin, baseMax: this.baseMax, roll: this.roll, rawRoll: this.rawRoll
+        baseMin: this.baseMin, baseMax: this.baseMax, roll: this.roll, rawRoll: this.rawRoll,
+        lanes: this.lanes, approximateDrums: this.approximateDrums
       });
     }
   }
@@ -311,6 +324,8 @@ class VocalHighway {
     this.roll = [];
     this.rawRoll = [];
     this.rollChords = [];
+    this.lanes = [];
+    this.approximateDrums = false;
     this.baseMin = undefined;
     this.baseMax = undefined;
   }
@@ -324,6 +339,8 @@ class VocalHighway {
     this.baseMin = view.baseMin;
     this.baseMax = view.baseMax;
     this.rawRoll = view.rawRoll || [];
+    this.lanes = view.lanes || [];
+    this.approximateDrums = Boolean(view.approximateDrums);
     this.filterRoll();
     this.applyKeyRange();
   }
@@ -365,6 +382,18 @@ class VocalHighway {
       this.analyze(track.buffer, source, finish, fail);
       return;
     }
+    if (source.kind === 'drums') {
+      try {
+        const resp = await fetch(`/api/hits/${info.songId}`);
+        if (!resp.ok) throw new Error(`request failed (${resp.status})`);
+        const data = await resp.json();
+        finish(this.makeDrumView(data));
+      } catch (err) {
+        console.warn(`Server could not find the drum hits (${err.message})`);
+        fail('error');
+      }
+      return;
+    }
     const base = source.kind === 'notes' ? '/api/notes/' : '/api/pitch/';
     try {
       const resp = await fetch(`${base}${info.songId}?stem=${encodeURIComponent(source.file)}`);
@@ -396,6 +425,11 @@ class VocalHighway {
     if (this.active) els.source.value = this.active.key;
     els.sourceWrap.hidden = this.sources.length < 2;
     els.detailWrap.hidden = this.kind !== 'notes';
+  }
+
+  makeDrumView(data) {
+    const lanes = (data.lanes || []).filter((lane) => lane.hits.length);
+    return { state: lanes.length ? 'ready' : 'nopitch', midi: null, t0: 0, dt: 0.02, notes: [], lanes, approximateDrums: data.approximate };
   }
 
   // --- piano-roll mode: all the notes, and the chords they make together ----------------
@@ -785,6 +819,7 @@ class VocalHighway {
 
   // The chord ribbon follows what is on show: the song's chords, or the ones this stem's notes make.
   get chordsNow() {
+    if (this.kind === 'drums') return [];
     return this.kind === 'notes' ? this.rollChords : this.chords;
   }
 
@@ -1030,6 +1065,83 @@ class VocalHighway {
     ctx.textBaseline = 'top';
     ctx.fillText(`${chord ? this.chordName(chord) + '   ' : ''}${names}`, nowX + 10, top + 6);
   }
+  // Drum mode: one row per drum, a mark for every hit, lit as it reaches the now line.
+  drawDrums(t) {
+    const ctx = this.ctx;
+    const { plotW, nowX, pxPerSec } = this.layout();
+    const { width: w, height: h, gutter } = this;
+    const lanes = this.lanes;
+    const rowH = h / lanes.length;
+    const timeToX = (time) => nowX + (time - t) * pxPerSec;
+    const viewStart = t - this.nowFraction * this.windowSeconds - 0.5;
+    const viewEnd = t + (1 - this.nowFraction) * this.windowSeconds + 0.5;
+
+    lanes.forEach((lane, index) => {
+      if (index % 2 === 0) {
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.025)';
+        ctx.fillRect(gutter, index * rowH, plotW, rowH);
+      }
+    });
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(gutter, 0, plotW, h);
+    ctx.clip();
+    const firstSecond = Math.floor(t - this.nowFraction * this.windowSeconds);
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+    ctx.lineWidth = 1;
+    for (let s = firstSecond; s <= t + this.windowSeconds; s++) {
+      ctx.beginPath();
+      ctx.moveTo(timeToX(s), 0);
+      ctx.lineTo(timeToX(s), h);
+      ctx.stroke();
+    }
+    lanes.forEach((lane, index) => {
+      const colour = DRUM_COLORS[lane.id] || '#a78bfa';
+      const markH = Math.max(6, Math.min(rowH * 0.62, 26));
+      const y = index * rowH + (rowH - markH) / 2;
+      for (const [time, strength] of lane.hits) {
+        if (time < viewStart) continue;
+        if (time > viewEnd) break;
+        const x = timeToX(time);
+        const lit = Math.abs(time - t) < 0.07;
+        ctx.save();
+        if (lit) {
+          ctx.shadowColor = colour;
+          ctx.shadowBlur = 18;
+        }
+        ctx.globalAlpha = time < t - 0.07 ? 0.3 : lit ? 1 : 0.5 + 0.5 * strength;
+        ctx.fillStyle = colour;
+        this.roundedBar(x - 3, y + markH * (1 - (0.55 + 0.45 * strength)) / 2, 7, markH * (0.55 + 0.45 * strength));
+        ctx.fill();
+        ctx.restore();
+      }
+    });
+    this.drawNowLine({ nowX, top: 0, h });
+    ctx.restore();
+
+    // Left edge: the name of each drum.
+    ctx.fillStyle = 'rgba(13, 16, 23, 0.97)';
+    ctx.fillRect(0, 0, gutter, h);
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+    ctx.beginPath();
+    ctx.moveTo(gutter, 0);
+    ctx.lineTo(gutter, h);
+    ctx.stroke();
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.font = 'bold 12px "Inter", sans-serif';
+    lanes.forEach((lane, index) => {
+      ctx.fillStyle = DRUM_COLORS[lane.id] || '#a78bfa';
+      ctx.fillText(lane.label, 12, index * rowH + rowH / 2);
+    });
+    if (this.approximateDrums) {
+      ctx.fillStyle = '#fbbf24';
+      ctx.font = 'bold 8px "Inter", sans-serif';
+      ctx.fillText('APPROXIMATE: split the drums', 8, h - 8, gutter - 12);
+    }
+  }
+
   draw(t) {
     const ctx = this.ctx;
     const w = this.width;
@@ -1044,10 +1156,16 @@ class VocalHighway {
       const messages = {
         idle: 'Highway: open a song to see the singing pitch here.',
         analyzing: `Reading the ${this.active ? this.active.label.toLowerCase() : 'pitch'}...`,
-        nopitch: this.kind === 'notes' ? 'No clear notes were found in this stem.' : 'No clear pitch was found in this stem.',
+        nopitch: this.kind === 'notes' ? 'No clear notes were found in this stem.'
+          : this.kind === 'drums' ? 'No drum hits were found.' : 'No clear pitch was found in this stem.',
         error: 'Could not read the pitch of this stem.'
       };
       this.drawMessage(messages[this.state] || '');
+      return;
+    }
+
+    if (this.kind === 'drums') {
+      this.drawDrums(t);
       return;
     }
 
