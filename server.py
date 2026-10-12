@@ -79,6 +79,20 @@ def cli_python():
             return candidate
     return exe
 
+# "Cleaner vocals": an optional, separate tool (audio-separator, in its own .venv-roformer
+# environment so it can never disturb the main one) makes the vocal stem with a Roformer model,
+# which leaks far less guitar and other instruments into the vocal than Demucs does.
+ROFORMER_MODEL = "model_bs_roformer_ep_317_sdr_12.9755.ckpt"      # about 610 MB, downloaded on first use
+ROFORMER_VENV = os.path.join(BASE_DIR, ".venv-roformer")
+
+
+def roformer_cli():
+    """Path of the audio-separator program, or None when 'cleaner vocals' is not installed."""
+    candidate = os.path.join(ROFORMER_VENV, "Scripts", "audio-separator.exe") if os.name == "nt" \
+        else os.path.join(ROFORMER_VENV, "bin", "audio-separator")
+    return candidate if os.path.isfile(candidate) else None
+
+
 DB_PATH = os.path.join(OUTPUT_DIR, "library.db")
 SONG_ID_RE = re.compile(r"^[0-9a-f]{8}$")
 PITCH_LOCK = threading.Lock()
@@ -272,13 +286,14 @@ STEM_ORDER = ["vocals", "drums", "bass", "guitar", "guitar_lead", "guitar_rhythm
 VALID_MODELS = ("htdemucs", "htdemucs_6s")
 VALID_PRESETS = ("standard", "nepali_folk")
 GUITAR_SPLIT_SUFFIX = "+gsplit"
+CLEAN_VOCALS_SUFFIX = "+clean"
 
 
-def clean_choices(model, preset, split_guitar=False):
+def clean_choices(model, preset, split_guitar=False, clean_vocals=False):
     """Only accept known model / naming choices; anything else falls back to the defaults.
 
-    The guitar split is remembered as a suffix on the naming choice, so a song made with it
-    and the same song made without it are kept as two different library entries.
+    The guitar split and the cleaner vocals are remembered as suffixes on the naming choice, so a
+    song made with them and the same song made without them are kept as separate library entries.
     """
     if model not in VALID_MODELS:
         model = "htdemucs_6s"
@@ -286,6 +301,8 @@ def clean_choices(model, preset, split_guitar=False):
         preset = "standard"
     if split_guitar and model == "htdemucs_6s":
         preset += GUITAR_SPLIT_SUFFIX
+    if clean_vocals:
+        preset += CLEAN_VOCALS_SUFFIX
     return model, preset
 
 
@@ -474,11 +491,70 @@ def warm_up_device_info():
     threading.Thread(target=get_device_info, daemon=True).start()
 
 
+def run_roformer(audio_file, job_dir, job):
+    """Make the vocal with the Roformer model. Returns (vocals wav, instrumental wav)."""
+    cli = roformer_cli()
+    if not cli:
+        raise Exception("Cleaner vocals is not installed. Close Stems Studio and run the installer "
+                        "again, and say yes to 'cleaner vocals' (Install.bat on Windows, "
+                        "Install.command on Mac/Linux). Or untick it to use the normal stem maker.")
+    out_dir = os.path.join(job_dir, "roformer")
+    models_dir = os.path.join(DATA_DIR, "models")
+    os.makedirs(out_dir, exist_ok=True)
+    os.makedirs(models_dir, exist_ok=True)
+    cmd = [cli, audio_file, "-m", ROFORMER_MODEL, "--model_file_dir", models_dir,
+           "--output_dir", out_dir, "--output_format", "WAV"]
+    env = dict(os.environ, PYTORCH_ENABLE_MPS_FALLBACK="1", PYTHONIOENCODING="utf-8")
+    process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                               universal_newlines=True, encoding="utf-8", errors="replace",
+                               env=env, **NO_WINDOW)
+    recent_output = []
+    for line in process.stdout:
+        for piece in line.replace("\r", "\n").split("\n"):
+            piece = piece.strip()
+            if not piece:
+                continue
+            recent_output = (recent_output + [piece])[-6:]
+            if "Downloading" in piece or "download" in piece.lower():
+                job["message"] = "Downloading the cleaner-vocals model (one time, about 600 MB)..."
+            if "%" in piece and "|" in piece:
+                try:
+                    pct = int(piece.split("%")[0].split()[-1])
+                    job["progress"] = 12 + int(pct * 0.35)
+                    job["message"] = f"Making a cleaner vocal: {pct}%"
+                except Exception:
+                    pass
+    process.wait()
+    if process.returncode != 0:
+        raise Exception(f"Cleaner vocals failed (code {process.returncode}): {' | '.join(recent_output)}")
+
+    vocals = instrumental = None
+    for name in os.listdir(out_dir):
+        lower = name.lower()
+        if not lower.endswith(".wav"):
+            continue
+        if "(vocals)" in lower:
+            vocals = os.path.join(out_dir, name)
+        elif "(instrumental)" in lower or "(other)" in lower or "(no_vocals)" in lower:
+            instrumental = os.path.join(out_dir, name)
+    if not vocals or not instrumental:
+        raise Exception("Cleaner vocals did not produce the expected files.")
+    return vocals, instrumental
+
+
 def run_separation_job(job_id, source_type, source_val, model="htdemucs_6s", preset="nepali_folk",
                        content_key=None, source_label="", title=None):
     job = JOBS[job_id]
     job_dir = os.path.join(OUTPUT_DIR, job_id)
     os.makedirs(job_dir, exist_ok=True)
+
+    library_preset = preset   # what the library remembers (includes the option suffixes)
+    clean_vocals = preset.endswith(CLEAN_VOCALS_SUFFIX)
+    if clean_vocals:
+        preset = preset[:-len(CLEAN_VOCALS_SUFFIX)]
+    split_guitar = preset.endswith(GUITAR_SPLIT_SUFFIX)
+    if split_guitar:
+        preset = preset[:-len(GUITAR_SPLIT_SUFFIX)]
 
     try:
         audio_file = None
@@ -528,9 +604,20 @@ def run_separation_job(job_id, source_type, source_val, model="htdemucs_6s", pre
         if not os.path.isfile(audio_file):
             raise Exception("Failed to prepare source audio file.")
 
+        # Step 2a (optional): the cleanest vocal, from a Roformer model. What is left over
+        # (the music without the voice) is then split into drums, bass, guitar... by Demucs.
+        demucs_input = audio_file
+        roformer_vocals = None
+        progress_base, progress_span = 35, 0.55      # where Demucs' progress bar starts and how far it goes
+        if clean_vocals:
+            job["message"] = "Making a cleaner vocal (the first time, a 600 MB model is downloaded)..."
+            job["progress"] = 12
+            roformer_vocals, demucs_input = run_roformer(audio_file, job_dir, job)
+            progress_base, progress_span = 50, 0.40
+
         # Step 2: Run Demucs Separation with GPU acceleration
         job["message"] = f"Running neural separation with {model} on {dev_info['device_name']}..."
-        job["progress"] = 35
+        job["progress"] = progress_base
 
         def run_demucs(device):
             cmd = [
@@ -538,7 +625,7 @@ def run_separation_job(job_id, source_type, source_val, model="htdemucs_6s", pre
                 "-n", model,
                 "-d", device,
                 "-o", job_dir,
-                audio_file
+                demucs_input
             ]
             # On a Mac, let PyTorch quietly use the CPU for the few operations the GPU lacks.
             env = dict(os.environ, PYTORCH_ENABLE_MPS_FALLBACK="1")
@@ -553,7 +640,7 @@ def run_separation_job(job_id, source_type, source_val, model="htdemucs_6s", pre
                     try:
                         parts = line.split("%")[0].split()
                         pct = int(parts[-1])
-                        job["progress"] = 35 + int(pct * 0.55)
+                        job["progress"] = progress_base + int(pct * progress_span)
                         job["message"] = f"Processing neural stems: {pct}%"
                     except Exception:
                         pass
@@ -567,7 +654,7 @@ def run_separation_job(job_id, source_type, source_val, model="htdemucs_6s", pre
             # The graphics card failed (out of memory, unsupported driver, ...). A slow
             # result is better than no result, so try again on the CPU.
             job["message"] = "The graphics card could not process this song. Retrying on the CPU (slower)..."
-            job["progress"] = 35
+            job["progress"] = progress_base
             returncode, tail = run_demucs("cpu")
             missing_demucs = "No module named" in tail and "demucs" in tail
         if returncode != 0:
@@ -580,7 +667,7 @@ def run_separation_job(job_id, source_type, source_val, model="htdemucs_6s", pre
         job["message"] = "Finalizing stem channels..."
         job["progress"] = 92
 
-        audio_base = os.path.splitext(os.path.basename(audio_file))[0]
+        audio_base = os.path.splitext(os.path.basename(demucs_input))[0]
         stems_source_dir = os.path.join(job_dir, model, audio_base)
 
         if not os.path.isdir(stems_source_dir):
@@ -593,9 +680,11 @@ def run_separation_job(job_id, source_type, source_val, model="htdemucs_6s", pre
         if not stem_files:
             raise Exception("No stem audio files were generated.")
 
-        library_preset = preset   # what the library remembers (includes the guitar-split suffix)
-        split_guitar = preset.endswith(GUITAR_SPLIT_SUFFIX)
-        preset = preset[:-len(GUITAR_SPLIT_SUFFIX)] if split_guitar else preset
+        if clean_vocals and roformer_vocals:
+            # The Roformer vocal replaces the one Demucs found on the leftover (vocal-free) music.
+            shutil.copy2(roformer_vocals, os.path.join(stems_source_dir, "vocals.wav"))
+            if "vocals.wav" not in stem_files:
+                stem_files.append("vocals.wav")
 
         if split_guitar and "guitar.wav" in stem_files:
             job["message"] = "Splitting the guitar into lead and rhythm (by stereo position)..."
@@ -753,7 +842,8 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
             dev_info = peek_device_info()
             if dev_info is None:
                 dev_info = {"device": "unknown", "device_name": "", "cuda_available": False, "pending": True}
-            self.send_json(dict(dev_info, library=True, app=APP_NAME, version=APP_VERSION))
+            self.send_json(dict(dev_info, library=True, app=APP_NAME, version=APP_VERSION,
+                                clean_vocals_available=roformer_cli() is not None))
             return
 
         elif parsed.path == "/api/status":
@@ -887,7 +977,8 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
 
                 youtube_url = data.get("youtube_url", "").strip()
                 model, preset = clean_choices(data.get("model"), data.get("preset"),
-                                              truthy(data.get("guitar_split", False)))
+                                              truthy(data.get("guitar_split", False)),
+                                              truthy(data.get("clean_vocals", False)))
 
                 if not youtube_url:
                     self.send_response(400)
@@ -932,6 +1023,7 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
                 model = "htdemucs_6s"
                 preset = "standard"
                 guitar_split = False
+                clean_vocals = False
                 file_bytes = None
                 file_name = "uploaded_audio.wav"
 
@@ -944,13 +1036,15 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
                             preset = part.get_payload(decode=True).decode("utf-8").strip()
                         elif 'name="guitar_split"' in cd:
                             guitar_split = truthy(part.get_payload(decode=True).decode("utf-8"))
+                        elif 'name="clean_vocals"' in cd:
+                            clean_vocals = truthy(part.get_payload(decode=True).decode("utf-8"))
                         elif 'name="file"' in cd:
                             fname = part.get_filename()
                             if fname:
                                 file_name = fname
                             file_bytes = part.get_payload(decode=True)
 
-                model, preset = clean_choices(model, preset, guitar_split)
+                model, preset = clean_choices(model, preset, guitar_split, clean_vocals)
 
                 if not file_bytes:
                     self.send_response(400)

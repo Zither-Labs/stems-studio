@@ -15,6 +15,8 @@ foreach ($folder in $folders) {
     $link.Arguments = '"' + $Script + '"'
     $link.WorkingDirectory = Split-Path -Parent $Script
     $link.Description = 'Stems Studio'
+    $icon = Join-Path (Split-Path -Parent $Script) 'assets\stems-studio.ico'
+    if (Test-Path $icon) { $link.IconLocation = "$icon,0" }
     $link.Save()
     Write-Host "Shortcut created: $($link.FullName)"
 }

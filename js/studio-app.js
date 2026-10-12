@@ -363,6 +363,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let createFileChoice = null;
   let createBusy = false;
   let stemMakerReady = false;
+  let cleanVocalsInstalled = false;   // from the server: is the Roformer tool installed?
   let createRunId = 0;
 
   function refreshCreateButton() {
@@ -427,6 +428,8 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       if (checkId !== stemMakerCheckId) return;
       stemMakerReady = true;
+      cleanVocalsInstalled = info.clean_vocals_available === true;
+      syncCleanVocalsAvailability();
       if (info.pending) {
         // The server is still loading its AI engine; you can already start.
         createStemsEngineNote.textContent = 'Ready. Still checking for your graphics card in the background...';
@@ -594,11 +597,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const checked = document.querySelector('input[name="createStemCount"]:checked');
     const folk = document.getElementById('createFolkNames');
     const split = document.getElementById('createGuitarSplit');
+    const clean = document.getElementById('createCleanVocals');
     const model = checked && checked.value === '4' ? 'htdemucs' : 'htdemucs_6s';
     return {
       model,
       preset: folk && folk.checked ? 'nepali_folk' : 'standard',
-      guitarSplit: model === 'htdemucs_6s' && Boolean(split && split.checked)
+      guitarSplit: model === 'htdemucs_6s' && Boolean(split && split.checked),
+      cleanVocals: cleanVocalsInstalled && Boolean(clean && clean.checked)
     };
   }
 
@@ -612,6 +617,16 @@ document.addEventListener('DOMContentLoaded', () => {
     if (label) label.classList.toggle('disabled', !sixStems);
   }
 
+  // Cleaner vocals needs an extra tool. Without it the box is greyed out and says how to get it.
+  function syncCleanVocalsAvailability() {
+    const clean = document.getElementById('createCleanVocals');
+    const label = document.getElementById('createCleanVocalsLabel');
+    if (!clean || !label) return;
+    clean.disabled = !cleanVocalsInstalled;
+    label.classList.toggle('disabled', !cleanVocalsInstalled);
+    label.title = cleanVocalsInstalled ? '' : 'Not installed yet. Close Stems Studio and run the installer (Install.bat), and say yes to cleaner vocals.';
+  }
+
   function restoreCreateOptions() {
     try {
       const saved = JSON.parse(localStorage.getItem(CREATE_OPTIONS_KEY) || '{}');
@@ -621,6 +636,8 @@ document.addEventListener('DOMContentLoaded', () => {
       if (folk) folk.checked = saved.folk === true;
       const split = document.getElementById('createGuitarSplit');
       if (split) split.checked = saved.guitarSplit === true;
+      const clean = document.getElementById('createCleanVocals');
+      if (clean) clean.checked = saved.cleanVocals === true;
     } catch (err) { /* private mode or corrupt value: keep the defaults */ }
   }
 
@@ -631,14 +648,15 @@ document.addEventListener('DOMContentLoaded', () => {
       localStorage.setItem(CREATE_OPTIONS_KEY, JSON.stringify({
         stems: model === 'htdemucs' ? 4 : 6,
         folk: preset === 'nepali_folk',
-        guitarSplit: Boolean(split && split.checked)
+        guitarSplit: Boolean(split && split.checked),
+        cleanVocals: Boolean(document.getElementById('createCleanVocals') && document.getElementById('createCleanVocals').checked)
       }));
     } catch (err) { /* ignore */ }
   }
 
   restoreCreateOptions();
   syncGuitarSplitAvailability();
-  document.querySelectorAll('input[name="createStemCount"], #createFolkNames, #createGuitarSplit')
+  document.querySelectorAll('input[name="createStemCount"], #createFolkNames, #createGuitarSplit, #createCleanVocals')
     .forEach(el => el.addEventListener('change', () => {
       syncGuitarSplitAvailability();
       saveCreateOptions();
@@ -666,12 +684,13 @@ document.addEventListener('DOMContentLoaded', () => {
         formData.append('model', options.model);
         formData.append('preset', options.preset);
         formData.append('guitar_split', options.guitarSplit ? '1' : '0');
+        formData.append('clean_vocals', options.cleanVocals ? '1' : '0');
         resp = await fetch('/api/separate', { method: 'POST', body: formData });
       } else {
         resp = await fetch('/api/separate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ youtube_url: url, model: options.model, preset: options.preset, guitar_split: options.guitarSplit })
+          body: JSON.stringify({ youtube_url: url, model: options.model, preset: options.preset, guitar_split: options.guitarSplit, clean_vocals: options.cleanVocals })
         });
       }
       if (!resp.ok) throw new Error(`The stem maker refused the request (${resp.status}).`);

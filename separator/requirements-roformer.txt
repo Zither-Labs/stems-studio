@@ -1,0 +1,19 @@
+# Extra packages for "cleaner vocals" (Roformer vocal model, run by the audio-separator tool).
+# They go into their own folder (.venv-roformer), never into the main environment, so they can
+# not disturb PyTorch. tools/install_roformer.py installs them. audio-separator itself and
+# onnx2torch-py313 are added without their own dependencies (those would replace PyTorch).
+audioread
+beartype>=0.18.5,<0.19
+diffq-fixed>=0.2; sys_platform == "win32"
+diffq>=0.2; sys_platform != "win32"
+librosa>=0.10
+ml_collections
+onnx-weekly
+packaging
+pydub
+pyyaml
+resampy
+rotary-embedding-torch>=0.6.1,<0.7
+samplerate==0.1.0
+scipy>=1.13,<2
+six

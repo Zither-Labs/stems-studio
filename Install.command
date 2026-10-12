@@ -100,6 +100,18 @@ if ! "$VENV_PY" -c "import swift_f0, soxr, mutagen" >/dev/null 2>&1; then
         || echo "  (Could not install it. The app still works; some features will be simpler or switched off.)"
 fi
 
+# Cleaner vocals (optional): a better vocal model that lets less guitar leak into the vocal.
+# It lives in its own folder (.venv-roformer), so it can not disturb the rest of the app.
+if [ ! -x "$ROOT/.venv-roformer/bin/audio-separator" ]; then
+    echo
+    echo "Optional: 'cleaner vocals' makes the vocal stem with a better model (less guitar bleed)."
+    echo "It adds a few hundred MB now and a 600 MB model the first time you use it."
+    read -r -p "Install it now? [y/N] " ANSWER
+    case "$ANSWER" in
+        [yY]*) "$VENV_PY" "$ROOT/tools/install_roformer.py" \
+                   || echo "  (Could not install it. The app still works without it.)" ;;
+    esac
+fi
 # --- Step 4: launcher --------------------------------------------------------
 echo "Step 4 of 4: creating the Stems Studio launcher..."
 if [ "$OS" = "Darwin" ]; then

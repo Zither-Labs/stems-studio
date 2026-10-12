@@ -26,3 +26,5 @@ separated_output/
 *.flac
 *.mp3
 *.m4a
+
+.venv-roformer/
