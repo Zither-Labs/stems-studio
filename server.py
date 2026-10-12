@@ -38,7 +38,7 @@ except Exception:
     pass
 
 APP_NAME = "stems-studio"
-APP_VERSION = 5
+APP_VERSION = 6
 PORT = 8099
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -152,11 +152,38 @@ def song_dir(song_id):
     return os.path.join(OUTPUT_DIR, song_id)
 
 
+# "05 - Like A Stone", "05. Like A Stone", "Track 5 - Like A Stone", "05 Like A Stone": the number is dropped.
+TRACK_NUMBER_RE = re.compile(r"^\s*(?:(?:track\s*)?\d{1,3}\s*[-._)]\s*|0\d\s+(?=\D))", re.IGNORECASE)
+
+
+def without_track_number(text):
+    text = (text or "").strip()
+    return TRACK_NUMBER_RE.sub("", text, count=1).strip() or text
+
+
+def display_title(row):
+    """What the library shows: 'Artist - Track name', with no track number. Uses the file's tags when known."""
+    title = without_track_number(row["title"])
+    try:
+        with open(os.path.join(song_dir(row["id"]), "meta.json"), "r", encoding="utf-8") as handle:
+            meta = json.load(handle)
+    except (OSError, ValueError):
+        meta = {}
+    artist = str(meta.get("artist") or "").strip()
+    track = without_track_number(str(meta.get("title") or "")) if meta.get("title") else ""
+    if artist and (track or title):
+        track = track or title
+        if track.lower().startswith(artist.lower() + " - "):
+            return track
+        return f"{artist} - {track}"
+    return track or title
+
+
 def row_to_summary(row):
     stems = json.loads(row["stems_json"])
     return {
         "id": row["id"],
-        "title": row["title"],
+        "title": display_title(row),
         "source_type": row["source_type"],
         "source_label": row["source_label"],
         "model": row["model"],
@@ -191,7 +218,7 @@ def find_cached_song(content_key, model, preset):
         if not stems_files_exist(row["id"], stems):
             conn.execute("DELETE FROM songs WHERE id = ?", (row["id"],))
             return None
-        return {"id": row["id"], "title": row["title"], "stems": stems}
+        return {"id": row["id"], "title": display_title(row), "stems": stems}
 
 
 def save_song(song_id, title, source_type, source_label, content_key, model, preset, stems):
