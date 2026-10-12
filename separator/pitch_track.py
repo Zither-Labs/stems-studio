@@ -24,7 +24,7 @@ import sys
 
 import numpy as np
 
-ANALYSIS_VERSION = 6          # bump this when the method changes, so saved results are redone
+ANALYSIS_VERSION = 7          # bump this when the method changes, so saved results are redone
 STEP_SECONDS = 256 / 16000    # SwiftF0 reports one pitch every 256 samples at 16 kHz
 
 # Singing range we accept (Hz). Lower than a bass voice or higher than a soprano is bleed.
@@ -131,6 +131,51 @@ def rough_voice(mono, rate, t0, midi):
         if end - start >= min_frames:
             rough[start:end] = steady[start:end]
     return rough, fraction
+
+
+# A 5-string bass goes down to a low B (31 Hz). With such a low note the detector usually reports
+# its second harmonic (62 Hz), one octave too high. So a note found at 56-70 Hz is checked: if the
+# audio also has real energy half-way down (at half that frequency), the note is moved down an octave.
+# A note that really is at 62 Hz has nothing at 31 Hz, so it stays.
+SUB_CHECK_MIN_HZ = 56.0
+SUB_CHECK_MAX_HZ = 70.0
+SUB_MAGNITUDE_RATIO = 0.35     # energy at half the frequency, compared with the note itself
+
+
+def lower_octave_when_sub_present(midi, mono, rate, t0):
+    """Moves notes found at 56-70 Hz down an octave when there is a real note below them. Returns the count moved."""
+    moved = 0
+    n_fft = 1 << int(np.ceil(np.log2(0.2 * rate)))
+    window = np.hanning(n_fft).astype(np.float32)
+    freqs = np.fft.rfftfreq(n_fft, 1.0 / rate)
+    n = len(midi)
+    # Pieces of steady pitch.
+    for start, end in _runs(midi > 0):
+        piece_start = start
+        for i in range(start + 1, end + 1):
+            if i == end or abs(midi[i] - midi[i - 1]) > 1.5:
+                if i - piece_start >= 3:
+                    hz = 440.0 * 2 ** ((float(np.median(midi[piece_start:i])) - 69.0) / 12.0)
+                    if SUB_CHECK_MIN_HZ <= hz <= SUB_CHECK_MAX_HZ:
+                        a = int((t0 + piece_start * STEP_SECONDS) * rate)
+                        b = int((t0 + i * STEP_SECONDS) * rate)
+                        total = np.zeros(len(freqs))
+                        count = 0
+                        for first in range(a, max(a + 1, b - n_fft // 2), n_fft // 2):
+                            chunk = mono[first:first + n_fft]
+                            if len(chunk) < n_fft:
+                                break
+                            total += np.abs(np.fft.rfft(chunk * window))
+                            count += 1
+                        if count:
+                            def peak(f):
+                                keep = (freqs >= f * 0.96) & (freqs <= f * 1.04)
+                                return float(total[keep].max()) if keep.any() else 0.0
+                            if peak(hz) > 0 and peak(hz / 2.0) >= SUB_MAGNITUDE_RATIO * peak(hz):
+                                midi[piece_start:i] -= 12.0
+                                moved += 1
+                piece_start = i
+    return moved
 
 
 def repair_octaves(midi, voiced, singer_median):
@@ -324,7 +369,7 @@ def instrument_paths(vocal_path):
 # so every pitch is heard one octave higher, and the result is divided by two again.
 PROFILES = {
     "vocals": {"fmin": FMIN_HZ, "fmax": FMAX_HZ, "rough": True},
-    "bass": {"fmin": 34.0, "fmax": 260.0, "octave_up": True,            # low E (41 Hz) up to about C4
+    "bass": {"fmin": 28.0, "fmax": 260.0, "octave_up": True, "sub_check": True,   # low B (31 Hz) up to about C4
              "high": {"fmin": 240.0, "fmax": 900.0}},                    # then a second pass for high notes and solos
     "melody": {"fmin": 75.0, "fmax": 1400.0},     # lead guitar, guitar, anything single-note
 }
@@ -383,6 +428,9 @@ def analyze_file(path, instruments=None, profile=None):
             j = i - offset
             if midi[i] <= 0 and 0 <= j < len(high_midi) and high_midi[j] >= floor:
                 midi[i] = high_midi[j]
+
+    if profile.get("sub_check"):
+        lower_octave_when_sub_present(midi, mono, rate, t0)
 
     ghosts_removed = 0
     if instruments:

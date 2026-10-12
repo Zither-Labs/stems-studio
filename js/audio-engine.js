@@ -19,9 +19,16 @@ class AudioEngine {
     // The key shifter: a SoundTouch worklet on the master bus changes the key without changing the
     // speed. 'idle' | 'loading' | 'ready' | 'failed'. If it cannot load, the key shift falls back to
     // the old tape-style way (the song also gets faster or slower).
+    // Only the pitched stems go through it (vocals, bass, guitar, piano, other). Drums and your own
+    // recording have no key to move: they take a side path that is held back by the same amount, so
+    // everything stays in time.
     this.keyShifter = null;
     this.keyShifterState = 'idle';
     this.shifterRouted = false;
+    this.drumShifter = null;    // a second one, never changing the key: it only keeps the drums' pitch when the speed changes
+    this.drumsRouted = false;
+    this.shiftBus = null;       // the pitched stems meet here
+    this.bypassDelay = null;    // the drums (and your recording) meet here
     this.shifterDelay = 0.12;   // seconds the shifter holds the sound back (measured: 0.11 to 0.13 at every setting)
 
     // Timeline state
@@ -63,7 +70,17 @@ class AudioEngine {
     this.masterSplitter.connect(this.masterAnalyserL, 0);
     this.masterSplitter.connect(this.masterAnalyserR, 1);
     this.masterGain.connect(this.ctx.destination);
+
+    this.shiftBus = this.ctx.createGain();
+    this.bypassDelay = this.ctx.createDelay(1.0);
+    this.shiftBus.connect(this.masterGain);
+    this.bypassDelay.connect(this.masterGain);
     this.loadKeyShifter();
+  }
+
+  // Where a track's sound joins the mix: drums have no key, so they skip the key shifter.
+  busFor(stemType) {
+    return stemType === 'drums' ? this.bypassDelay : this.shiftBus;
   }
 
   // --- key shifter -----------------------------------------------------------------
@@ -74,12 +91,14 @@ class AudioEngine {
     try {
       if (!this.ctx.audioWorklet) throw new Error('this browser has no audio worklets');
       await this.ctx.audioWorklet.addModule('js/vendor/soundtouch-processor.js');
-      const node = new AudioWorkletNode(this.ctx, 'soundtouch-processor', {
+      const makeNode = () => new AudioWorkletNode(this.ctx, 'soundtouch-processor', {
         numberOfInputs: 1,
         numberOfOutputs: 1,
         outputChannelCount: [2],
         processorOptions: { sampleBufferType: 'circular' }
       });
+      const node = makeNode();
+      this.drumShifter = makeNode();
       const position = this.getCurrentTime();
       this.keyShifter = node;
       this.keyShifterState = 'ready';
@@ -103,17 +122,38 @@ class AudioEngine {
     node.parameters.get('pitchSemitones').value = this.pitchSemitones;
     node.parameters.get('playbackRate').value = this.playbackRate;
     const needed = this.shifterNeeded();
-    if (needed === this.shifterRouted) return;
-    if (needed) {
-      this.masterGain.disconnect(this.ctx.destination);
-      this.masterGain.connect(node);
-      node.connect(this.ctx.destination);
-    } else {
-      this.masterGain.disconnect(node);
-      node.disconnect();
-      this.masterGain.connect(this.ctx.destination);
+    if (needed !== this.shifterRouted) {
+      if (needed) {
+        this.shiftBus.disconnect(this.masterGain);
+        this.shiftBus.connect(node);
+        node.connect(this.masterGain);
+      } else {
+        this.shiftBus.disconnect(node);
+        node.disconnect();
+        this.shiftBus.connect(this.masterGain);
+      }
+      this.shifterRouted = needed;
     }
-    this.shifterRouted = needed;
+
+    // The drums keep their key. Only when the speed changes do they need a shifter too (set to key 0), so that
+    // slowing the song down does not also lower their pitch. Otherwise a plain delay keeps them in time.
+    const drums = this.drumShifter;
+    drums.parameters.get('pitchSemitones').value = 0;
+    drums.parameters.get('playbackRate').value = this.playbackRate;
+    const drumsThrough = needed && this.playbackRate !== 1;
+    if (drumsThrough !== this.drumsRouted) {
+      if (drumsThrough) {
+        this.bypassDelay.disconnect(this.masterGain);
+        this.bypassDelay.connect(drums);
+        drums.connect(this.masterGain);
+      } else {
+        this.bypassDelay.disconnect(drums);
+        drums.disconnect();
+        this.bypassDelay.connect(this.masterGain);
+      }
+      this.drumsRouted = drumsThrough;
+    }
+    this.bypassDelay.delayTime.value = needed && !drumsThrough ? this.shifterDelay : 0;
   }
 
   // How fast the song's own time runs, compared with the clock.
@@ -167,7 +207,7 @@ class AudioEngine {
     panner.connect(trackGain);
     trackGain.connect(muteSoloGain);
     muteSoloGain.connect(analyser);
-    muteSoloGain.connect(this.masterGain);
+    muteSoloGain.connect(this.busFor(stemType));
 
     const track = {
       id,
@@ -718,7 +758,7 @@ class AudioEngine {
     panner.connect(trackGain);
     trackGain.connect(muteSoloGain);
     muteSoloGain.connect(analyser);
-    muteSoloGain.connect(this.masterGain);
+    muteSoloGain.connect(this.bypassDelay);     // your own voice has no key to move
     
     return { eqLow, eqMid, eqHigh, panner, trackGain, muteSoloGain, analyser };
   }
