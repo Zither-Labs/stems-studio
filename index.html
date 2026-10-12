@@ -244,6 +244,12 @@
     <!-- Vocal highway: the sung pitch scrolls towards the "now" line. Click it to jump. -->
     <div class="vocal-highway" aria-label="Vocal pitch highway">
       <div class="highway-bar" id="highwayBar">
+        <label class="highway-field" id="highwaySourceWrap" hidden>Show
+          <select id="highwaySource" title="Which stem the highway follows. Vocals, bass and lead guitar show one line; piano and rhythm guitar show every note."></select>
+        </label>
+        <label class="highway-field" id="highwayDetailWrap" hidden title="How many notes to show. Fewer hides the weak guesses, more shows everything the note finder heard.">Notes
+          <input type="range" id="highwayDetail" min="0" max="40" step="1">
+        </label>
         <span class="highway-key" id="highwayKeyText">Key: not found yet</span>
         <label class="highway-field">Sa =
           <select id="highwayTonic" title="The home note. Sa is whatever note you decide: change it to follow your singer."></select>
@@ -255,7 +261,43 @@
         <button type="button" class="preset-chip" id="highwayKeyReset" title="Go back to the key the app found" hidden>Use detected key</button>
         <label class="highway-field highway-check"><input type="checkbox" id="highwayShowChords" checked> Chords <span class="highway-warning" title="The chord guesses are rough and are often wrong. Do not trust them yet.">very experimental, not right yet</span></label>
       </div>
-      <canvas id="vocalHighwayCanvas" title="Vocal pitch highway. Click to jump to that moment."></canvas>
+      <canvas id="vocalHighwayCanvas" title="Pitch highway. Click to jump to that moment."></canvas>
+    </div>
+    <!-- Singing coach: sing along with the highway and see how close you are. -->
+    <div class="coach-bar" id="coachBar">
+      <button type="button" class="coach-toggle" id="coachToggle" title="Use your microphone to see your own voice on the highway">Sing along</button>
+      <label class="highway-field">Level
+        <select id="coachLevel" title="How close your pitch has to be to count as right">
+          <option value="beginner">Beginner (within 50 cents)</option>
+          <option value="medium">Medium (within 30 cents)</option>
+          <option value="advanced">Advanced (within 15 cents)</option>
+        </select>
+      </label>
+      <label class="highway-field highway-check" title="Count a note as right in any octave. Good for a first try, or if your voice is lower or higher than the singer's."><input type="checkbox" id="coachOctave"> Any octave</label>
+      <label class="highway-field">Using
+        <select id="coachHeadphones" title="With speakers the microphone also hears the song, so the browser removes it from the signal. That can make quiet or held notes drop out. Headphones are better.">
+          <option value="headphones">headphones</option>
+          <option value="speakers">speakers</option>
+        </select>
+      </label>
+      <label class="highway-field highway-check" title="Plays a soft tone on the note you should sing"><input type="checkbox" id="coachGuide"> Guide tone</label>
+      <label class="highway-field highway-check" title="Needs the A/B loop. The singer plays once, then it goes quiet and it is your turn. It makes a loop around the current phrase if there is none."><input type="checkbox" id="coachEcho"> Listen, then sing</label>
+      <span class="highway-field" title="If your line is always a little behind or ahead of the notes, move it. Bluetooth headphones need a lot.">Mic timing
+        <button type="button" class="coach-step" id="coachDelayMinus" aria-label="Earlier">&minus;</button>
+        <span class="coach-delay" id="coachDelayText">0 ms</span>
+        <button type="button" class="coach-step" id="coachDelayPlus" aria-label="Later">+</button>
+      </span>
+      <span class="coach-status" id="coachStatus"></span>
+    </div>
+    <div class="coach-results" id="coachResults" hidden>
+      <div class="coach-summary">
+        <span id="coachSummary"></span>
+        <span class="coach-actions">
+          <button type="button" class="preset-chip" id="coachRetry" title="Loop the phrase with the lowest score">Retry weakest phrase</button>
+          <button type="button" class="preset-chip" id="coachReset" title="Forget this try and score from the start">Start over</button>
+        </span>
+      </div>
+      <ol class="coach-phrases" id="coachPhrases"></ol>
     </div>
     <div class="timeline-ruler">
       <div class="timeline-ticks" id="timelineTicks"></div>
@@ -443,6 +485,7 @@
   <script src="js/vocal-recorder.js"></script>
   <script src="js/pitch-visualizer.js"></script>
   <script src="js/vocal-highway.js"></script>
+  <script src="js/singing-coach.js"></script>
   <script src="js/lyrics-panel.js"></script>
   <script src="js/studio-app.js"></script>
   <script>

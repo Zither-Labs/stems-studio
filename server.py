@@ -96,6 +96,8 @@ def roformer_cli():
 DB_PATH = os.path.join(OUTPUT_DIR, "library.db")
 SONG_ID_RE = re.compile(r"^[0-9a-f]{8}$")
 PITCH_LOCK = threading.Lock()
+# Stems the highway can follow (drums have no pitch).
+HIGHWAY_STEMS = ("vocals", "bass", "guitar", "guitar_lead", "guitar_rhythm", "piano", "other")
 YOUTUBE_ID_RE = re.compile(r"(?:v=|youtu\.be/|shorts/|embed/|live/)([A-Za-z0-9_-]{11})")
 
 
@@ -861,24 +863,32 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
                 self.wfile.write(json.dumps({"status": "not_found"}).encode("utf-8"))
             return
 
-        elif parsed.path.startswith("/api/pitch/"):
-            # The sung pitch of a song's vocal stem, for the vocal highway.
+        elif parsed.path.startswith("/api/pitch/") or parsed.path.startswith("/api/notes/"):
+            # /api/pitch/<id>[?stem=bass]: the single melody line of a stem, for the highway.
+            # /api/notes/<id>?stem=piano: every note of a chord or piano stem (piano-roll mode).
             song_id = parsed.path.split("/")[3]
-            wav_path = os.path.join(OUTPUT_DIR, song_id, "vocals.wav")
-            if not SONG_ID_RE.match(song_id) or not os.path.isfile(wav_path):
-                self.send_json({"error": "No vocal stem found for this song"}, 404)
+            stem = (urllib.parse.parse_qs(parsed.query).get("stem") or ["vocals"])[0]
+            wav_path = os.path.join(OUTPUT_DIR, song_id, stem + ".wav")
+            if not SONG_ID_RE.match(song_id) or stem not in HIGHWAY_STEMS or not os.path.isfile(wav_path):
+                self.send_json({"error": f"No {stem} stem found for this song"}, 404)
                 return
+            polyphonic_request = parsed.path.startswith("/api/notes/")
             try:
-                sys.path.insert(0, os.path.join(BASE_DIR, "separator"))
-                import pitch_track
+                module = separator_module("polyphonic" if polyphonic_request else "pitch_track")
             except ImportError as exc:
                 self.send_json({"error": f"Pitch tracker is not installed: {exc}"}, 501)
                 return
+            if polyphonic_request and not module.available():
+                self.send_json({"error": "Note finder needs onnxruntime (run Install.bat again)"}, 501)
+                return
             with PITCH_LOCK:   # one analysis at a time; a second request waits and then reads the saved result
-                result = pitch_track.cached_analysis(wav_path, os.path.join(OUTPUT_DIR, song_id, "vocals.pitch.json"))
+                if polyphonic_request:
+                    result = module.cached_notes(wav_path, os.path.join(OUTPUT_DIR, song_id, stem + ".notes.json"))
+                    self.send_json({"notes": result["notes"]})
+                    return
+                result = module.cached_analysis(wav_path, os.path.join(OUTPUT_DIR, song_id, stem + ".pitch.json"))
             self.send_json({"t0": result["t0"], "dt": result["dt"], "midi": result["midi"]})
             return
-
         elif parsed.path.startswith("/api/analysis/"):
             # Key and chords of a song, found from its separated stems.
             song_id = parsed.path.split("/")[3]

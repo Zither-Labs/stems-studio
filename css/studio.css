@@ -566,8 +566,154 @@ body::before {
 }
 
 .highway-bar [hidden],
-.lyrics-panel [hidden] {
+.lyrics-panel [hidden],
+.coach-bar [hidden],
+.coach-results[hidden] {
   display: none !important;
+}
+
+.highway-bar input[type="range"] {
+  width: 90px;
+}
+
+/* --- Singing coach --- */
+.coach-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.8rem;
+  margin: -0.25rem 0 0.5rem;
+  padding: 0.35rem 0.6rem;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  color: var(--text-secondary, rgba(255, 255, 255, 0.7));
+}
+
+.coach-bar select {
+  background: #11141c;
+  color: #fff;
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  padding: 0.1rem 0.25rem;
+  font-size: 0.75rem;
+}
+
+.coach-toggle {
+  padding: 0.3rem 0.8rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #fff;
+  background: linear-gradient(90deg, #8b5cf6, #ec4899);
+  border: 0;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.coach-toggle.on {
+  background: #dc2626;
+}
+
+.coach-toggle:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.coach-step {
+  width: 1.4rem;
+  padding: 0;
+  color: #fff;
+  background: #11141c;
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.coach-delay {
+  display: inline-block;
+  min-width: 3.4rem;
+  text-align: center;
+  font-family: "JetBrains Mono", monospace;
+}
+
+.coach-status {
+  flex: 1 1 12rem;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.coach-status.warn {
+  color: #fbbf24;
+}
+
+.coach-results {
+  margin: -0.25rem 0 0.5rem;
+  padding: 0.5rem 0.7rem;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  font-size: 0.8rem;
+}
+
+.coach-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-weight: 600;
+  color: #fff;
+}
+
+.coach-actions {
+  display: inline-flex;
+  gap: 0.4rem;
+}
+
+.coach-actions .preset-chip {
+  border-color: var(--border-subtle);
+}
+
+.coach-actions .preset-chip:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.coach-phrases {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.25rem;
+}
+
+.coach-phrases li {
+  position: relative;
+  overflow: hidden;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.04);
+  cursor: pointer;
+}
+
+.coach-phrases li:hover {
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.coach-bar-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  opacity: 0.28;
+}
+
+.coach-phrases li.good .coach-bar-fill { background: #34d399; }
+.coach-phrases li.fair .coach-bar-fill { background: #fbbf24; }
+.coach-phrases li.poor .coach-bar-fill { background: #f87171; }
+
+.coach-phrase-text {
+  position: relative;
+  display: block;
+  padding: 0.25rem 0.5rem;
+  color: rgba(255, 255, 255, 0.9);
 }
 
 /* --- Karaoke lyrics --- */

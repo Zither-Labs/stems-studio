@@ -187,10 +187,10 @@ def unpitched_loud_fraction(midi, loudness_db):
     return float((loud & ~singing).sum() / max(1, loud.sum()))
 
 
-def clean_track(hz, confidence, loudness_db):
+def clean_track(hz, confidence, loudness_db, fmin=None, fmax=None):
     """The whole clean-up, from raw detector output to the final MIDI track (0 = silence)."""
     n = len(hz)
-    in_range = (hz >= FMIN_HZ) & (hz <= FMAX_HZ)
+    in_range = (hz >= (FMIN_HZ if fmin is None else fmin)) & (hz <= (FMAX_HZ if fmax is None else fmax))
     candidate = (confidence >= WEAK_CONFIDENCE) & in_range
     pitched = np.zeros(n, dtype=bool)
     for start, end in _runs(candidate):
@@ -245,21 +245,50 @@ def instrument_paths(vocal_path):
     return [p for p in paths if os.path.isfile(p)]
 
 
-def analyze_file(path, instruments=None):
-    """Read a vocal stem (any WAV/FLAC) and return {"dt", "t0", "midi"} for the highway.
+# Search range per kind of stem. "octave_up" is for notes below SwiftF0's own floor of 46.9 Hz
+# (a bass guitar's low E is 41 Hz): the audio is declared to be at half its real sample rate,
+# so every pitch is heard one octave higher, and the result is divided by two again.
+PROFILES = {
+    "vocals": {"fmin": FMIN_HZ, "fmax": FMAX_HZ},
+    "bass": {"fmin": 38.0, "fmax": 330.0, "octave_up": True},
+    "melody": {"fmin": 75.0, "fmax": 1400.0},     # lead guitar, guitar, anything single-note
+}
+
+
+def profile_for(stem_name):
+    if stem_name == "vocals":
+        return PROFILES["vocals"]
+    return PROFILES.get(stem_name, PROFILES["melody"])
+
+
+def analyze_file(path, instruments=None, profile=None):
+    """Read a stem (any WAV/FLAC) and return {"dt", "t0", "midi"} for the highway.
 
     instruments: paths of the song's other stems. When given, notes that look like an instrument
     leaking into the vocal stem (ghost notes) are removed. See bleed_check.py.
+    profile: search range, see PROFILES (default: the singing range).
     """
     import soundfile as sf
     from swift_f0 import SwiftF0
 
+    profile = profile or PROFILES["vocals"]
+    fmin, fmax = profile["fmin"], profile["fmax"]
     audio, rate = sf.read(path, dtype="float32", always_2d=True)
     mono = audio.mean(axis=1)
     detector = SwiftF0(threads=4, spin=False)
-    result = detector.detect(mono, rate, fmin=FMIN_HZ, fmax=FMAX_HZ)
-    midi = clean_track(result.pitch_hz, result.confidence, result.loudness_db)
-    t0 = float(result.timestamps[0]) if len(result.timestamps) else 0.0
+    if profile.get("octave_up"):
+        # Declared at twice the rate the audio sounds an octave higher and half as long, so the
+        # detector's 16 ms steps are 32 ms of real time: each result is repeated twice.
+        result = detector.detect(mono, rate * 2.0, fmin=fmin * 2, fmax=fmax * 2)
+        hz = np.repeat(result.pitch_hz / 2.0, 2)
+        confidence = np.repeat(result.confidence, 2)
+        loudness = np.repeat(result.loudness_db, 2)
+        t0 = float(result.timestamps[0]) * 2.0 if len(result.timestamps) else 0.0
+    else:
+        result = detector.detect(mono, rate, fmin=fmin, fmax=fmax)
+        hz, confidence, loudness = result.pitch_hz, result.confidence, result.loudness_db
+        t0 = float(result.timestamps[0]) if len(result.timestamps) else 0.0
+    midi = clean_track(hz, confidence, loudness, fmin, fmax)
 
     ghosts_removed = 0
     if instruments:
@@ -276,7 +305,6 @@ def analyze_file(path, instruments=None):
         "midi": [round(float(m), 2) for m in midi],
     }
 
-
 def _signature(wav_path, instruments):
     return {"source_mtime": os.path.getmtime(wav_path),
             "instrument_mtimes": {os.path.basename(p): os.path.getmtime(p) for p in instruments}}
@@ -284,7 +312,9 @@ def _signature(wav_path, instruments):
 
 def cached_analysis(wav_path, cache_path):
     """analyze_file(), remembered next to the song so it only has to run once."""
-    instruments = instrument_paths(wav_path)
+    stem_name = os.path.splitext(os.path.basename(wav_path))[0]
+    # Only the vocal stem is checked for instruments leaking into it.
+    instruments = instrument_paths(wav_path) if stem_name == "vocals" else []
     signature = _signature(wav_path, instruments)
     try:
         with open(cache_path, "r", encoding="utf-8") as handle:
@@ -293,7 +323,7 @@ def cached_analysis(wav_path, cache_path):
             return saved
     except (OSError, ValueError):
         pass
-    result = analyze_file(wav_path, instruments)
+    result = analyze_file(wav_path, instruments, profile_for(stem_name))
     result.update(signature)
     tmp = cache_path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as handle:
@@ -302,6 +332,7 @@ def cached_analysis(wav_path, cache_path):
     return result
 
 if __name__ == "__main__":
-    out = analyze_file(sys.argv[1], instrument_paths(sys.argv[1]))
+    name = os.path.splitext(os.path.basename(sys.argv[1]))[0]
+    out = analyze_file(sys.argv[1], instrument_paths(sys.argv[1]) if name == "vocals" else None, profile_for(name))
     voiced = sum(1 for m in out["midi"] if m)
     print(f"{len(out['midi'])} frames, {voiced} voiced")

@@ -78,6 +78,47 @@ const MINOR_DEGREES = [0, 2, 3, 5, 7, 8, 10];
 const FLAT_MAJOR_TONICS = [5, 10, 3, 8, 1, 6];
 const FLAT_MINOR_TONICS = [2, 7, 0, 5, 10, 3];
 
+// How each stem can be shown. "melody" suits instruments that play one note at a time.
+// "notes" is the piano roll, for chords and anything polyphonic.
+const HIGHWAY_SOURCES = {
+  vocals: [{ kind: 'melody', label: 'Vocals' }],
+  bass: [{ kind: 'melody', label: 'Bass' }],
+  guitar_lead: [{ kind: 'melody', label: 'Lead guitar' }],
+  guitar: [{ kind: 'melody', label: 'Guitar (one note at a time)' }, { kind: 'notes', label: 'Guitar (chords)' }],
+  guitar_rhythm: [{ kind: 'notes', label: 'Rhythm guitar (chords)' }],
+  piano: [{ kind: 'notes', label: 'Piano (chords)' }, { kind: 'melody', label: 'Piano (one note at a time)' }],
+  other: [{ kind: 'notes', label: 'Other (chords)' }]
+};
+
+// Bar colours per stem: [start, end, lit, played]
+const HIGHWAY_COLORS = {
+  vocals: ['#8b5cf6', '#ec4899', '#f9a8d4', 'rgba(139, 92, 246, 0.32)'],
+  bass: ['#0ea5e9', '#6366f1', '#bae6fd', 'rgba(14, 165, 233, 0.30)'],
+  guitar: ['#22c55e', '#84cc16', '#d9f99d', 'rgba(34, 197, 94, 0.30)'],
+  guitar_lead: ['#22c55e', '#84cc16', '#d9f99d', 'rgba(34, 197, 94, 0.30)'],
+  guitar_rhythm: ['#16a34a', '#14b8a6', '#99f6e4', 'rgba(20, 184, 166, 0.30)'],
+  piano: ['#f59e0b', '#f97316', '#fde68a', 'rgba(245, 158, 11, 0.30)'],
+  other: ['#a855f7', '#6366f1', '#e9d5ff', 'rgba(168, 85, 247, 0.30)']
+};
+
+// Chord shapes: semitones above the root. The first match with the fewest extra notes wins.
+const CHORD_SHAPES = [
+  { suffix: '', tones: [0, 4, 7] },
+  { suffix: 'm', tones: [0, 3, 7] },
+  { suffix: '7', tones: [0, 4, 7, 10] },
+  { suffix: 'maj7', tones: [0, 4, 7, 11] },
+  { suffix: 'm7', tones: [0, 3, 7, 10] },
+  { suffix: '6', tones: [0, 4, 7, 9] },
+  { suffix: 'm6', tones: [0, 3, 7, 9] },
+  { suffix: 'add9', tones: [0, 2, 4, 7] },
+  { suffix: 'dim', tones: [0, 3, 6] },
+  { suffix: 'm7b5', tones: [0, 3, 6, 10] },
+  { suffix: 'aug', tones: [0, 4, 8] },
+  { suffix: 'sus2', tones: [0, 2, 7] },
+  { suffix: 'sus4', tones: [0, 5, 7] },
+  { suffix: '5', tones: [0, 7] }
+];
+
 class VocalHighway {
   constructor({ canvas, engine, bar }) {
     this.canvas = canvas;
@@ -102,6 +143,20 @@ class VocalHighway {
 
     this.NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
+    // What the highway follows. Each source is one stem shown one way: as a single melody line
+    // ("melody", found with the pitch tracker) or as every note that sounds ("notes", a piano roll).
+    this.songInfo = null;      // set by the app: { songId, stems: [{ file, trackId }] } or null
+    this.sources = [];         // [{ key, file, trackId, kind, label }]
+    this.active = null;        // the source on show
+    this.cache = new Map();    // source key -> its finished view, so switching is instant
+    this.songToken = 0;        // changes with every song, so a late answer for an old song is ignored
+    this.kind = 'melody';
+    this.roll = [];            // piano-roll mode: [{ start, end, midi, strength }]
+    this.rollChords = [];      // chords worked out from the notes that sound together
+    this.rollMinStrength = this.loadNumber('stemsStudio.rollMinStrength', 0.4);
+    this.shift = 0;            // semitones the engine's pitch control moves everything up or down
+    this.coach = null;         // the singing coach draws on top of the highway (js/singing-coach.js)
+
     this.state = 'idle';       // idle | analyzing | ready | nopitch | error
     this.buffer = null;
     this.midi = null;
@@ -112,7 +167,6 @@ class VocalHighway {
     this.maxMidi = 72;
     this.analysisId = 0;
     this.worker = null;
-    this.pitchUrl = null;      // set by the app: where the server keeps this song's pitch track
     this.lastKey = '';
     this.width = 0;
     this.height = 0;
@@ -169,8 +223,11 @@ class VocalHighway {
       this.fetchAnalysis(url);
     }
     this.checkBuffer();
+    this.followPitchControl();
     const t = this.engine.getCurrentTime();
-    const key = `${t.toFixed(3)}|${this.width}|${this.height}|${this.state}|${this.notes.length}`;
+    // The coach has a live line on top, so it needs a fresh picture on every frame while it runs.
+    const live = this.coach && this.coach.needsRedraw() ? performance.now() : 0;
+    const key = `${t.toFixed(3)}|${this.width}|${this.height}|${this.state}|${this.notes.length}|${live}`;
     if (key !== this.lastKey) {
       this.lastKey = key;
       this.draw(t);
@@ -178,22 +235,244 @@ class VocalHighway {
     requestAnimationFrame(this.loop);
   }
 
+  loadNumber(name, fallback) {
+    try {
+      const value = Number(localStorage.getItem(name));
+      return localStorage.getItem(name) !== null && Number.isFinite(value) ? value : fallback;
+    } catch (err) {
+      return fallback;
+    }
+  }
+
+  // The engine's pitch control moves the whole song, so everything the highway shows moves with it.
+  followPitchControl() {
+    const shift = Math.round(this.engine.pitchSemitones || 0);
+    if (shift === this.shift) return;
+    this.shift = shift;
+    this.applyKeyRange();
+    this.refreshBar();
+    this.lastKey = '';
+  }
+
+  // The home note as it sounds now (the key found in the song, moved by the pitch control).
+  get tonic() {
+    return this.key ? (((this.key.tonic + this.shift) % 12) + 12) % 12 : 0;
+  }
+
+  // A new song has loaded (or the old one is gone): work out which stems can be followed.
   checkBuffer() {
-    const track = this.engine.tracks.get('vocal');
+    const info = this.songInfo;
+    const first = info && info.stems.length ? info.stems[0].trackId : 'vocal';
+    const track = this.engine.tracks.get(first);
     const buffer = track && track.buffer ? track.buffer : null;
     if (buffer === this.buffer) return;
     this.buffer = buffer;
-    this.notes = [];
-    this.midi = null;
-    const url = this.pitchUrl;
-    this.pitchUrl = null;   // used once: a later song must not reuse it
+    this.songToken++;
+    this.analysisId++;
+    this.cache.clear();
+    this.active = null;
+    this.clearView();
     if (!buffer) {
-      this.analysisId++;
+      this.sources = [];
       this.state = 'idle';
+      this.refreshSources();
       return;
     }
-    if (url) this.fetchServerPitch(buffer, url);
-    else this.analyze(buffer);
+    this.sources = this.buildSources(info);
+    this.refreshSources();
+    if (this.sources.length) this.selectSource(this.sources[0].key);
+  }
+
+  buildSources(info) {
+    if (!info) return [{ key: 'vocals:melody', file: 'vocals', trackId: 'vocal', kind: 'melody', label: 'Vocals', url: null }];
+    const out = [];
+    for (const stem of info.stems) {
+      (HIGHWAY_SOURCES[stem.file] || []).forEach((mode) => {
+        out.push({ key: `${stem.file}:${mode.kind}`, file: stem.file, trackId: stem.trackId, kind: mode.kind, label: mode.label, songId: info.songId });
+      });
+    }
+    return out;
+  }
+
+  // What is held per source, so switching back to a source costs nothing.
+  saveView() {
+    if (!this.active) return;
+    if (this.state === 'ready' || this.state === 'nopitch') {
+      this.cache.set(this.active.key, {
+        state: this.state, midi: this.midi, t0: this.t0, dt: this.dt, notes: this.notes,
+        baseMin: this.baseMin, baseMax: this.baseMax, roll: this.roll, rawRoll: this.rawRoll
+      });
+    }
+  }
+
+  clearView() {
+    this.midi = null;
+    this.notes = [];
+    this.roll = [];
+    this.rawRoll = [];
+    this.rollChords = [];
+    this.baseMin = undefined;
+    this.baseMax = undefined;
+  }
+
+  applyView(view) {
+    this.state = view.state;
+    this.midi = view.midi;
+    this.t0 = view.t0;
+    this.dt = view.dt;
+    this.notes = view.notes;
+    this.baseMin = view.baseMin;
+    this.baseMax = view.baseMax;
+    this.rawRoll = view.rawRoll || [];
+    this.filterRoll();
+    this.applyKeyRange();
+  }
+
+  selectSource(key) {
+    const source = this.sources.find((s) => s.key === key);
+    if (!source) return;
+    if (this.active && this.active !== source) this.saveView();
+    this.active = source;
+    this.kind = source.kind;
+    this.clearView();
+    const cached = this.cache.get(key);
+    if (cached) this.applyView(cached);
+    else {
+      this.state = 'analyzing';
+      this.loadSource(source);
+    }
+    if (this.barEls && this.barEls.source) this.barEls.source.value = key;
+    this.refreshSources();
+    this.lastKey = '';
+    if (this.coach) this.coach.sourceChanged();
+  }
+
+  async loadSource(source) {
+    const token = this.songToken;
+    const info = this.songInfo;
+    const finish = (view) => {
+      if (token !== this.songToken) return;
+      this.cache.set(source.key, view);
+      if (this.active === source) { this.applyView(view); this.lastKey = ''; if (this.coach) this.coach.sourceChanged(); }
+    };
+    const fail = (state) => {
+      if (token !== this.songToken) return;
+      if (this.active === source) { this.clearView(); this.state = state; this.lastKey = ''; }
+    };
+    if (!info) {      // a stem that is not in the library: the browser does its own, simpler analysis
+      const track = this.engine.tracks.get(source.trackId);
+      if (!track || !track.buffer) return fail('error');
+      this.analyze(track.buffer, source, finish, fail);
+      return;
+    }
+    const base = source.kind === 'notes' ? '/api/notes/' : '/api/pitch/';
+    try {
+      const resp = await fetch(`${base}${info.songId}?stem=${encodeURIComponent(source.file)}`);
+      if (!resp.ok) throw new Error(`request failed (${resp.status})`);
+      const data = await resp.json();
+      if (source.kind === 'notes') finish(this.makeRollView(data.notes));
+      else finish(this.makeMelodyView(Float32Array.from(data.midi), data.t0, data.dt, true));
+    } catch (err) {
+      console.warn(`Server could not read the ${source.label} (${err.message})`);
+      const track = this.engine.tracks.get(source.trackId);
+      if (source.kind === 'melody' && source.file === 'vocals' && track && track.buffer) {
+        this.analyze(track.buffer, source, finish, fail);   // the vocal still gets the browser's own analysis
+      } else {
+        fail('error');
+      }
+    }
+  }
+
+  refreshSources() {
+    const els = this.barEls;
+    if (!els || !els.source) return;
+    els.source.innerHTML = '';
+    this.sources.forEach((source) => {
+      const option = document.createElement('option');
+      option.value = source.key;
+      option.textContent = source.label;
+      els.source.appendChild(option);
+    });
+    if (this.active) els.source.value = this.active.key;
+    els.sourceWrap.hidden = this.sources.length < 2;
+    els.detailWrap.hidden = this.kind !== 'notes';
+  }
+
+  // --- piano-roll mode: all the notes, and the chords they make together ----------------
+
+  makeRollView(rawNotes) {
+    const raw = rawNotes.map(([start, end, midi, strength]) => ({ start, end, midi, strength }));
+    if (raw.length < 3) return { state: 'nopitch', midi: null, t0: 0, dt: 0.02, notes: [], rawRoll: raw };
+    // The range comes from the clearer notes, so a few stray high or low guesses do not stretch the lane.
+    const clear = raw.filter((n) => n.strength >= 0.45);
+    const midis = (clear.length >= 10 ? clear : raw).map((n) => n.midi).sort((a, b) => a - b);
+    let lo = midis[Math.floor(midis.length * 0.03)] - 2;
+    let hi = midis[Math.min(midis.length - 1, Math.floor(midis.length * 0.97))] + 2;
+    while (hi - lo < 16) { lo--; hi++; }
+    return {
+      state: 'ready', midi: null, t0: 0, dt: 0.02, notes: [], rawRoll: raw,
+      baseMin: Math.max(24, lo), baseMax: Math.min(100, hi)
+    };
+  }
+
+  setRollSensitivity(minStrength) {
+    this.rollMinStrength = minStrength;
+    try { localStorage.setItem('stemsStudio.rollMinStrength', String(minStrength)); } catch (err) { /* private mode */ }
+    this.filterRoll();
+    this.lastKey = '';
+  }
+
+  filterRoll() {
+    this.roll = this.kind === 'notes' ? (this.rawRoll || []).filter((n) => n.strength >= this.rollMinStrength) : [];
+    this.rollChords = this.kind === 'notes' ? this.chordsFromNotes(this.roll) : [];
+  }
+
+  // Chords from the notes that sound together: cut the time at every note start and end, name the
+  // set of notes in each piece, and join neighbours that got the same name. Rough, like the rest.
+  chordsFromNotes(notes) {
+    const edges = new Set();
+    for (const n of notes) { edges.add(n.start); edges.add(n.end); }
+    const times = Array.from(edges).sort((a, b) => a - b);
+    const pieces = [];
+    let cursor = 0;     // notes are sorted by start, so only look at the ones near this piece
+    for (let i = 0; i + 1 < times.length; i++) {
+      const start = times[i];
+      const end = times[i + 1];
+      if (end - start < 0.08) continue;
+      while (cursor < notes.length && notes[cursor].end <= start - 30) cursor++;
+      const sounding = [];
+      for (let k = cursor; k < notes.length && notes[k].start < end; k++) {
+        if (notes[k].start <= start + 0.001 && notes[k].end >= end - 0.001) sounding.push(notes[k].midi);
+      }
+      const chord = this.nameChord(sounding);
+      if (chord) pieces.push({ start, end, ...chord });
+    }
+    const merged = [];
+    for (const piece of pieces) {
+      const last = merged[merged.length - 1];
+      if (last && last.root === piece.root && last.quality === piece.quality && piece.start - last.end < 0.3) last.end = piece.end;
+      else merged.push({ ...piece });
+    }
+    return merged.filter((c) => c.end - c.start >= 0.25);
+  }
+
+  // The best chord name for a set of MIDI notes, or null when they do not make one.
+  nameChord(midis) {
+    const classes = new Set(midis.map((m) => ((m % 12) + 12) % 12));
+    if (classes.size < 2) return null;
+    const bass = ((Math.min(...midis) % 12) + 12) % 12;
+    let best = null;
+    for (const root of classes) {
+      for (const shape of CHORD_SHAPES) {
+        if (shape.tones.length === 2 && (classes.size > 2 || root !== bass)) continue;   // a "5" chord: two notes, the root lowest
+        if (!shape.tones.every((tone) => classes.has((root + tone) % 12))) continue;
+        const extras = classes.size - shape.tones.length;
+        const score = shape.tones.length * 2 - extras * 1.5 + (root === bass ? 1 : 0);
+        if (!best || score > best.score) best = { score, root, quality: shape.suffix };
+      }
+    }
+    if (!best) return null;
+    return { root: best.root, quality: best.quality, bass: bass !== best.root ? bass : null };
   }
 
   // --- key, scale and chords ------------------------------------------------------------
@@ -204,9 +483,18 @@ class VocalHighway {
       tonic: bar.querySelector('#highwayTonic'),
       mode: bar.querySelector('#highwayMode'),
       reset: bar.querySelector('#highwayKeyReset'),
-      chords: bar.querySelector('#highwayShowChords')
+      chords: bar.querySelector('#highwayShowChords'),
+      source: bar.querySelector('#highwaySource'),
+      sourceWrap: bar.querySelector('#highwaySourceWrap'),
+      detail: bar.querySelector('#highwayDetail'),
+      detailWrap: bar.querySelector('#highwayDetailWrap')
     };
     this.barEls = els;
+    els.source.addEventListener('change', () => this.selectSource(els.source.value));
+    // The slider runs from "fewer notes" (left) to "more notes" (right); the setting is the weakest
+    // note strength that is still shown.
+    els.detail.value = String(Math.round((0.7 - this.rollMinStrength) * 100));
+    els.detail.addEventListener('input', () => this.setRollSensitivity(0.7 - Number(els.detail.value) / 100));
     // The "Sa =" list is spelled in sharps; flats are used on the lane when the key calls for them.
     this.NOTE_NAMES.forEach((name, pc) => {
       const option = document.createElement('option');
@@ -283,8 +571,7 @@ class VocalHighway {
     this.lastKey = '';
   }
 
-  noteSpelling(pc) {
-    const flats = this.key ? this.key.flats : false;
+  noteSpelling(pc, flats = this.key ? this.prefersFlats(this.tonic, this.key.mode) : false) {
     return (flats ? ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'] : this.NOTE_NAMES)[((pc % 12) + 12) % 12];
   }
 
@@ -297,10 +584,10 @@ class VocalHighway {
       return;
     }
     // The "Sa =" list is spelled the way this key is spelled (Bb, not A#).
-    Array.from(els.tonic.options).forEach((option) => { option.textContent = this.noteSpelling(Number(option.value)); });
+    Array.from(els.tonic.options).forEach((option) => { option.textContent = this.noteSpelling(Number(option.value), this.key.flats); });
     els.tonic.value = String(this.key.tonic);
     els.mode.value = this.key.mode;
-    const name = `${this.noteSpelling(this.key.tonic)} ${this.key.mode}`;
+    const name = `${this.noteSpelling(this.tonic)} ${this.key.mode}`;
     const d = this.detected;
     let text;
     if (this.key.manual) {
@@ -315,7 +602,8 @@ class VocalHighway {
         text += `  \u00B7  tuned ${this.tuningCents > 0 ? '+' : ''}${this.tuningCents} cents`;
       }
     }
-    text += `  \u00B7  Sa = ${this.noteSpelling(this.key.tonic)}`;
+    text += `  \u00B7  Sa = ${this.noteSpelling(this.tonic)}`;
+    if (this.shift) text += `  (moved ${this.shift > 0 ? '+' : ''}${this.shift} by the pitch control)`;
     els.text.textContent = text;
     els.reset.hidden = !(this.key.manual && this.detected);
   }
@@ -324,38 +612,24 @@ class VocalHighway {
   inScale(pc) {
     if (!this.key) return false;
     const degrees = this.key.mode === 'major' ? MAJOR_DEGREES : MINOR_DEGREES;
-    return degrees.includes((((pc - this.key.tonic) % 12) + 12) % 12);
+    return degrees.includes((((pc - this.tonic) % 12) + 12) % 12);
   }
 
   sargam(pc) {
     if (!this.key) return null;
-    return SARGAM_12[(((pc - this.key.tonic) % 12) + 12) % 12];
+    return SARGAM_12[(((pc - this.tonic) % 12) + 12) % 12];
   }
 
   chordName(chord) {
-    return `${this.noteSpelling(chord.root)}${chord.quality}`;
-  }
-
-  // The engine (server.py) finds the pitch with a neural detector and cleans it up. If it is
-  // not available, the browser falls back to its own, simpler analysis.
-  async fetchServerPitch(buffer, url) {
-    this.state = 'analyzing';
-    const id = ++this.analysisId;
-    try {
-      const resp = await fetch(url);
-      if (!resp.ok) throw new Error(`pitch request failed (${resp.status})`);
-      const data = await resp.json();
-      if (id !== this.analysisId) return;
-      this.finishAnalysis({ midi: Float32Array.from(data.midi), t0: data.t0, dt: data.dt }, true);
-    } catch (err) {
-      console.warn('Server pitch unavailable, analysing in the browser instead:', err);
-      if (id === this.analysisId && buffer === this.buffer) this.analyze(buffer);
-    }
+    const bass = chord.bass === null || chord.bass === undefined ? '' : `/${this.noteSpelling(chord.bass + this.shift)}`;
+    return `${this.noteSpelling(chord.root + this.shift)}${chord.quality}${bass}`;
   }
 
   // --- pitch analysis -------------------------------------------------------------
+  // The engine (server.py) finds the pitch with a neural detector and cleans it up (see loadSource).
+  // When it is not available, the browser falls back to this simpler analysis of the vocal.
 
-  analyze(buffer) {
+  analyze(buffer, source, finish, fail) {
     this.state = 'analyzing';
     const id = ++this.analysisId;
     try {
@@ -384,53 +658,51 @@ class VocalHighway {
       URL.revokeObjectURL(url);
       this.worker.onmessage = (e) => {
         if (e.data.id !== this.analysisId) return;
-        this.finishAnalysis(e.data);
+        finish(this.makeMelodyView(e.data.midi, e.data.t0, e.data.dt, false));
       };
       this.worker.onerror = (err) => {
         console.error('Vocal highway worker failed', err);
-        if (id === this.analysisId) this.state = 'error';
+        if (id === this.analysisId) fail('error');
       };
       this.worker.postMessage({ id, samples, fs }, [samples.buffer]);
     } catch (err) {
       console.error('Vocal highway could not start', err);
-      this.state = 'error';
+      fail('error');
     }
   }
 
-  finishAnalysis({ midi, t0, dt }, alreadyCleaned = false) {
+  // The finished picture of one melody line: its bars, and how much of the pitch range to show.
+  makeMelodyView(midi, t0, dt, alreadyCleaned) {
     // The server's track has had octave errors, breaths and stray blips removed already.
     const smooth = alreadyCleaned ? midi : this.medianSmooth(midi);
-    this.midi = smooth;
-    this.t0 = t0;
-    this.dt = dt;
-    this.notes = this.buildNotes(smooth, t0, dt);
+    const notes = this.buildNotes(smooth, t0, dt);
+    const view = { state: 'ready', midi: smooth, t0, dt, notes };
 
     const voiced = [];
     for (let i = 0; i < smooth.length; i++) if (smooth[i]) voiced.push(smooth[i]);
-    if (voiced.length < 10 || !this.notes.length) {
-      this.state = 'nopitch';
-      return;
+    if (voiced.length < 10 || !notes.length) {
+      view.state = 'nopitch';
+      return view;
     }
     voiced.sort((a, b) => a - b);
     const pick = (q) => voiced[Math.min(voiced.length - 1, Math.floor(voiced.length * q))];
     let lo = Math.floor(pick(0.03)) - 2;
     let hi = Math.ceil(pick(0.97)) + 2;
     while (hi - lo < 16) { lo--; hi++; }   // never zoom in tighter than about an octave and a half
-    this.baseMin = Math.max(24, lo);
-    this.baseMax = Math.min(100, hi);
-    this.applyKeyRange();
-    this.state = 'ready';
+    view.baseMin = Math.max(24, lo);
+    view.baseMax = Math.min(100, hi);
+    return view;
   }
 
   // With a key, the lane is stretched to start and end on a Sa, so a whole Sa-to-Sa scale
-  // (for example C D E F G A B C) is always on screen.
+  // (for example C D E F G A B C) is always on screen. The pitch control moves it all.
   applyKeyRange() {
     if (this.baseMin === undefined) return;
-    let lo = this.baseMin;
-    let hi = this.baseMax;
+    let lo = this.baseMin + this.shift;
+    let hi = this.baseMax + this.shift;
     if (this.key) {
-      while ((((lo % 12) + 12) % 12) !== this.key.tonic) lo--;
-      while ((((hi % 12) + 12) % 12) !== this.key.tonic) hi++;
+      while ((((lo % 12) + 12) % 12) !== this.tonic) lo--;
+      while ((((hi % 12) + 12) % 12) !== this.tonic) hi++;
     }
     this.minMidi = Math.max(24, lo);
     this.maxMidi = Math.min(108, hi);
@@ -508,7 +780,12 @@ class VocalHighway {
 
   // The lane sits under the chord ribbon (when there are chords to show).
   get laneTop() {
-    return this.showChords && this.chords.length ? this.chordBarHeight : 0;
+    return this.showChords && this.chordsNow.length ? this.chordBarHeight : 0;
+  }
+
+  // The chord ribbon follows what is on show: the song's chords, or the ones this stem's notes make.
+  get chordsNow() {
+    return this.kind === 'notes' ? this.rollChords : this.chords;
   }
 
   midiToY(midi) {
@@ -560,7 +837,7 @@ class VocalHighway {
     ctx.font = 'bold 12px "Inter", sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    for (const chord of this.chords) {
+    for (const chord of this.chordsNow) {
       if (chord.end < viewStart) continue;
       if (chord.start > viewEnd) break;
       const x1 = nowX + (chord.start - t) * pxPerSec;
@@ -579,12 +856,180 @@ class VocalHighway {
     ctx.textBaseline = 'middle';
     ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
     ctx.font = '10px "Inter", sans-serif';
-    ctx.fillText('Chords', gutter / 2, h / 2 - 5);
+    ctx.fillText(this.kind === 'notes' ? 'Chords from notes' : 'Chords', gutter / 2, h / 2 - 5, gutter - 6);
     ctx.fillStyle = '#fbbf24';
     ctx.font = 'bold 8px "Inter", sans-serif';
     ctx.fillText('VERY EXPERIMENTAL', gutter / 2, h / 2 + 7, gutter - 6);
   }
 
+  drawNowLine({ nowX, top, h }) {
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.shadowColor = 'rgba(99, 102, 241, 0.8)';
+    ctx.shadowBlur = 12;
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(nowX, top);
+    ctx.lineTo(nowX, h);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // One melody line: bars, the exact pitch curve over them, and a dot on what sounds now.
+  drawMelodyBars(t, hp, colors, barH) {
+    const ctx = this.ctx;
+    const { timeToX, shift, viewStart, viewEnd, nowX, top } = hp;
+    const pcOf = (m) => ((m % 12) + 12) % 12;
+    for (const note of this.notes) {
+      if (note.end < viewStart || note.start > viewEnd) continue;
+      const midi = note.midi + shift;
+      if (midi < this.minMidi || midi > this.maxMidi) continue;
+      const x1 = timeToX(note.start);
+      const x2 = timeToX(note.end);
+      const barW = Math.max(4, x2 - x1);
+      const y = this.midiToY(midi) - barH / 2;
+      const active = note.start <= t && note.end >= t;
+      const past = note.end < t;
+
+      ctx.save();
+      if (active) {
+        ctx.shadowColor = colors[2];
+        ctx.shadowBlur = 16;
+        ctx.fillStyle = colors[2];
+      } else if (past) {
+        ctx.fillStyle = colors[3];
+      } else {
+        const grad = ctx.createLinearGradient(x1, 0, x1 + barW, 0);
+        grad.addColorStop(0, colors[0]);
+        grad.addColorStop(1, colors[1]);
+        ctx.fillStyle = grad;
+      }
+      this.roundedBar(x1, y, barW, barH);
+      ctx.fill();
+      ctx.restore();
+
+      // The singing coach marks each note once it has gone by: green hit, amber off, red missed.
+      const result = this.coach ? this.coach.noteResult(note, t) : null;
+      if (result) {
+        ctx.save();
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = result === 'hit' ? '#34d399' : result === 'off' ? '#fbbf24' : '#f87171';
+        this.roundedBar(x1, y - 1, barW, barH + 2);
+        ctx.stroke();
+        if (result === 'miss') {
+          ctx.fillStyle = 'rgba(248, 113, 113, 0.28)';
+          ctx.fill();
+        }
+        ctx.restore();
+      }
+    }
+
+    // The exact pitch curve over the bars: shows slides and vibrato inside a note.
+    const first = Math.max(0, Math.floor((viewStart - this.t0) / this.dt));
+    const lastFrame = Math.min(this.midi.length - 1, Math.ceil((viewEnd - this.t0) / this.dt));
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+    ctx.lineWidth = 1.4;
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    let drawing = false;
+    for (let k = first; k <= lastFrame; k++) {
+      const m = this.midi[k] ? this.midi[k] + shift : 0;
+      // Skip silence and stray detections outside the lane (they would draw wild spikes).
+      if (!m || m < this.minMidi - 0.5 || m > this.maxMidi + 0.5) { drawing = false; continue; }
+      const x = timeToX(this.t0 + k * this.dt);
+      const y = this.midiToY(m);
+      if (drawing) ctx.lineTo(x, y);
+      else { ctx.moveTo(x, y); drawing = true; }
+    }
+    ctx.stroke();
+
+    // The "now" line and a dot on the pitch being sung right now.
+    this.drawNowLine(hp);
+    const here = Math.round((t - this.t0) / this.dt);
+    const nowMidi = here >= 0 && here < this.midi.length && this.midi[here] ? this.midi[here] + shift : 0;
+    if (nowMidi) {
+      ctx.save();
+      ctx.shadowColor = '#ffffff';
+      ctx.shadowBlur = 14;
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(nowX, this.midiToY(nowMidi), 5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+
+      const hz = 440 * Math.pow(2, (nowMidi - 69) / 12);
+      const swara = this.sargam(pcOf(Math.round(nowMidi)));
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+      ctx.font = 'bold 11px "JetBrains Mono", monospace';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      ctx.fillText(`${this.noteLabel(Math.round(nowMidi))}${swara ? '  ' + swara : ''}  ${Math.round(hz)} Hz`, nowX + 10, top + 6);
+    }
+  }
+
+  // Piano roll: a bar for every note, brighter the stronger the note was found to be.
+  drawRollBars(t, hp, colors, barH) {
+    const ctx = this.ctx;
+    const { timeToX, shift, viewStart, viewEnd } = hp;
+    for (const note of this.roll) {
+      if (note.end < viewStart) continue;
+      if (note.start > viewEnd) break;                 // sorted by start time
+      const midi = note.midi + shift;
+      if (midi < this.minMidi || midi > this.maxMidi) continue;
+      const x1 = timeToX(note.start);
+      const barW = Math.max(3, timeToX(note.end) - x1);
+      const y = this.midiToY(midi) - barH / 2;
+      const active = note.start <= t && note.end >= t;
+      const past = note.end < t;
+      ctx.save();
+      if (active) {
+        ctx.shadowColor = colors[2];
+        ctx.shadowBlur = 10;
+        ctx.fillStyle = colors[2];
+      } else if (past) {
+        ctx.fillStyle = colors[3];
+      } else {
+        const grad = ctx.createLinearGradient(x1, 0, x1 + barW, 0);
+        grad.addColorStop(0, colors[0]);
+        grad.addColorStop(1, colors[1]);
+        ctx.fillStyle = grad;
+        ctx.globalAlpha = 0.55 + 0.45 * Math.min(1, note.strength);
+      }
+      this.roundedBar(x1, y, barW, barH);
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  // The notes sounding now, as a short line of names next to the now line.
+  drawRollNow(t, hp, colors) {
+    const ctx = this.ctx;
+    const { nowX, top, shift } = hp;
+    this.drawNowLine(hp);
+    const sounding = [];
+    for (const note of this.roll) {
+      if (note.start > t) break;
+      if (note.end > t) sounding.push(note.midi);
+    }
+    if (!sounding.length) return;
+    sounding.sort((a, b) => a - b);
+    for (const midi of sounding) {
+      const m = midi + shift;
+      if (m < this.minMidi || m > this.maxMidi) continue;
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(nowX, this.midiToY(m), 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    const chord = this.nameChord(sounding);
+    const names = Array.from(new Set(sounding.map((m) => this.noteSpelling(m + shift)))).join(' ');
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+    ctx.font = 'bold 11px "JetBrains Mono", monospace';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillText(`${chord ? this.chordName(chord) + '   ' : ''}${names}`, nowX + 10, top + 6);
+  }
   draw(t) {
     const ctx = this.ctx;
     const w = this.width;
@@ -597,10 +1042,10 @@ class VocalHighway {
 
     if (this.state !== 'ready') {
       const messages = {
-        idle: 'Vocal highway: open a song with vocals to see the singing pitch here.',
-        analyzing: 'Reading the vocal pitch...',
-        nopitch: 'No clear singing pitch was found in this vocal.',
-        error: 'Could not read the vocal pitch.'
+        idle: 'Highway: open a song to see the singing pitch here.',
+        analyzing: `Reading the ${this.active ? this.active.label.toLowerCase() : 'pitch'}...`,
+        nopitch: this.kind === 'notes' ? 'No clear notes were found in this stem.' : 'No clear pitch was found in this stem.',
+        error: 'Could not read the pitch of this stem.'
       };
       this.drawMessage(messages[this.state] || '');
       return;
@@ -624,7 +1069,7 @@ class VocalHighway {
           ctx.fillStyle = 'rgba(139, 92, 246, 0.07)';
           ctx.fillRect(gutter, yTop, plotW, rowH);
         }
-        if (pc === this.key.tonic) {
+        if (pc === this.tonic) {
           ctx.strokeStyle = 'rgba(251, 191, 36, 0.35)';
           ctx.lineWidth = 1;
           ctx.beginPath();
@@ -666,91 +1111,24 @@ class VocalHighway {
       ctx.stroke();
     }
 
-    // Note bars.
-    const barH = Math.max(6, Math.min(rowH * 0.85, 18));
+    // Note bars (or, in piano-roll mode, one bar per note that sounds).
+    const colors = HIGHWAY_COLORS[this.active ? this.active.file : 'vocals'] || HIGHWAY_COLORS.vocals;
+    const shift = this.shift;
+    const barH = Math.max(this.kind === 'notes' ? 3 : 6, Math.min(rowH * 0.85, 18));
     const viewStart = t - this.nowFraction * this.windowSeconds - 1;
     const viewEnd = t + (1 - this.nowFraction) * this.windowSeconds + 1;
-    for (const note of this.notes) {
-      if (note.end < viewStart || note.start > viewEnd) continue;
-      if (note.midi < this.minMidi || note.midi > this.maxMidi) continue;
-      const x1 = timeToX(note.start);
-      const x2 = timeToX(note.end);
-      const barW = Math.max(4, x2 - x1);
-      const y = this.midiToY(note.midi) - barH / 2;
-      const active = note.start <= t && note.end >= t;
-      const past = note.end < t;
-
-      ctx.save();
-      if (active) {
-        ctx.shadowColor = 'rgba(244, 114, 182, 0.9)';
-        ctx.shadowBlur = 16;
-        ctx.fillStyle = '#f9a8d4';
-      } else if (past) {
-        ctx.fillStyle = 'rgba(139, 92, 246, 0.32)';
-      } else {
-        const grad = ctx.createLinearGradient(x1, 0, x1 + barW, 0);
-        grad.addColorStop(0, '#8b5cf6');
-        grad.addColorStop(1, '#ec4899');
-        ctx.fillStyle = grad;
-      }
-      this.roundedBar(x1, y, barW, barH);
-      ctx.fill();
-      ctx.restore();
+    const helpers = {
+      t, nowX, top, h, gutter, plotW, pxPerSec, timeToX, shift,
+      midiToY: (m) => this.midiToY(m), minMidi: this.minMidi, maxMidi: this.maxMidi, viewStart, viewEnd
+    };
+    if (this.kind === 'notes') {
+      this.drawRollBars(t, helpers, colors, barH);
+      this.drawRollNow(t, helpers, colors);
+    } else {
+      this.drawMelodyBars(t, helpers, colors, barH);
     }
-
-    // The exact pitch curve over the bars: shows slides and vibrato inside a note.
-    const first = Math.max(0, Math.floor((viewStart - this.t0) / this.dt));
-    const lastFrame = Math.min(this.midi.length - 1, Math.ceil((viewEnd - this.t0) / this.dt));
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
-    ctx.lineWidth = 1.4;
-    ctx.lineJoin = 'round';
-    ctx.beginPath();
-    let drawing = false;
-    for (let k = first; k <= lastFrame; k++) {
-      const m = this.midi[k];
-      // Skip silence and stray detections outside the lane (they would draw wild spikes).
-      if (!m || m < this.minMidi - 0.5 || m > this.maxMidi + 0.5) { drawing = false; continue; }
-      const x = timeToX(this.t0 + k * this.dt);
-      const y = this.midiToY(m);
-      if (drawing) ctx.lineTo(x, y);
-      else { ctx.moveTo(x, y); drawing = true; }
-    }
-    ctx.stroke();
-
-    // The "now" line and a dot on the pitch being sung right now.
-    ctx.save();
-    ctx.shadowColor = 'rgba(99, 102, 241, 0.8)';
-    ctx.shadowBlur = 12;
-    ctx.strokeStyle = '#ffffff';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(nowX, top);
-    ctx.lineTo(nowX, h);
-    ctx.stroke();
+    if (this.coach) this.coach.drawOverlay(ctx, helpers);
     ctx.restore();
-
-    const here = Math.round((t - this.t0) / this.dt);
-    const nowMidi = here >= 0 && here < this.midi.length ? this.midi[here] : 0;
-    if (nowMidi) {
-      ctx.save();
-      ctx.shadowColor = '#ffffff';
-      ctx.shadowBlur = 14;
-      ctx.fillStyle = '#ffffff';
-      ctx.beginPath();
-      ctx.arc(nowX, this.midiToY(nowMidi), 5, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
-
-      const hz = 440 * Math.pow(2, (nowMidi - 69) / 12);
-      const swara = this.sargam(pcOf(Math.round(nowMidi)));
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
-      ctx.font = 'bold 11px "JetBrains Mono", monospace';
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'top';
-      ctx.fillText(`${this.noteLabel(Math.round(nowMidi))}${swara ? '  ' + swara : ''}  ${Math.round(hz)} Hz`, nowX + 10, top + 6);
-    }
-    ctx.restore();
-
     // Left edge: the note names, and the Sa Re Ga names next to them.
     ctx.fillStyle = 'rgba(13, 16, 23, 0.97)';
     ctx.fillRect(0, top, gutter, h - top);
@@ -772,7 +1150,7 @@ class VocalHighway {
           ctx.fillRect(gutter - 6, y - 0.5, 6, 1);
           continue;
         }
-        const isSa = pc === this.key.tonic;
+        const isSa = pc === this.tonic;
         ctx.font = `${isSa ? 'bold ' : ''}${fontPx}px "Inter", sans-serif`;
         ctx.textAlign = 'left';
         ctx.fillStyle = isSa ? '#fbbf24' : 'rgba(255, 255, 255, 0.75)';

@@ -12,6 +12,10 @@ document.addEventListener('DOMContentLoaded', () => {
   let vocalHighway = null;
   if (vocalHighwayCanvas && typeof VocalHighway !== 'undefined') {
     vocalHighway = new VocalHighway({ canvas: vocalHighwayCanvas, engine, bar: document.getElementById('highwayBar') });
+    if (typeof SingingCoach !== 'undefined' && document.getElementById('coachBar')) {
+      window.singingCoach = new SingingCoach({ highway: vocalHighway, engine, root: document });
+    }
+    window.vocalHighway = vocalHighway;      // handy for trying things in the browser console
   }
   // Karaoke lyrics, from the song's own tags or from LRCLIB.
   let lyricsPanel = null;
@@ -305,7 +309,7 @@ document.addEventListener('DOMContentLoaded', () => {
       await engine.resume();
       const demoStems = await DemoStemGenerator.generateDemoStems(engine.ctx, is6Stems);
 
-      if (vocalHighway) { vocalHighway.pitchUrl = null; vocalHighway.analysisUrl = null; vocalHighway.resetKey(); }   // the demo has nothing saved
+      if (vocalHighway) { vocalHighway.songInfo = null; vocalHighway.analysisUrl = null; vocalHighway.resetKey(); }   // the demo has nothing saved
       if (lyricsPanel) { currentSongId = null; lyricsPanel.clear(); }
       engine.tracks.clear();
       renderHiddenStemsBar([], false);
@@ -564,8 +568,16 @@ document.addEventListener('DOMContentLoaded', () => {
     const anyStem = stems.find(stem => /^\/api\/stems\/[0-9a-f]{8}\//.test(stem.url));
     const songId = anyStem ? /^\/api\/stems\/([0-9a-f]{8})\//.exec(anyStem.url)[1] : null;
     if (vocalHighway) {
-      const vocalStem = shown.find(stem => stem.stemType === 'vocal');
-      vocalHighway.pitchUrl = vocalStem && songId ? `/api/pitch/${songId}` : null;
+      // Every stem the highway can follow, with the name of its file (that is what the engine is asked for).
+      const followable = [];
+      for (const stem of shown) {
+        const file = /\/api\/stems\/[0-9a-f]{8}\/([a-z_]+)\.wav/.exec(stem.url || '');
+        if (!file || !songId) continue;
+        const keepOwnId = stem.id === 'guitar_lead' || stem.id === 'guitar_rhythm';
+        const trackId = !keepOwnId && stem.stemType && stem.stemType !== 'custom' ? stem.stemType : stem.id;
+        followable.push({ file: file[1], trackId });
+      }
+      vocalHighway.songInfo = songId && followable.length ? { songId, stems: followable } : null;
       vocalHighway.analysisUrl = songId ? `/api/analysis/${songId}` : null;
     }
     if (lyricsPanel && songId !== currentSongId) {
