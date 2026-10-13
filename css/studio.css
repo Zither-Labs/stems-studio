@@ -2145,6 +2145,43 @@ kbd {
   padding: 1px 4px;
 }
 
+/* Drums group: one bar that folds the individual drum stems away */
+.track-card.folded-away { display: none; }
+.track-card.drum-part { margin-left: 1.25rem; }
+.drum-group {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  background: var(--bg-surface-1);
+  border: 1px solid var(--border-subtle);
+  border-left: 4px solid var(--stem-drums, #fbbf24);
+  border-radius: var(--radius-lg);
+  padding: 0.5rem 0.75rem;
+}
+.drum-group-toggle {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: 0;
+  color: var(--text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.drum-group-chevron { width: 1em; color: var(--text-secondary); }
+.drum-group-title { font-weight: 600; }
+.drum-group-parts {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* Update bar */
 .update-bar {
   position: fixed;

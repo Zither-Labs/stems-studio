@@ -103,11 +103,85 @@ document.addEventListener('DOMContentLoaded', () => {
   // Render Track DOM Cards
   function renderAllTrackCards() {
     tracksRack.innerHTML = '';
+    const isDrumPart = track => track.id.startsWith('drums_');
+    const drumParts = [...engine.tracks.values()].filter(isDrumPart);
+    let groupAdded = false;
     for (const track of engine.tracks.values()) {
+      // The split drums (kick, snare, ...) sit under one "Drums" bar that can fold them away.
+      if (isDrumPart(track) && !groupAdded) {
+        tracksRack.appendChild(createDrumGroupElement(drumParts));
+        groupAdded = true;
+      }
       const card = createTrackCardElement(track);
+      if (isDrumPart(track)) card.classList.add('drum-part');
       tracksRack.appendChild(card);
     }
+    applyDrumsExpanded();
+    syncMixButtons();
   }
+
+  // --- the Drums group: fold the individual drum stems away (they stay in the mix and on the highway) ---
+  const DRUMS_EXPANDED_KEY = 'stemsStudio.drumsExpanded';
+  var drumsExpanded = false;      // (var: the first render, just above, runs before this line)
+  try { drumsExpanded = localStorage.getItem(DRUMS_EXPANDED_KEY) === '1'; } catch (err) { /* private mode: stay folded */ }
+
+  function createDrumGroupElement(parts) {
+    const group = document.createElement('div');
+    group.className = 'drum-group';
+    group.id = 'drumGroup';
+    group.innerHTML = `
+      <button type="button" class="drum-group-toggle" id="drumGroupToggle" aria-expanded="false">
+        <span class="drum-group-chevron" aria-hidden="true"></span>
+        <span class="drum-group-title">Drums</span>
+        <span class="drum-group-parts"></span>
+      </button>
+      <div class="track-strip-buttons">
+        <button class="btn-mute" id="drumGroupMute" title="Mute all the drums">M</button>
+        <button class="btn-solo" id="drumGroupSolo" title="Solo all the drums">S</button>
+      </div>`;
+    group.querySelector('.drum-group-parts').textContent =
+      `${parts.length} parts: ${parts.map(t => t.name).join(', ')}`;
+    group.querySelector('#drumGroupToggle').addEventListener('click', () => {
+      drumsExpanded = !drumsExpanded;
+      try { localStorage.setItem(DRUMS_EXPANDED_KEY, drumsExpanded ? '1' : '0'); } catch (err) { /* ignore */ }
+      applyDrumsExpanded();
+    });
+    const setAll = (flag, toggle) => {
+      const target = !parts.every(t => t[flag]);
+      parts.forEach(t => { if (t[flag] !== target) toggle(t.id); });
+    };
+    group.querySelector('#drumGroupMute').addEventListener('click', () => setAll('isMuted', id => engine.toggleTrackMute(id)));
+    group.querySelector('#drumGroupSolo').addEventListener('click', () => setAll('isSoloed', id => engine.toggleTrackSolo(id)));
+    return group;
+  }
+
+  function applyDrumsExpanded() {
+    document.querySelectorAll('.track-card.drum-part').forEach(card => {
+      card.classList.toggle('folded-away', !drumsExpanded);
+    });
+    const toggle = document.getElementById('drumGroupToggle');
+    if (toggle) {
+      toggle.setAttribute('aria-expanded', drumsExpanded ? 'true' : 'false');
+      toggle.title = drumsExpanded ? 'Hide the individual drum stems' : 'Show the individual drum stems';
+      toggle.querySelector('.drum-group-chevron').textContent = drumsExpanded ? '\u25BE' : '\u25B8';
+    }
+    // Folded waveforms have no size; draw them once they are visible.
+    if (drumsExpanded) setTimeout(redrawAllWaveforms, 30);
+  }
+
+  // Keeps every Mute/Solo button in step with the mix (also when the drums group or a preset changed it).
+  function syncMixButtons() {
+    const parts = [...engine.tracks.values()].filter(t => t.id.startsWith('drums_'));
+    for (const track of engine.tracks.values()) {
+      const card = document.getElementById(`trackCard_${track.id}`);
+      if (!card) continue;
+      card.querySelector('.btn-mute')?.classList.toggle('active', !!track.isMuted);
+      card.querySelector('.btn-solo')?.classList.toggle('active', !!track.isSoloed);
+    }
+    document.getElementById('drumGroupMute')?.classList.toggle('active', parts.length > 0 && parts.every(t => t.isMuted));
+    document.getElementById('drumGroupSolo')?.classList.toggle('active', parts.length > 0 && parts.every(t => t.isSoloed));
+  }
+  engine.on('mixStateChanged', syncMixButtons);
 
   function createTrackCardElement(track) {
     const card = document.createElement('div');
