@@ -174,9 +174,9 @@ The library and all stems are stored outside the code folder, so git never touch
 If something goes wrong at startup, the details are in `stems-studio.log` in that folder.
 
 ### Setting it up on another computer
-*(Last checked against the app on 2026-10-12. Not yet tried on a clean machine; Mac not tested.)*
+*(Last checked against the app on 2026-10-13. Not yet tried on a clean machine; Mac not tested.)*
 
-1. Install **Git** and **Chrome or Edge**. Python 3.12 is fetched for you if the PC has Python or the `py` launcher; if the installer says it cannot, install Python from python.org (tick "Add python.exe to PATH").
+1. Install **Git**, **Chrome or Edge**, and **Python 3.12 from python.org** (`winget install Python.Python.3.12`, or the installer from python.org with "Add python.exe to PATH" ticked). Use the python.org one, not a Python that another tool fetched: Windows' **Smart App Control** blocks programs that are not digitally signed, and the python.org Python is signed by the Python Software Foundation while the uv-fetched one that `Install.bat` falls back to is not (on one PC it was blocked, and the shortcut did nothing). If Smart App Control is on and a program still gets blocked, the Windows Security app lists it under *App & browser control*.
 2. The repository is private, so the person needs a GitHub account that has been invited to `Zither-Labs/stems-studio`. Git asks them to sign in the first time.
 3. Get the app: `git clone https://github.com/Zither-Labs/stems-studio.git C:\Music\StemsStudio` (any folder works; avoid OneDrive folders). Do **not** copy the `.venv` or `.venv-roformer` folders from another computer; they only work where they were made.
 4. Double-click **`Install.bat`** (Mac: `Install.command`). It builds the app's own Python environment, installs the GPU version of PyTorch if there is an NVIDIA card (otherwise it runs on the CPU, slowly), the stem maker and the extras, offers the optional "cleaner vocals" and drum splitting, and makes the **Stems Studio** shortcut. The first time takes several minutes; safe to run again.

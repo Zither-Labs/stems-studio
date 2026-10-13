@@ -28,3 +28,4 @@ separated_output/
 *.m4a
 
 .venv-roformer/
+.venv-*/
