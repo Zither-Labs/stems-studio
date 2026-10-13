@@ -77,7 +77,7 @@ echo Installing the extras (pitch detector, key finder, lyrics)...
 if errorlevel 1 echo   (Could not install it. The app still works; some features will be simpler or switched off.)
 
 :roformer_parts
-if exist "%~dp0.venv-roformer\Scripts\audio-separator.exe" goto make_shortcut
+if exist "%~dp0.venv-roformer\Lib\site-packages\audio_separator" goto make_shortcut
 echo.
 echo Optional: "cleaner vocals" makes the vocal stem with a better model, so less
 echo guitar leaks into it. It adds a few hundred MB now and a 600 MB model the first

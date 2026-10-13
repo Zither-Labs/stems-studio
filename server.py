@@ -128,10 +128,20 @@ ROFORMER_VENV = os.path.join(BASE_DIR, ".venv-roformer")
 
 
 def roformer_cli():
-    """Path of the audio-separator program, or None when 'cleaner vocals' is not installed."""
-    candidate = os.path.join(ROFORMER_VENV, "Scripts", "audio-separator.exe") if os.name == "nt" \
-        else os.path.join(ROFORMER_VENV, "bin", "audio-separator")
-    return candidate if os.path.isfile(candidate) else None
+    """The command (a list) that runs the audio-separator tool, or None when 'cleaner vocals' is not installed.
+
+    On Windows it runs the tool through the environment's own python.exe rather than the little
+    audio-separator.exe that pip makes: that one is never digitally signed, and Windows' Smart App
+    Control blocks unsigned programs, while python.exe (from python.org) is signed.
+    """
+    if os.name == "nt":
+        python_exe = os.path.join(ROFORMER_VENV, "Scripts", "python.exe")
+        package = os.path.join(ROFORMER_VENV, "Lib", "site-packages", "audio_separator")
+        if os.path.isfile(python_exe) and os.path.isdir(package):
+            return [python_exe, "-c", "import sys; from audio_separator.utils.cli import main; sys.exit(main())"]
+        return None
+    candidate = os.path.join(ROFORMER_VENV, "bin", "audio-separator")
+    return [candidate] if os.path.isfile(candidate) else None
 
 
 DB_PATH = os.path.join(OUTPUT_DIR, "library.db")
@@ -649,7 +659,7 @@ def run_audio_separator(audio_file, model, out_dir, job, base, span, label, down
     models_dir = os.path.join(DATA_DIR, "models")
     os.makedirs(out_dir, exist_ok=True)
     os.makedirs(models_dir, exist_ok=True)
-    cmd = [cli, audio_file, "-m", model, "--model_file_dir", models_dir,
+    cmd = [*cli, audio_file, "-m", model, "--model_file_dir", models_dir,
            "--output_dir", out_dir, "--output_format", "WAV"]
     env = dict(os.environ, PYTORCH_ENABLE_MPS_FALLBACK="1", PYTHONIOENCODING="utf-8")
     process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
