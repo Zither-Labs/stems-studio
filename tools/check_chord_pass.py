@@ -97,4 +97,12 @@ assert cp.pick_hit(low, "Oasis", "Wonderwall") is None
 other = {"results": [{"match_type": "title_exact", "title": "Africa", "artist": "Toto", "score": 1}]}
 assert cp.pick_hit(other, "Weezer", "Africa") is None
 
+# No chart lined up: the highway still gets the app's own chord names.
+guess = cp.app_chord_line([
+    {"start": 0, "end": 2, "root": 7, "quality": "", "name": "G"},
+    {"start": 2, "end": 4, "root": 4, "quality": "m", "name": "Em"},
+])
+assert names(guess) == ["G", "Em"], names(guess)
+assert all(chord["source"] == "app" for chord in guess)
+
 print("chord pass ok")

@@ -413,24 +413,40 @@ def analyze_file(path, instruments=None, profile=None):
     audio, rate = sf.read(path, dtype="float32", always_2d=True)
     mono = audio.mean(axis=1)
     detector = SwiftF0(threads=4, spin=False)
-    midi, t0 = _track(detector, mono, rate, profile)
+    try:
+        midi, t0 = _track(detector, mono, rate, profile)
+    except Exception:
+        if not profile.get("octave_up"):
+            raise
+        # The low-bass trick (telling the detector the tape runs at twice the speed) is the
+        # part that fails on some songs. A plain read still draws the line.
+        print("Low-bass pitch pass failed; reading the bass in the normal range.", file=sys.stderr)
+        plain = {key: value for key, value in profile.items() if key not in ("octave_up", "sub_check", "high")}
+        midi, t0 = _track(detector, mono, rate, plain)
+        profile = plain
     if profile.get("high"):
         # A second, ordinary pass for notes above the main range. The detector tends to choose
         # the wrong octave when one search range is very wide, so the range is covered in two
         # passes. The high pass only fills moments the main pass left empty, and only with
         # notes at least as high as the main range's top, so it cannot turn a low note's
         # overtone into a note.
-        high = profile["high"]
-        high_midi, high_t0 = _track(detector, mono, rate, high)
-        offset = int(round((high_t0 - t0) / STEP_SECONDS))
-        floor = 12 * np.log2(profile["fmax"] / 440.0) + 69 - 0.5
-        for i in range(len(midi)):
-            j = i - offset
-            if midi[i] <= 0 and 0 <= j < len(high_midi) and high_midi[j] >= floor:
-                midi[i] = high_midi[j]
+        try:
+            high = profile["high"]
+            high_midi, high_t0 = _track(detector, mono, rate, high)
+            offset = int(round((high_t0 - t0) / STEP_SECONDS))
+            floor = 12 * np.log2(profile["fmax"] / 440.0) + 69 - 0.5
+            for i in range(len(midi)):
+                j = i - offset
+                if midi[i] <= 0 and 0 <= j < len(high_midi) and high_midi[j] >= floor:
+                    midi[i] = high_midi[j]
+        except Exception as exc:
+            print(f"High-note pitch pass skipped: {exc}", file=sys.stderr)
 
     if profile.get("sub_check"):
-        lower_octave_when_sub_present(midi, mono, rate, t0)
+        try:
+            lower_octave_when_sub_present(midi, mono, rate, t0)
+        except Exception as exc:
+            print(f"Low-octave check skipped: {exc}", file=sys.stderr)
 
     ghosts_removed = 0
     if instruments:
@@ -462,19 +478,30 @@ def _signature(wav_path, instruments):
             "instrument_mtimes": {os.path.basename(p): os.path.getmtime(p) for p in instruments}}
 
 
-def cached_analysis(wav_path, cache_path):
-    """analyze_file(), remembered next to the song so it only has to run once."""
+def load_if_fresh(wav_path, cache_path):
+    """The saved pitch track when it still matches this stem, otherwise None."""
     stem_name = os.path.splitext(os.path.basename(wav_path))[0]
-    # Only the vocal stem is checked for instruments leaking into it.
     instruments = instrument_paths(wav_path) if stem_name == "vocals" else []
     signature = _signature(wav_path, instruments)
     try:
         with open(cache_path, "r", encoding="utf-8") as handle:
             saved = json.load(handle)
-        if saved.get("version") == ANALYSIS_VERSION and all(saved.get(k) == v for k, v in signature.items()):
-            return saved
     except (OSError, ValueError):
-        pass
+        return None
+    if saved.get("version") == ANALYSIS_VERSION and all(saved.get(k) == v for k, v in signature.items()):
+        return saved
+    return None
+
+
+def cached_analysis(wav_path, cache_path):
+    """analyze_file(), remembered next to the song so it only has to run once."""
+    stem_name = os.path.splitext(os.path.basename(wav_path))[0]
+    # Only the vocal stem is checked for instruments leaking into it.
+    instruments = instrument_paths(wav_path) if stem_name == "vocals" else []
+    saved = load_if_fresh(wav_path, cache_path)
+    if saved is not None:
+        return saved
+    signature = _signature(wav_path, instruments)
     result = analyze_file(wav_path, instruments, profile_for(stem_name))
     result.update(signature)
     tmp = cache_path + ".tmp"

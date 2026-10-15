@@ -621,20 +621,30 @@ def analyze_song(song_dir, vocal_midi=None, progress=None):
     }
 
 
-def cached_analysis(song_dir, cache_path, vocal_midi=None, progress=None):
-    """analyze_song(), remembered next to the song so it only has to run once."""
+def load_if_fresh(song_dir, cache_path, vocal_midi=None):
+    """The saved analysis when it still matches these stems, otherwise None."""
     stems = sorted(f for f in os.listdir(song_dir) if f.endswith(".wav"))
     signature = [[f, os.path.getmtime(os.path.join(song_dir, f))] for f in stems]
     try:
         with open(cache_path, "r", encoding="utf-8") as handle:
             saved = json.load(handle)
-        if saved.get("version") == ANALYSIS_VERSION and saved.get("signature") == signature \
-                and saved.get("sources", {}).get("vocal") == (vocal_midi is not None):
-            if progress is not None:
-                progress(100, "Beat and key are ready.")
-            return saved
     except (OSError, ValueError):
-        pass
+        return None
+    if saved.get("version") == ANALYSIS_VERSION and saved.get("signature") == signature \
+            and saved.get("sources", {}).get("vocal") == (vocal_midi is not None):
+        return saved
+    return None
+
+
+def cached_analysis(song_dir, cache_path, vocal_midi=None, progress=None):
+    """analyze_song(), remembered next to the song so it only has to run once."""
+    saved = load_if_fresh(song_dir, cache_path, vocal_midi)
+    if saved is not None:
+        if progress is not None:
+            progress(100, "Beat and key are ready.")
+        return saved
+    stems = sorted(f for f in os.listdir(song_dir) if f.endswith(".wav"))
+    signature = [[f, os.path.getmtime(os.path.join(song_dir, f))] for f in stems]
     result = analyze_song(song_dir, vocal_midi, progress=progress)
     result["signature"] = signature
     tmp = cache_path + ".tmp"

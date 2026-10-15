@@ -173,6 +173,7 @@ class VocalHighway {
     this.coach = null;         // the singing coach draws on top of the highway (js/singing-coach.js)
 
     this.state = 'idle';       // idle | analyzing | ready | nopitch | error
+    this.pitchError = '';
     this.buffer = null;
     this.midi = null;
     this.t0 = 0;
@@ -348,6 +349,7 @@ class VocalHighway {
     this.showRough = false;
     this.baseMin = undefined;
     this.baseMax = undefined;
+    this.pitchError = '';
   }
 
   applyView(view) {
@@ -429,9 +431,14 @@ class VocalHighway {
       this.cache.set(source.key, view);
       if (this.active === source) { this.applyView(view); this.lastKey = ''; if (this.coach) this.coach.sourceChanged(); }
     };
-    const fail = (state) => {
+    const fail = (state, message) => {
       if (token !== this.songToken) return;
-      if (this.active === source) { this.clearView(); this.state = state; this.lastKey = ''; }
+      if (this.active === source) {
+        this.clearView();
+        this.state = state;
+        this.pitchError = message || '';
+        this.lastKey = '';
+      }
     };
     if (!info) {      // a stem that is not in the library: the browser does its own, simpler analysis
       const track = this.engine.tracks.get(source.trackId);
@@ -454,17 +461,17 @@ class VocalHighway {
     const base = source.kind === 'notes' ? '/api/notes/' : '/api/pitch/';
     try {
       const resp = await fetch(`${base}${info.songId}?stem=${encodeURIComponent(source.file)}`);
-      if (!resp.ok) throw new Error(`request failed (${resp.status})`);
-      const data = await resp.json();
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(data.error || `request failed (${resp.status})`);
       if (source.kind === 'notes') finish(this.makeRollView(data.notes));
       else finish(this.makeMelodyView(Float32Array.from(data.midi), data.t0, data.dt, true, data));
     } catch (err) {
       console.warn(`Server could not read the ${source.label} (${err.message})`);
       const track = this.engine.tracks.get(source.trackId);
-      if (source.kind === 'melody' && source.file === 'vocals' && track && track.buffer) {
-        this.analyze(track.buffer, source, finish, fail);   // the vocal still gets the browser's own analysis
+      if (source.kind === 'melody' && track && track.buffer) {
+        this.analyze(track.buffer, source, finish, fail);   // the page's own pitch read, so the lane is not left blank
       } else {
-        fail('error');
+        fail('error', err.message);
       }
     }
   }
@@ -857,6 +864,7 @@ class VocalHighway {
       }
     }
     text += `  \u00B7  Sa = ${this.noteSpelling(this.tonic)}`;
+    if (this.chords.length) text += '  \u00B7  chords along the top';
     if (this.shift) text += `  (moved ${this.shift > 0 ? '+' : ''}${this.shift} by the pitch control)`;
     els.text.textContent = text;
     els.reset.hidden = !(this.key.manual && this.detected);
@@ -1430,8 +1438,14 @@ class VocalHighway {
           : this.kind === 'drums' ? 'No drum hits were found.'
           : this.roughNotes.length ? 'No clear singing pitch here. Tick "Rough voice" above to see a guess at the growls.'
           : 'No clear pitch was found in this stem.',
-        error: 'Could not read the pitch of this stem.'
+        error: this.pitchError
+          ? `Could not read the pitch of this stem. ${this.pitchError}`
+          : 'Could not read the pitch of this stem.'
       };
+      if (this.showChords && this.chordsNow.length) {
+        const { nowX, pxPerSec } = this.layout();
+        this.drawChordRibbon(t, nowX, pxPerSec);
+      }
       this.drawMessage(messages[this.state] || '');
       return;
     }

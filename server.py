@@ -773,20 +773,31 @@ def prepare_song_listen(song_id, folder, on_progress=None):
         with PITCH_LOCK:
             vocal_midi = None
             vocals = os.path.join(folder, "vocals.wav")
+            pitch_path = os.path.join(folder, "vocals.pitch.json")
+            analysis_path = os.path.join(folder, "analysis.json")
             if os.path.isfile(vocals):
-                report(2, "Reading the vocal...")
                 try:
                     pitch_track = separator_module("pitch_track")
-                    vocal_midi = pitch_track.cached_analysis(
-                        vocals, os.path.join(folder, "vocals.pitch.json"))["midi"]
+                    saved_pitch = pitch_track.load_if_fresh(vocals, pitch_path)
+                    if saved_pitch is not None:
+                        vocal_midi = saved_pitch["midi"]
+                    else:
+                        report(2, "Reading the vocal...")
+                        vocal_midi = pitch_track.cached_analysis(vocals, pitch_path)["midi"]
                 except Exception:
                     traceback.print_exc()
+
+            saved = music_analysis.load_if_fresh(folder, analysis_path, vocal_midi)
+            if saved is not None:
+                # Already heard this song. Do not flash the bar for a result that is sitting on disk.
+                note_listen(song_id, 100, "Beat and key are ready.", running=False)
+                return saved
 
             def analysis_progress(percent, message):
                 report(12 + percent * 0.87, message)
 
             result = music_analysis.cached_analysis(
-                folder, os.path.join(folder, "analysis.json"), vocal_midi, progress=analysis_progress)
+                folder, analysis_path, vocal_midi, progress=analysis_progress)
             report(100, "Beat and key are ready.", running=False)
             return result
     except Exception:
@@ -990,14 +1001,23 @@ def chords_for_song(song_id, folder, audio):
                 external = []
             kept = chord_pass.from_chart(external, runs, True, "karalyr", key_flats)
     chords = chord_pass.add_app_chords(app_chords, runs, kept)
+    app_only = False
+    if not chords and app_chords:
+        # No chart lined up. The highway still draws the app's own guess along the top.
+        chords = chord_pass.app_chord_line(app_chords)
+        app_only = True
     sheet_used = any(chord.get("source") == "sheet" for chord in chords)
     chart_used = any(chord.get("source") == "chart" for chord in chords)
     karalyr_used = any(chord.get("source") == "karalyr" for chord in chords)
-    chord_from = "sheet" if sheet_used else "chart" if chart_used else "karalyr" if karalyr_used else "bass" if chords else None
+    chord_from = "sheet" if sheet_used else "chart" if chart_used else "karalyr" if karalyr_used else "app" if chords else None
+    if app_only:
+        note = "Chord names are along the top of the highway. They are the app's guess: no published chart matched this song."
+    else:
+        note = chord_pass.explain(sheet, sheet_used, chart_used, karalyr_used, len(chords), chart_label)
     return {
         "chords": chords,
         "sheet": sheet,
-        "note": chord_pass.explain(sheet, sheet_used, chart_used, karalyr_used, len(chords), chart_label),
+        "note": note,
         "chord_from": chord_from,
     }
 

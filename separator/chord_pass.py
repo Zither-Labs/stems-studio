@@ -335,6 +335,30 @@ def _covered(spans, start, end):
     return sum(max(0.0, min(end, stop) - max(start, begin)) for begin, stop in spans)
 
 
+def app_chord_line(app_chords):
+    """The app's own chord guess, for the line above the highway when no chart lined up."""
+    out = []
+    for chord in app_chords or []:
+        try:
+            start, end = float(chord["start"]), float(chord["end"])
+            root = int(chord["root"]) % 12
+        except (KeyError, TypeError, ValueError):
+            continue
+        if end <= start:
+            continue
+        quality = chord.get("quality") or ""
+        out.append({
+            "start": round(start, 2),
+            "end": round(end, 2),
+            "root": root,
+            "quality": quality,
+            "name": chord.get("name") or spell(root, quality),
+            "source": "app",
+            "sure": False,
+        })
+    return out
+
+
 def add_app_chords(app_chords, runs, kept):
     """Second pass: the app's own chords, only where the bass agrees and the sheet said nothing."""
     spans = [(chord["start"], chord["end"]) for chord in kept]
