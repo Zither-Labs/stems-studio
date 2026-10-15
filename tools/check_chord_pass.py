@@ -105,4 +105,17 @@ guess = cp.app_chord_line([
 assert names(guess) == ["G", "Em"], names(guess)
 assert all(chord["source"] == "app" for chord in guess)
 
+# A chart that only caught one bar does not hide the rest of the app's chords.
+app = [
+    {"start": 0, "end": 8, "root": 7, "quality": "", "name": "G"},
+    {"start": 8, "end": 16, "root": 0, "quality": "", "name": "C"},
+]
+thin = [{"start": 0, "end": 2, "root": 7, "quality": "", "name": "G", "source": "chart", "sure": True}]
+shown, app_only = cp.prefer_visible_line(app, thin)
+assert app_only and names(shown) == ["G", "C"], names(shown)
+covered = [{"start": 0, "end": 8, "root": 7, "quality": "", "name": "G", "source": "sheet", "sure": True},
+           {"start": 8, "end": 16, "root": 0, "quality": "", "name": "C", "source": "sheet", "sure": True}]
+shown, app_only = cp.prefer_visible_line(app, covered)
+assert not app_only and all(chord["source"] == "sheet" for chord in shown)
+
 print("chord pass ok")

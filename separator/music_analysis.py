@@ -22,7 +22,7 @@ import os
 
 import numpy as np
 
-ANALYSIS_VERSION = 3          # 3 lines bass notes up to the beat, so a walking bass is not a new chord
+ANALYSIS_VERSION = 4          # 4 counts the low B (31 Hz) in the bass, not only its overtones
 
 ONSET_SR = 22050
 ONSET_HOP = 512
@@ -114,8 +114,12 @@ def estimate_tuning(mag, sr, fmin, fmax):
     return best
 
 
-def chromagram(mag, sr, fmin, fmax, tuning):
-    """Fold a spectrogram into the 12 note names. Returns (frames, 12)."""
+def chromagram(mag, sr, fmin, fmax, tuning, low_boost=1.0):
+    """Fold a spectrogram into the 12 note names. Returns (frames, 12).
+
+    low_boost lifts frequencies under 50 Hz (the low B and the low E). Their overtones sit
+    higher, and the third harmonic is a different note (a fifth), so it must not share the lift.
+    """
     freqs = np.arange(mag.shape[1]) * sr / N_FFT
     keep = (freqs >= fmin) & (freqs <= fmax)
     midi = 69 + 12 * np.log2(freqs[keep] / 440.0) - tuning
@@ -123,7 +127,10 @@ def chromagram(mag, sr, fmin, fmax, tuning):
     weight = np.cos(np.pi * (midi - np.round(midi))) ** 2     # bins between two notes count less
     fold = np.zeros((int(keep.sum()), 12), dtype=np.float32)
     fold[np.arange(len(pitch_class)), pitch_class] = weight
-    return (np.sqrt(mag[:, keep]) @ fold).astype(np.float32)   # sqrt: loud partials do not dominate
+    amp = np.sqrt(mag[:, keep])                                # sqrt: loud partials do not dominate
+    if low_boost != 1.0:
+        amp = amp * np.where(freqs[keep] < 50.0, float(low_boost), 1.0).astype(np.float32)
+    return (amp @ fold).astype(np.float32)
 
 
 def _normalise_rows(a):
@@ -571,17 +578,20 @@ def analyze_song(song_dir, vocal_midi=None, progress=None):
         report(42, "Reading the bass...")
         bass_mag = read_spec(read_mono(bass_path, BASS_SR), BASS_HOP, 42, 26, "Reading the bass...")
         if harmony_chroma is None:
-            tuning = estimate_tuning(bass_mag, BASS_SR, 40.0, 400.0)
-        bass_chroma = chromagram(bass_mag, BASS_SR, 40.0, 400.0, tuning)
+            tuning = estimate_tuning(bass_mag, BASS_SR, 27.0, 400.0)
+        # Down to the 5-string bass's low B. Stopping at 40 Hz threw that note away and
+        # left its overtones, which can vote for a different pitch class.
+        bass_chroma = chromagram(bass_mag, BASS_SR, 27.0, 400.0, tuning, low_boost=2.0)
 
     report(70, "Finding the key...")
     vec = lambda c: None if c is None else c.sum(axis=0).astype(np.float64)    # noqa: E731
     key = detect_key(vec(harmony_chroma), vec(bass_chroma), vocal_histogram(vocal_midi, tuning))
 
     chords = []
-    if key and harmony_chroma is not None:
-        bass_for_chords = bass_chroma if bass_chroma is not None else np.zeros_like(harmony_chroma)
-        chords = detect_chords(harmony_chroma, bass_for_chords, key)
+    if key and (harmony_chroma is not None or bass_chroma is not None):
+        harmony_for_chords = harmony_chroma if harmony_chroma is not None else bass_chroma
+        bass_for_chords = bass_chroma if bass_chroma is not None else np.zeros_like(harmony_for_chords)
+        chords = detect_chords(harmony_for_chords, bass_for_chords, key)
 
     # The rhythm guitar holds the chord. A lead guitar line jumps around the way a bass can,
     # so it does not get to decide the bar.

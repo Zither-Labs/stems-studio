@@ -1001,11 +1001,9 @@ def chords_for_song(song_id, folder, audio):
                 external = []
             kept = chord_pass.from_chart(external, runs, True, "karalyr", key_flats)
     chords = chord_pass.add_app_chords(app_chords, runs, kept)
-    app_only = False
-    if not chords and app_chords:
-        # No chart lined up. The highway still draws the app's own guess along the top.
-        chords = chord_pass.app_chord_line(app_chords)
-        app_only = True
+    # A chart that only caught a few bars used to leave the ribbon blank. The app's own
+    # guess is already in the saved listen, so it can be drawn without reading the song again.
+    chords, app_only = chord_pass.prefer_visible_line(app_chords, chords)
     sheet_used = any(chord.get("source") == "sheet" for chord in chords)
     chart_used = any(chord.get("source") == "chart" for chord in chords)
     karalyr_used = any(chord.get("source") == "karalyr" for chord in chords)

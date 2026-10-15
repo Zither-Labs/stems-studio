@@ -13,10 +13,12 @@
 function vocalHighwayWorkerMain() {
   self.onmessage = (e) => {
     const { id, samples, fs } = e.data;
-    const W = 512;                                  // analysis window (samples)
+    const fmin = Math.max(27, e.data.fmin || 70);  // bass goes down to a low B (31 Hz); singing stays at 70
+    const fmax = fmin < 60 ? 500 : 1000;
+    const maxTau = Math.floor(fs / fmin);
+    const minTau = Math.max(2, Math.floor(fs / fmax));
+    const W = Math.max(512, maxTau * 2);            // long enough to hold two cycles of the lowest note
     const hop = 256;                                // step between analyses
-    const maxTau = Math.floor(fs / 70);             // lowest pitch we look for: 70 Hz
-    const minTau = Math.max(2, Math.floor(fs / 1000)); // highest: 1000 Hz
     const need = W + maxTau + 1;
     const frames = samples.length >= need ? Math.floor((samples.length - need) / hop) + 1 : 0;
 
@@ -63,8 +65,26 @@ function vocalHighwayWorkerMain() {
         const den = 2 * (2 * s1 - s2 - s0);
         if (den !== 0) better = found + (s2 - s0) / den;
       }
-      const hz = fs / better;
-      if (hz < 70 || hz > 1000) continue;
+      let hz = fs / better;
+      // A low bass note is often found at its second harmonic. If the octave below is
+      // actually in the sound, that is the note.
+      if (fmin < 60 && hz / 2 >= fmin) {
+        const half = hz / 2;
+        const energy = (freq) => {
+          const w = 2 * Math.PI * freq / fs;
+          let re = 0;
+          let im = 0;
+          const n = Math.min(W, 2048);
+          for (let j = 0; j < n; j++) {
+            const v = samples[s + j];
+            re += v * Math.cos(w * j);
+            im -= v * Math.sin(w * j);
+          }
+          return re * re + im * im;
+        };
+        if (energy(half) >= 0.28 * energy(hz)) hz = half;
+      }
+      if (hz < fmin || hz > fmax) continue;
       midi[f] = 69 + 12 * Math.log2(hz / 440);
     }
     self.postMessage({ id, midi, t0: (W / 2) / fs, dt: hop / fs }, [midi.buffer]);
@@ -243,7 +263,7 @@ class VocalHighway {
     const t = this.engine.getCurrentTime();
     // The coach has a live line on top, so it needs a fresh picture on every frame while it runs.
     const live = this.coach && this.coach.needsRedraw() ? performance.now() : 0;
-    const key = `${t.toFixed(3)}|${this.width}|${this.height}|${this.state}|${this.notes.length}|${live}`;
+    const key = `${t.toFixed(3)}|${this.width}|${this.height}|${this.state}|${this.notes.length}|${this.chords.length}|${this.showChords ? 1 : 0}|${live}`;
     if (key !== this.lastKey) {
       this.lastKey = key;
       this.draw(t);
@@ -895,8 +915,10 @@ class VocalHighway {
     this.state = 'analyzing';
     const id = ++this.analysisId;
     try {
-      // Mono, at about 11-12 kHz: plenty for a singing voice and much faster to analyse.
-      const factor = Math.max(1, Math.round(buffer.sampleRate / 11025));
+      // Mono, at about 11-12 kHz for a voice. Bass is kept nearer 6 kHz so the low B (31 Hz)
+      // still fits in the window without a huge search.
+      const targetRate = source && source.file === 'bass' ? 6000 : 11025;
+      const factor = Math.max(1, Math.round(buffer.sampleRate / targetRate));
       const fs = buffer.sampleRate / factor;
       const channels = [];
       for (let c = 0; c < buffer.numberOfChannels; c++) channels.push(buffer.getChannelData(c));
@@ -926,7 +948,8 @@ class VocalHighway {
         console.error('Vocal highway worker failed', err);
         if (id === this.analysisId) fail('error');
       };
-      this.worker.postMessage({ id, samples, fs }, [samples.buffer]);
+      const fmin = source && source.file === 'bass' ? 28 : 70;
+      this.worker.postMessage({ id, samples, fs, fmin }, [samples.buffer]);
     } catch (err) {
       console.error('Vocal highway could not start', err);
       fail('error');
@@ -945,7 +968,11 @@ class VocalHighway {
       const voiced = values.filter((m) => m > 0).sort((a, b) => a - b);
       if (voiced.length < 10) return null;
       const pick = (q) => voiced[Math.min(voiced.length - 1, Math.floor(voiced.length * q))];
-      let lo = Math.floor(pick(0.03)) - 2;
+      // The bottom of the lane includes the low notes, down to about two octaves under the body
+      // of the line. A single stray blip further away does not squash the whole picture.
+      let lo = Math.floor(pick(0.01)) - 1;
+      const lowest = voiced[0];
+      if (lowest >= lo - 24) lo = Math.min(lo, Math.floor(lowest) - 1);
       let hi = Math.ceil(pick(0.97)) + 2;
       while (hi - lo < 16) { lo--; hi++; }   // never zoom in tighter than about an octave and a half
       return { min: Math.max(21, lo), max: Math.min(100, hi) };
@@ -1121,8 +1148,7 @@ class VocalHighway {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     for (const chord of this.chordsNow) {
-      if (chord.end < viewStart) continue;
-      if (chord.start > viewEnd) break;
+      if (chord.end < viewStart || chord.start > viewEnd) continue;
       const x1 = nowX + (chord.start - t) * pxPerSec;
       const x2 = nowX + (chord.end - t) * pxPerSec;
       const active = chord.start <= t && chord.end > t;

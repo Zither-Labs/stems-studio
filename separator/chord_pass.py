@@ -335,6 +335,26 @@ def _covered(spans, start, end):
     return sum(max(0.0, min(end, stop) - max(start, begin)) for begin, stop in spans)
 
 
+def prefer_visible_line(app_chords, agreed):
+    """The chord names drawn along the top of the highway.
+
+    A chart or sheet that really covers the song wins. A thin match would leave that line
+    looking empty, so the app's own guess is drawn across the song instead.
+    """
+    line = app_chord_line(app_chords)
+    if not line:
+        return list(agreed or []), False
+    if not agreed:
+        return line, True
+    start = min(chord["start"] for chord in line)
+    end = max(chord["end"] for chord in line)
+    span = end - start
+    covered = _covered([(chord["start"], chord["end"]) for chord in agreed], start, end)
+    if span <= 0 or covered < 0.45 * span:
+        return line, True
+    return list(agreed), False
+
+
 def app_chord_line(app_chords):
     """The app's own chord guess, for the line above the highway when no chart lined up."""
     out = []

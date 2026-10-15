@@ -178,11 +178,16 @@ def lower_octave_when_sub_present(midi, mono, rate, t0):
     return moved
 
 
-def repair_octaves(midi, voiced, singer_median):
-    """Move frames up or down by whole octaves so the contour has as few spurious jumps as possible."""
+def repair_octaves(midi, voiced, singer_median, allow_upward=True):
+    """Move frames up or down by whole octaves so the contour has as few spurious jumps as possible.
+
+    Bass keeps allow_upward off. A bass line really does sit more than an octave below its own
+    middle (the open E is a long way under a fill), and pulling those notes up hides them.
+    """
     out = midi.copy()
     gap_frames = max(1, int(round(PHRASE_GAP_SECONDS / STEP_SECONDS)))
-    shifts = np.array([-12.0, 0.0, 12.0])
+    shifts = np.array([-12.0, 0.0, 12.0] if allow_upward else [-12.0, 0.0])
+    n_shifts = len(shifts)
 
     # Split into phrases: voiced stretches separated by a real silence.
     phrase_start = None
@@ -204,13 +209,13 @@ def repair_octaves(midi, voiced, singer_median):
         if n < 3:
             continue
         base = midi[idx]
-        candidates = base[:, None] + shifts[None, :]              # n x 3
+        candidates = base[:, None] + shifts[None, :]              # n x shifts
         stay = np.abs(shifts) / 12.0 * OCTAVE_SHIFT_COST          # cost of leaving the detected octave
         off_range = np.maximum(0.0, np.abs(candidates - singer_median) - 15.0) * OUT_OF_RANGE_COST / 3.0
         emission = stay[None, :] + off_range
 
-        cost = np.empty((n, 3))
-        back = np.zeros((n, 3), dtype=np.int8)
+        cost = np.empty((n, n_shifts))
+        back = np.zeros((n, n_shifts), dtype=np.int8)
         cost[0] = emission[0]
         for t in range(1, n):
             # Frames that are far apart in time are weakly related, so the jump cost fades out.
@@ -220,7 +225,7 @@ def repair_octaves(midi, voiced, singer_median):
             jump_cost = np.minimum(jump, 12.0) / 12.0 * JUMP_COST_CAP * weight
             total = cost[t - 1][:, None] + jump_cost
             back[t] = np.argmin(total, axis=0)
-            cost[t] = total[back[t], np.arange(3)] + emission[t]
+            cost[t] = total[back[t], np.arange(n_shifts)] + emission[t]
 
         state = int(np.argmin(cost[-1]))
         for t in range(n - 1, -1, -1):
@@ -306,7 +311,7 @@ def unpitched_loud_fraction(midi, loudness_db):
     return float((loud & ~singing).sum() / max(1, loud.sum()))
 
 
-def clean_track(hz, confidence, loudness_db, fmin=None, fmax=None):
+def clean_track(hz, confidence, loudness_db, fmin=None, fmax=None, keep_low=False):
     """The whole clean-up, from raw detector output to the final MIDI track (0 = silence)."""
     n = len(hz)
     in_range = (hz >= (FMIN_HZ if fmin is None else fmin)) & (hz <= (FMAX_HZ if fmax is None else fmax))
@@ -329,7 +334,7 @@ def clean_track(hz, confidence, loudness_db, fmin=None, fmax=None):
     midi = np.where(voiced, hz_to_midi(hz), 0.0)
     singer_median = float(np.median(midi[voiced]))
 
-    midi = repair_octaves(midi, voiced, singer_median)
+    midi = repair_octaves(midi, voiced, singer_median, allow_upward=not keep_low)
     midi = median_filter(midi, voiced, radius=2)
 
     # Bridge tiny gaps (a consonant in the middle of a word), but only if both sides agree.
@@ -364,13 +369,160 @@ def instrument_paths(vocal_path):
     return [p for p in paths if os.path.isfile(p)]
 
 
-# Search range per kind of stem. "octave_up" is for notes below SwiftF0's own floor of 46.9 Hz
-# (a bass guitar's low E is 41 Hz): the audio is declared to be at half its real sample rate,
-# so every pitch is heard one octave higher, and the result is divided by two again.
+# The low strings, read from the sound itself. SwiftF0 cannot hear below 46.9 Hz, and it often
+# reports the second harmonic of a note it can hear (a low E at 41 Hz comes back as 82 Hz).
+# This pass looks for the repeating period down to the 5-string bass's low B (31 Hz) and keeps
+# that period only when the fundamental is actually in the spectrum, so a real higher note is
+# not dragged down an octave.
+LOW_SR = 8000
+LOW_FMIN = 27.0
+LOW_FMAX = 160.0
+LOW_BASS_MAX_MIDI = 46.0          # about Bb2; fills and solos above this stay with SwiftF0
+FUNDAMENTAL_PRESENT = 0.28        # energy at half the detected pitch, compared with the pitch itself
+HARMONIC_ONLY = 3.0               # a "fundamental" this much quieter than its octave is not really there
+BASS_METHOD = 2                   # saved on bass.pitch.json; old files are read again on the next open
+
+
+def _to_low_rate(mono, rate):
+    mono = np.asarray(mono, dtype=np.float64)
+    if len(mono) < 8:
+        return np.zeros(0, dtype=np.float64)
+    if int(rate) == LOW_SR:
+        return mono
+    n = int(round(len(mono) * LOW_SR / float(rate)))
+    if n < 8:
+        return np.zeros(0, dtype=np.float64)
+    old = np.linspace(0.0, 1.0, len(mono), endpoint=False)
+    new = np.linspace(0.0, 1.0, n, endpoint=False)
+    return np.interp(new, old, mono)
+
+
+def _band_peak(spec, freqs, hz):
+    if hz <= 0:
+        return 0.0
+    keep = (freqs >= hz * 0.94) & (freqs <= hz * 1.06)
+    return float(spec[keep].max()) if keep.any() else 0.0
+
+
+def _frame_fundamental(frame, sr):
+    """MIDI of the lowest clear note in this window, or 0."""
+    x = np.asarray(frame, dtype=np.float64)
+    x = x - x.mean()
+    rms = float(np.sqrt(np.mean(x * x)))
+    if rms < 1e-4:
+        return 0.0
+    x = x / rms
+    n = len(x)
+    max_tau = min(n // 2, int(sr / LOW_FMIN))
+    min_tau = max(2, int(sr / LOW_FMAX))
+    if max_tau <= min_tau + 4:
+        return 0.0
+    ac = np.fft.irfft(np.fft.rfft(x, n=n * 2) * np.conj(np.fft.rfft(x, n=n * 2)))[:max_tau + 1]
+    sq = np.cumsum(x * x)
+    taus = np.arange(1, max_tau + 1)
+    diff = sq[n - taus - 1] + (sq[n - 1] - sq[taus - 1]) - 2.0 * ac[1:]
+    diff = np.maximum(diff, 0.0)
+    running = np.cumsum(diff)
+    cmnd = np.ones(max_tau + 1)
+    cmnd[1:] = diff * taus / np.maximum(running, 1e-12)
+
+    minima = [tau for tau in range(min_tau + 1, max_tau)
+              if cmnd[tau] <= cmnd[tau - 1] and cmnd[tau] <= cmnd[tau + 1] and cmnd[tau] < 0.45]
+    if not minima:
+        return 0.0
+    best = min(minima, key=lambda tau: cmnd[tau])
+    if cmnd[best] > 0.30:
+        return 0.0
+
+    def refine(tau):
+        s0, s1, s2 = cmnd[tau - 1], cmnd[tau], cmnd[tau + 1]
+        den = 2.0 * (2.0 * s1 - s2 - s0)
+        shift = (s2 - s0) / den if den else 0.0
+        return tau + max(-0.5, min(0.5, shift))
+
+    mag = np.abs(np.fft.rfft(x * np.hanning(n)))
+    freqs = np.fft.rfftfreq(n, 1.0 / sr)
+    chosen = refine(best)
+    chosen_hz = sr / chosen
+    chosen_energy = _band_peak(mag, freqs, chosen_hz)
+
+    lower = int(round(best * 2))
+    if min_tau < lower < max_tau and cmnd[lower] < 0.55:
+        for step in range(-4, 5):
+            tau = lower + step
+            if min_tau < tau < max_tau and cmnd[tau] <= cmnd[tau - 1] and cmnd[tau] <= cmnd[tau + 1]:
+                lower = tau
+                break
+        low_tau = refine(lower)
+        low_hz = sr / low_tau
+        if LOW_FMIN <= low_hz <= LOW_FMAX and cmnd[lower] < 0.50:
+            low_energy = _band_peak(mag, freqs, low_hz)
+            if low_energy >= FUNDAMENTAL_PRESENT * max(chosen_energy, 1e-9):
+                chosen, chosen_hz, chosen_energy = low_tau, low_hz, low_energy
+
+    # A pure higher note also repeats every two cycles. Keep it up there when the
+    # lower frequency is barely in the sound.
+    octave = _band_peak(mag, freqs, chosen_hz * 2.0)
+    if octave > HARMONIC_ONLY * max(chosen_energy, 1e-9) and chosen_hz * 2.0 <= LOW_FMAX:
+        chosen_hz *= 2.0
+    if chosen_hz < LOW_FMIN or chosen_hz > LOW_FMAX:
+        return 0.0
+    return float(hz_to_midi(np.array(chosen_hz)))
+
+
+def low_fundamental_track(mono, rate):
+    """MIDI at the highway step for bass fundamentals, 0 where no low note is clear. Also the time of the first step."""
+    audio = _to_low_rate(mono, rate)
+    win = 1024
+    if len(audio) < win // 2:
+        return np.zeros(0), 0.0
+    if len(audio) < win:
+        audio = np.pad(audio, (0, win - len(audio)))
+    hop = max(1, int(round(STEP_SECONDS * LOW_SR)))
+    n_frames = 1 + (len(audio) - win) // hop
+    midi = np.zeros(n_frames)
+    for i in range(n_frames):
+        midi[i] = _frame_fundamental(audio[i * hop:i * hop + win], LOW_SR)
+    voiced = midi > 0
+    if voiced.any():
+        midi = median_filter(midi, voiced, radius=2)
+        min_frames = max(2, int(round(0.07 / STEP_SECONDS)))
+        for start, end in _runs(midi > 0):
+            if end - start < min_frames:
+                midi[start:end] = 0.0
+    return midi, (win / 2) / LOW_SR
+
+
+def _octave_above(higher, lower):
+    gap = higher - lower
+    return abs(gap - 12.0) <= 0.75 or abs(gap - 24.0) <= 0.75
+
+
+def apply_low_bass(midi, t0, low_midi, low_t0):
+    """Where the low-string reader hears a real fundamental, use it instead of a reading an octave higher."""
+    out = np.array(midi, dtype=np.float64, copy=True)
+    if len(low_midi) == 0:
+        return out
+    for i in range(len(out)):
+        j = int(round((t0 + i * STEP_SECONDS - low_t0) / STEP_SECONDS))
+        if j < 0 or j >= len(low_midi):
+            continue
+        low = float(low_midi[j])
+        if low <= 0 or low > LOW_BASS_MAX_MIDI:
+            continue
+        cur = float(out[i])
+        if cur <= 0 or abs(cur - low) <= 0.8 or (cur > low and _octave_above(cur, low)):
+            out[i] = low
+    return out
+
+
+# Search range per kind of stem. "octave_up" asks SwiftF0 to hear the tape at double speed so a
+# 31 Hz low B lands inside its range, then the low-string reader above checks that the
+# fundamental is really there. "keep_low" stops the octave cleaner from lifting those notes.
 PROFILES = {
     "vocals": {"fmin": FMIN_HZ, "fmax": FMAX_HZ, "rough": True},
-    "bass": {"fmin": 28.0, "fmax": 260.0, "octave_up": True, "sub_check": True,   # low B (31 Hz) up to about C4
-             "high": {"fmin": 240.0, "fmax": 900.0}},                    # then a second pass for high notes and solos
+    "bass": {"fmin": 28.0, "fmax": 260.0, "octave_up": True, "sub_check": True, "keep_low": True,
+             "high": {"fmin": 240.0, "fmax": 900.0}},                    # high notes and solos, second pass
     "melody": {"fmin": 75.0, "fmax": 1400.0},     # lead guitar, guitar, anything single-note
 }
 
@@ -396,7 +548,7 @@ def _track(detector, mono, rate, profile):
         result = detector.detect(mono, rate, fmin=fmin, fmax=fmax)
         hz, confidence, loudness = result.pitch_hz, result.confidence, result.loudness_db
         t0 = float(result.timestamps[0]) if len(result.timestamps) else 0.0
-    return clean_track(hz, confidence, loudness, fmin, fmax), t0
+    return clean_track(hz, confidence, loudness, fmin, fmax, keep_low=bool(profile.get("keep_low"))), t0
 
 
 def analyze_file(path, instruments=None, profile=None):
@@ -407,24 +559,41 @@ def analyze_file(path, instruments=None, profile=None):
     profile: search range, see PROFILES (default: the singing range).
     """
     import soundfile as sf
-    from swift_f0 import SwiftF0
 
     profile = profile or PROFILES["vocals"]
     audio, rate = sf.read(path, dtype="float32", always_2d=True)
     mono = audio.mean(axis=1)
-    detector = SwiftF0(threads=4, spin=False)
+    midi, t0, detector = None, 0.0, None
     try:
-        midi, t0 = _track(detector, mono, rate, profile)
+        from swift_f0 import SwiftF0
+        detector = SwiftF0(threads=4, spin=False)
+        try:
+            midi, t0 = _track(detector, mono, rate, profile)
+        except Exception:
+            if not profile.get("octave_up"):
+                raise
+            # Declaring a doubled sample rate is the part that fails on some songs.
+            # The plain read still draws the higher notes; the low-string reader covers the rest.
+            print("Low-bass SwiftF0 pass failed; reading the bass fundamental directly.", file=sys.stderr)
+            plain = dict(profile)
+            plain.pop("octave_up", None)
+            midi, t0 = _track(detector, mono, rate, plain)
+            profile = plain
     except Exception:
-        if not profile.get("octave_up"):
+        if not profile.get("keep_low"):
             raise
-        # The low-bass trick (telling the detector the tape runs at twice the speed) is the
-        # part that fails on some songs. A plain read still draws the line.
-        print("Low-bass pitch pass failed; reading the bass in the normal range.", file=sys.stderr)
-        plain = {key: value for key, value in profile.items() if key not in ("octave_up", "sub_check", "high")}
-        midi, t0 = _track(detector, mono, rate, plain)
-        profile = plain
-    if profile.get("high"):
+        print("Pitch detector unavailable; reading the bass fundamental directly.", file=sys.stderr)
+
+    if profile.get("keep_low"):
+        low_midi, low_t0 = low_fundamental_track(mono, rate)
+        if midi is None or len(midi) < 2:
+            midi, t0 = low_midi, low_t0
+        else:
+            midi = apply_low_bass(midi, t0, low_midi, low_t0)
+    if midi is None:
+        raise RuntimeError("No pitch could be read from this stem.")
+
+    if profile.get("high") and detector is not None:
         # A second, ordinary pass for notes above the main range. The detector tends to choose
         # the wrong octave when one search range is very wide, so the range is covered in two
         # passes. The high pass only fills moments the main pass left empty, and only with
@@ -474,8 +643,12 @@ def analyze_file(path, instruments=None, profile=None):
     return result
 
 def _signature(wav_path, instruments):
-    return {"source_mtime": os.path.getmtime(wav_path),
-            "instrument_mtimes": {os.path.basename(p): os.path.getmtime(p) for p in instruments}}
+    signature = {"source_mtime": os.path.getmtime(wav_path),
+                 "instrument_mtimes": {os.path.basename(p): os.path.getmtime(p) for p in instruments}}
+    # Only the bass file is redone when the low-string reader changes. Vocals stay cached.
+    if os.path.splitext(os.path.basename(wav_path))[0] == "bass":
+        signature["bass_method"] = BASS_METHOD
+    return signature
 
 
 def load_if_fresh(wav_path, cache_path):
