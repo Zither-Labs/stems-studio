@@ -909,8 +909,13 @@ def chords_for_song(song_id, folder, audio):
     kept = []
     chart_label = ""
     if sheet.strip():
-        external, flats = chord_pass.parse_sheet(sheet)
-        kept = chord_pass.from_chart(external, runs, False, "sheet", flats)
+        sections, flats = chord_pass.parse_sections(sheet)
+        if len(sections) >= 2:
+            # Verse and chorus can repeat for as long as the bass stays on those chords.
+            kept = chord_pass.align_sections(sections, runs, flats, "sheet")
+        else:
+            external = [chord for section in sections for chord in section["chords"]]
+            kept = chord_pass.from_chart(external, runs, False, "sheet", flats)
     else:
         youtube_id, artist, title = song_chord_query(song_id)
         if title:
@@ -1762,6 +1767,7 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
                 "sheet": passed["sheet"],
                 "note": passed["note"],
                 "chord_from": passed["chord_from"],
+                "meter": result.get("meter"),
             })
             return
 

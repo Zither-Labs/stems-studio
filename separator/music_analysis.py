@@ -3,8 +3,8 @@ Key and chord detection from the separated stems.
 
 Working on separated stems is what makes this more reliable than analysing a full mix:
 
-  * the BASS stem says which note the music rests on (the bass plays roots far more often
-    than anything else), which is the best clue to the key's home note;
+  * the BASS stem says which note the music rests on. A walking bass is not a new chord on
+    every note: the downbeat and the rhythm guitar hold the chord while the bass moves;
   * the HARMONY stems (guitar, piano and the "other" stem, whatever the song has) carry the
     chords and so tell major from minor, which a vocal melody alone often cannot;
   * the VOCAL pitch track (already found for the highway) adds the melody's notes.
@@ -22,7 +22,11 @@ import os
 
 import numpy as np
 
-ANALYSIS_VERSION = 2          # 2 adds the bass-note runs the chord sheet is lined up against
+ANALYSIS_VERSION = 3          # 3 lines bass notes up to the beat, so a walking bass is not a new chord
+
+ONSET_SR = 22050
+ONSET_HOP = 512
+ONSET_FRAME = ONSET_HOP / ONSET_SR
 
 HARMONY_SR = 22050
 HARMONY_HOP = 2048
@@ -300,6 +304,187 @@ def vocal_histogram(vocal_midi, tuning):
     return np.bincount(np.round(midi).astype(int) % 12, minlength=12).astype(np.float64)
 
 
+def onset_envelope(mono):
+    """How hard each moment is hit, from a rise in loudness. Used to find the beat."""
+    frame = 1024
+    if mono is None or len(mono) < frame * 4:
+        return np.zeros(0, dtype=np.float64)
+    count = 1 + (len(mono) - frame) // ONSET_HOP
+    index = (np.arange(count) * ONSET_HOP)[:, None] + np.arange(frame)[None, :]
+    energy = np.sqrt(np.mean(mono[index] ** 2, axis=1) + 1e-12)
+    rise = np.maximum(0.0, np.diff(energy, prepend=energy[0]))
+    return np.convolve(rise, np.array([0.2, 0.6, 0.2]), mode="same")
+
+
+def estimate_groove(onset, frame_seconds=ONSET_FRAME):
+    """The tempo and the meter (3/4, 4/4, and the other common ones).
+
+    Returns None when there is no beat to hear. The downbeat is the beat that is hit harder
+    than the others in the bar.
+    """
+    onset = np.asarray(onset, dtype=np.float64)
+    if len(onset) < 32 or float(np.max(onset)) <= 0:
+        return None
+    onset = np.maximum(0.0, onset)
+    onset = onset / (float(onset.max()) + 1e-9)
+    size = 1 << int(np.ceil(np.log2(len(onset) * 2)))
+    correlation = np.fft.irfft(np.abs(np.fft.rfft(onset - onset.mean(), size)) ** 2)[:len(onset)]
+    min_lag = max(2, int(round(60 / 180 / frame_seconds)))
+    max_lag = min(len(correlation) - 2, int(round(60 / 55 / frame_seconds)))
+    if max_lag <= min_lag + 2:
+        return None
+    lag_score = correlation[min_lag:max_lag + 1]
+    peak = min_lag + int(np.argmax(lag_score))
+    candidates = set()
+    for lag in (peak, peak // 2, peak * 2, int(round(peak / 1.5)), int(round(peak * 1.5))):
+        if min_lag <= lag <= max_lag:
+            candidates.add(int(lag))
+    top = float(lag_score.max())
+    for i in range(1, len(lag_score) - 1):
+        if lag_score[i] >= lag_score[i - 1] and lag_score[i] > lag_score[i + 1] and lag_score[i] > 0.45 * top:
+            candidates.add(min_lag + i)
+
+    best = None
+    for lag in candidates:
+        for meter in (2, 3, 4, 5, 6):
+            bar = lag * meter
+            if bar < 4 or bar > len(onset) // 3:
+                continue
+            for phase in range(bar):
+                levels = []
+                for beat in range(meter):
+                    idx = np.arange(phase + beat * lag, len(onset), bar)
+                    idx = idx[idx < len(onset)]
+                    if len(idx) < 4:
+                        levels = []
+                        break
+                    levels.append(float(onset[idx].mean()))
+                if len(levels) < meter:
+                    continue
+                down, other = levels[0], float(np.mean(levels[1:]))
+                # Every beat in the bar has to land on a hit. A lag that falls
+                # between the notes is not the pulse, even if the downbeat looks loud.
+                if min(levels) < 0.35 * max(levels):
+                    continue
+                score = down - 0.75 * other
+                if meter == 4:
+                    score += 0.02
+                elif meter == 3:
+                    score += 0.015
+                if best is None or score > best[0]:
+                    best = (score, lag, meter, phase, down, other)
+    if best is None or best[4] <= best[5] * 1.08:
+        return None
+    _, lag, meter, phase, _, _ = best
+    beat_seconds = lag * frame_seconds
+    return {
+        "bpm": round(60.0 / beat_seconds, 1),
+        "beats_per_bar": int(meter),
+        "beat_seconds": round(beat_seconds, 4),
+        "phase_seconds": round(phase * frame_seconds, 4),
+    }
+
+
+def harmony_root(profile):
+    """The chord the rhythm guitar is holding, or None when the bar is too muddy to call."""
+    if profile is None:
+        return None
+    profile = np.asarray(profile, dtype=np.float64)
+    if profile.sum() <= 0:
+        return None
+    profile = profile / profile.sum()
+    ranked = []
+    for root in range(12):
+        for quality in ("", "m"):
+            intervals, weights, _penalty = CHORD_SHAPES[quality]
+            score = 0.0
+            covered = 0.0
+            for interval, weight in zip(intervals, weights):
+                heard = float(profile[(root + interval) % 12])
+                score += heard * weight
+                covered += heard
+            score -= 0.45 * (1.0 - covered)
+            ranked.append((score, root))
+    ranked.sort(reverse=True)
+    if ranked[0][0] - ranked[1][0] < 0.015:
+        return None
+    return ranked[0][1]
+
+
+def _chroma_span(chroma, start, end):
+    if chroma is None or len(chroma) == 0:
+        return None
+    first = max(0, min(len(chroma) - 1, int(round(start / FRAME_SECONDS))))
+    last = max(first + 1, min(len(chroma), int(round(end / FRAME_SECONDS))))
+    total = np.asarray(chroma[first:last], dtype=np.float64).sum(axis=0)
+    if float(total.sum()) <= 0:
+        return None
+    return total
+
+
+def root_for_span(bass, harmony, start, end, beat, meter):
+    """One bar's root. A clear rhythm-guitar chord wins over a bass line that walks around it."""
+    guessed = harmony_root(_chroma_span(harmony, start, end))
+    if guessed is not None:
+        return int(guessed)
+    weight = np.zeros(12, dtype=np.float64)
+    for beat_index in range(meter):
+        beat_at = start + beat_index * beat
+        beat_end = min(end, beat_at + beat)
+        if beat_index == 0:
+            beat_at = max(0.0, beat_at - beat / 3.0)
+        piece = _chroma_span(bass, beat_at, beat_end)
+        if piece is None:
+            continue
+        accent = 3.0 if beat_index == 0 else 2.0 if meter % 2 == 0 and beat_index == meter // 2 else 1.0
+        weight += accent * piece
+    if float(weight.sum()) <= 0:
+        return None
+    return int(np.argmax(weight))
+
+
+def _beat_groups(meter):
+    """4/4 can change chord halfway through the bar. A waltz usually holds the bar."""
+    if meter == 4:
+        return [(0, 2), (2, 4)]
+    if meter == 6:
+        return [(0, 3), (3, 6)]
+    if meter == 2:
+        return [(0, 1), (1, 2)]
+    return [(0, meter)]
+
+
+def bars_as_runs(bass_chroma, harmony_chroma, groove):
+    """Roots on the bar, or on each half of a 4/4 bar. Notes between the beats are not roots."""
+    beat = float(groove["beat_seconds"])
+    meter = int(groove["beats_per_bar"])
+    bar = beat * meter
+    if beat <= 0 or bar <= 0:
+        return []
+    frames = max(len(bass_chroma) if bass_chroma is not None else 0,
+                 len(harmony_chroma) if harmony_chroma is not None else 0)
+    if frames == 0:
+        return []
+    duration = frames * FRAME_SECONDS
+    t = float(groove["phase_seconds"]) % bar
+    runs = []
+    while t < duration - beat * 0.45:
+        for beat_from, beat_to in _beat_groups(meter):
+            start = t + beat_from * beat
+            end = min(duration, t + beat_to * beat)
+            if start >= duration - beat * 0.25 or end - start < beat * 0.45:
+                continue
+            root = root_for_span(bass_chroma, harmony_chroma, start, end, beat, beat_to - beat_from)
+            if root is None:
+                continue
+            if runs and runs[-1]["root"] == root and start - runs[-1]["end"] < 0.2:
+                runs[-1]["end"] = round(end, 3)
+            else:
+                runs.append({"start": round(start, 3), "end": round(end, 3), "root": int(root)})
+        t += bar
+    return runs
+
+
 def bass_root_runs(bass_chroma):
     """Stretches where the bass holds one note. Quiet moments are left out."""
     if bass_chroma is None or len(bass_chroma) == 0:
@@ -357,13 +542,38 @@ def analyze_song(song_dir, vocal_midi=None):
         bass_for_chords = bass_chroma if bass_chroma is not None else np.zeros_like(harmony_chroma)
         chords = detect_chords(harmony_chroma, bass_for_chords, key)
 
+    # The rhythm guitar holds the chord. A lead guitar line jumps around the way a bass can,
+    # so it does not get to decide the bar.
+    rhythm_names = ["guitar_rhythm", "piano", "other"]
+    if stem("guitar_rhythm") is None:
+        rhythm_names.insert(0, "guitar")
+    rhythm_paths = [p for p in (stem(name) for name in rhythm_names) if p]
+    rhythm_chroma = harmony_chroma
+    if rhythm_paths and rhythm_paths != harmony_paths:
+        rhythm_mag = spectrogram(_sum_stems(rhythm_paths, HARMONY_SR), N_FFT, HARMONY_HOP)
+        rhythm_chroma = chromagram(rhythm_mag, HARMONY_SR, 110.0, 2000.0, tuning)
+
+    onset = None
+    pulse = stem("drums") or (rhythm_paths[0] if rhythm_paths else bass_path)
+    if pulse:
+        onset = onset_envelope(read_mono(pulse, ONSET_SR))
+    groove = estimate_groove(onset) if onset is not None and len(onset) else None
+    if groove is not None:
+        runs = bars_as_runs(bass_chroma, rhythm_chroma, groove)
+        if len(runs) < 2:
+            runs = bass_root_runs(bass_chroma)
+            groove = None
+    else:
+        runs = bass_root_runs(bass_chroma)
+
     return {
         "version": ANALYSIS_VERSION,
         "tuning_cents": round(tuning * 100),
         "sources": {"harmony": bool(harmony_paths), "bass": bool(bass_path), "vocal": vocal_midi is not None},
         "key": key,
         "chords": chords,
-        "bass_runs": bass_root_runs(bass_chroma),
+        "bass_runs": runs,
+        "meter": groove,
     }
 
 
