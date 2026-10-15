@@ -1,26 +1,44 @@
 @echo off
 setlocal
-title Update Stems Studio
+REM Run from a copy, so replacing this file mid-update cannot confuse the rest of the steps.
+if /I not "%~1"=="--go" (
+  copy /Y "%~f0" "%TEMP%\Update-Stems-Studio.bat" >nul
+  if errorlevel 1 goto run_here
+  "%TEMP%\Update-Stems-Studio.bat" --go "%~dp0"
+  exit /b
+)
+cd /d "%~2"
+goto start
+
+:run_here
 cd /d "%~dp0"
 
-REM The new window lives on this branch until it is part of the normal copy.
-set "BRANCH=cursor/compact-layout-dac8"
-set "PY=%~dp0.venv\Scripts\pythonw.exe"
-if not exist "%PY%" set "PY=%~dp0.venv\Scripts\python.exe"
+:start
+title Update Stems Studio
+
+REM Every update follows the main copy, not a one-off branch.
+set "BRANCH=main"
+set "PY=%CD%\.venv\Scripts\pythonw.exe"
+if not exist "%PY%" set "PY=%CD%\.venv\Scripts\python.exe"
 
 echo Closing Stems Studio if it is open...
-powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0tools\close-stems-studio.ps1" -Root "%~dp0"
+powershell -NoProfile -ExecutionPolicy Bypass -File "%CD%\tools\close-stems-studio.ps1" -Root "%CD%"
 
 echo.
 echo Getting the newest Stems Studio...
 where git >nul 2>nul
 if errorlevel 1 goto fail_git
-if not exist "%~dp0.git" goto fail_git
+if not exist "%CD%\.git" goto fail_git
 
 git fetch origin
 if errorlevel 1 goto fail_fetch
 
-git checkout -B %BRANCH% origin/%BRANCH%
+git rev-parse --verify %BRANCH% >nul 2>nul
+if errorlevel 1 (
+  git checkout -b %BRANCH% origin/%BRANCH%
+) else (
+  git checkout %BRANCH%
+)
 if errorlevel 1 goto fail_gitwork
 
 git pull --ff-only origin %BRANCH%
@@ -30,12 +48,12 @@ if not exist "%PY%" goto fail_python
 
 echo.
 echo Putting "Update Stems Studio" on the Desktop...
-powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0tools\make-shortcut.ps1" -Target "%PY%" -Script "%~dp0app.py"
-if errorlevel 1 echo   (The shortcut could not be created. The app will still open.)
+powershell -NoProfile -ExecutionPolicy Bypass -File "%CD%\tools\make-shortcut.ps1" -Target "%PY%" -Script "%CD%\app.py"
+if errorlevel 1 echo   ^(The shortcut could not be created. The app will still open.^)
 
 echo.
 echo Opening Stems Studio...
-start "" "%PY%" "%~dp0app.py"
+start "" "%PY%" "%CD%\app.py"
 exit /b 0
 
 :fail_git
