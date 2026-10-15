@@ -112,6 +112,20 @@ if [ ! -x "$ROOT/.venv-roformer/bin/audio-separator" ]; then
                    || echo "  (Could not install it. The app still works without it.)" ;;
     esac
 fi
+
+# More chord guessers (optional): Chordino, madmom, autochord and BTC, in their own folders
+# (.venv-chords and .chord-tools). The app's own chord guess works without them.
+if ! "$VENV_PY" "$ROOT/tools/install_chord_guessers.py" --all-ready >/dev/null 2>&1; then
+    echo
+    echo "Optional: 'more chord guessers' adds Chordino, madmom, autochord and BTC next to the"
+    echo "app's own chord guess, so you can compare them. It adds about 1.5 GB."
+    echo "Any that are already installed are kept."
+    read -r -p "Install them now? [y/N] " ANSWER
+    case "$ANSWER" in
+        [yY]*) "$VENV_PY" "$ROOT/tools/install_chord_guessers.py" \
+                   || echo "  (Some could not be installed. The app still works; the menu marks them.)" ;;
+    esac
+fi
 # --- Step 4: launcher --------------------------------------------------------
 echo "Step 4 of 4: creating the Stems Studio launcher..."
 if [ "$OS" = "Darwin" ]; then

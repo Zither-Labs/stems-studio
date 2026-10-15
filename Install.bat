@@ -77,15 +77,27 @@ echo Installing the extras (pitch detector, key finder, lyrics)...
 if errorlevel 1 echo   (Could not install it. The app still works; some features will be simpler or switched off.)
 
 :roformer_parts
-if exist "%~dp0.venv-roformer\Lib\site-packages\audio_separator" goto make_shortcut
+if exist "%~dp0.venv-roformer\Lib\site-packages\audio_separator" goto chord_parts
 echo.
 echo Optional: "cleaner vocals" makes the vocal stem with a better model, so less
 echo guitar leaks into it. It adds a few hundred MB now and a 600 MB model the first
 echo time you use it.
 choice /c YN /n /m "Install it now? [Y/N] "
-if errorlevel 2 goto make_shortcut
+if errorlevel 2 goto chord_parts
 "%PY%" "%~dp0tools\install_roformer.py"
 if errorlevel 1 echo   (Could not install it. The app still works without it.)
+
+:chord_parts
+"%PY%" "%~dp0tools\install_chord_guessers.py" --all-ready >nul 2>nul
+if not errorlevel 1 goto make_shortcut
+echo.
+echo Optional: "more chord guessers" adds Chordino, madmom, autochord and BTC next to
+echo the app's own chord guess, so you can compare them. It adds about 1.5 GB.
+echo Any that are already installed are kept.
+choice /c YN /n /m "Install them now? [Y/N] "
+if errorlevel 2 goto make_shortcut
+"%PY%" "%~dp0tools\install_chord_guessers.py"
+if errorlevel 1 echo   (Some could not be installed. The app still works; the menu marks them.)
 
 :make_shortcut
 echo Step 4 of 4: creating the Desktop shortcuts...

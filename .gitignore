@@ -29,3 +29,4 @@ separated_output/
 
 .venv-roformer/
 .venv-*/
+.chord-tools/

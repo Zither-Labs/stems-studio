@@ -1,0 +1,5 @@
+# Extra packages for the chord guessers (madmom, autochord, BTC). They go into their own folder
+# (.venv-chords), never into the main environment. tools/install_chord_guessers.py installs them,
+# together with TensorFlow for autochord and madmom itself.
+librosa>=0.10
+pyyaml
