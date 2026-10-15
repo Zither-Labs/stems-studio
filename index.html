@@ -357,8 +357,9 @@
     </div>
   </section>
 
-  <!-- Lyrics on the left, vocal training, master and export on the right. -->
-  <div class="lyrics-and-tools">
+  <!-- Left column: lyrics, then the stems. Right column: vocal training, master and export. -->
+  <div class="studio-columns">
+  <div class="studio-left">
   <section class="lyrics-panel" id="lyricsPanel" aria-label="Lyrics" hidden>
     <div class="lyrics-head">
       <span class="lyrics-heading">Lyrics</span>
@@ -380,6 +381,13 @@
     </form>
     <div class="lyrics-stage" id="lyricsStage" aria-live="off"></div>
   </section>
+
+  <main class="studio-main">
+    <section class="tracks-rack" id="tracksRack" aria-label="Audio Stems Mixer Rack">
+      <!-- Generated via studio-app.js -->
+    </section>
+  </main>
+  </div>
 
   <aside class="studio-sidebar" aria-label="Vocal Training and Controls">
       
@@ -487,13 +495,6 @@
     </aside>
   </div>
 
-  <!-- Studio Main Workstation Grid -->
-  <main class="studio-main">
-    <section class="tracks-rack" id="tracksRack" aria-label="Audio Stems Mixer Rack">
-      <!-- Generated via studio-app.js -->
-    </section>
-  </main>
-
   <!-- Stem Files Dropzone Modal -->
   <div class="modal-backdrop" id="dropzoneModal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
     <div class="modal-window">
@@ -556,7 +557,7 @@
         <p>When the words have timing, you see four lines: the one just sung, the line being sung, and the next two. The current line fills in as it is sung. Click a line to jump to it. If the words are a little early or late, use <strong>−0.5s</strong> and <strong>+0.5s</strong>. Words without timing stay as a scrolling list. <strong>Find lyrics</strong> searches by artist and title.</p>
 
         <h3>Vocal training, master, and export</h3>
-        <p>The panels beside the lyrics record your voice: Analyze, Mic, the level meter, monitor, Record, Stop, the timer, clear, and download, plus Target, You, and Accuracy. <strong>Original</strong>, <strong>Mine</strong>, and <strong>Both</strong> choose what you hear. <strong>Master</strong> is the overall left and right level and the overall volume. <strong>Export</strong> writes a wav of the full mix, a karaoke mix, or the vocals, and can use only the loop region.</p>
+        <p>The column on the right records your voice: Analyze, Mic, the level meter, monitor, Record, Stop, the timer, clear, and download, plus Target, You, and Accuracy. <strong>Original</strong>, <strong>Mine</strong>, and <strong>Both</strong> choose what you hear. <strong>Master</strong> is the overall left and right level and the overall volume. <strong>Export</strong> writes a wav of the full mix, a karaoke mix, or the vocals, and can use only the loop region.</p>
 
         <h3>Where the songs live</h3>
         <p>Library shows the folder the songs are in. <strong>Change folder</strong> points the app at another one, for example a drive that already has your songs, and remembers it. A song whose files cannot be opened stays in the list.</p>

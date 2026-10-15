@@ -752,8 +752,8 @@ body::before {
 
 .vocal-highway {
   position: relative;
-  /* Tall enough that about three octaves still leave the note names readable. */
-  height: 560px;
+  /* Between the short lane and the tall one: three octaves, with the note names still readable. */
+  height: 410px;
   margin-bottom: 0.5rem;
   background: #090b10;
   border: 1px solid var(--border-subtle);
@@ -969,27 +969,27 @@ body::before {
 }
 
 /* --- Karaoke lyrics --- */
-.lyrics-and-tools {
+.studio-columns {
   max-width: 1600px;
   margin: 0 auto;
-  padding: 0.6rem 1rem 0;
-  display: flex;
-  align-items: flex-start;
+  padding: 0.6rem 1rem 1rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) clamp(250px, 24vw, 320px);
   gap: 1rem;
+  align-items: start;
 }
 
-.lyrics-and-tools .lyrics-panel {
-  flex: 1 1 auto;
+.studio-left {
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.studio-columns .lyrics-panel {
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
   padding: 0.5rem 0.85rem 0.75rem;
-}
-
-.lyrics-and-tools .studio-sidebar {
-  flex: 0 0 clamp(250px, 24vw, 320px);
-  width: clamp(250px, 24vw, 320px);
-  margin-left: auto;
 }
 
 .lyrics-panel {
@@ -1188,23 +1188,16 @@ body::before {
    ========================================================================== */
 
 .studio-main {
-  max-width: 1600px;
-  margin: 0 auto;
-  padding: 0.75rem 1rem 1rem;
-  display: block;
+  min-width: 0;
+  padding: 0;
 }
 
 @media (max-width: 760px) {
   .vocal-highway {
-    height: 380px;
+    height: 320px;
   }
-  .lyrics-and-tools {
-    flex-direction: column;
-  }
-  .lyrics-and-tools .lyrics-panel,
-  .lyrics-and-tools .studio-sidebar {
-    width: 100%;
-    flex-basis: auto;
+  .studio-columns {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
