@@ -22,7 +22,7 @@ import os
 
 import numpy as np
 
-ANALYSIS_VERSION = 1
+ANALYSIS_VERSION = 2          # 2 adds the bass-note runs the chord sheet is lined up against
 
 HARMONY_SR = 22050
 HARMONY_HOP = 2048
@@ -300,6 +300,30 @@ def vocal_histogram(vocal_midi, tuning):
     return np.bincount(np.round(midi).astype(int) % 12, minlength=12).astype(np.float64)
 
 
+def bass_root_runs(bass_chroma):
+    """Stretches where the bass holds one note. Quiet moments are left out."""
+    if bass_chroma is None or len(bass_chroma) == 0:
+        return []
+    energy = bass_chroma.sum(axis=1)
+    loud = energy[energy > 0]
+    floor = float(0.2 * np.median(loud)) if len(loud) else 0.0
+    roots = np.argmax(bass_chroma, axis=1)
+    runs = []
+    for i, root in enumerate(roots):
+        pc = int(root) if energy[i] >= floor else None
+        start = round(i * FRAME_SECONDS, 3)
+        end = round((i + 1) * FRAME_SECONDS, 3)
+        if runs and runs[-1]["root"] == pc:
+            runs[-1]["end"] = end
+        else:
+            runs.append({"start": start, "end": end, "root": pc})
+    return [
+        {"start": run["start"], "end": run["end"], "root": int(run["root"])}
+        for run in runs
+        if run["root"] is not None and run["end"] - run["start"] >= 0.35
+    ]
+
+
 def analyze_song(song_dir, vocal_midi=None):
     """Find the key and chords of a separated song. Returns a JSON-ready dict."""
     def stem(name):
@@ -339,6 +363,7 @@ def analyze_song(song_dir, vocal_midi=None):
         "sources": {"harmony": bool(harmony_paths), "bass": bool(bass_path), "vocal": vocal_midi is not None},
         "key": key,
         "chords": chords,
+        "bass_runs": bass_root_runs(bass_chroma),
     }
 
 

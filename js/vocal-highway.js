@@ -137,7 +137,7 @@ class VocalHighway {
     this.detected = null;      // { tonic, mode, name, flats, certainty, relative, alternatives }
     this.key = null;           // { tonic, mode, flats, manual }
     this.chords = [];          // [{ start, end, root, quality, name }]
-    this.showChords = false;   // the chord ribbon stays off; the guesses are still computed but not shown
+    this.showChords = false;   // turned on only when a chord survived the bass check
     this.analysisUrl = null;   // set by the app: where the engine keeps this song's key and chords
     this.keyRequestId = 0;
     this.tuningCents = 0;
@@ -620,6 +620,51 @@ class VocalHighway {
       els.chords.checked = false;
       this.showChords = false;
     }
+    const sheetBtn = bar.querySelector('#chordSheetBtn');
+    const sheetPanel = bar.querySelector('#chordSheetPanel');
+    const sheetSave = bar.querySelector('#chordSheetSave');
+    const sheetClear = bar.querySelector('#chordSheetClear');
+    const sheetBox = bar.querySelector('#chordSheetText');
+    const sheetStatus = bar.querySelector('#chordSheetStatus');
+    if (sheetBtn && sheetPanel) {
+      const placeSheet = () => {
+        const rect = sheetBtn.getBoundingClientRect();
+        sheetPanel.style.top = `${Math.round(rect.bottom + 6)}px`;
+        sheetPanel.style.left = `${Math.round(Math.min(rect.left, window.innerWidth - 336))}px`;
+      };
+      sheetBtn.addEventListener('click', () => {
+        sheetPanel.hidden = !sheetPanel.hidden;
+        if (!sheetPanel.hidden) placeSheet();
+      });
+      window.addEventListener('resize', () => {
+        if (!sheetPanel.hidden) placeSheet();
+      });
+      const sendSheet = async (text) => {
+        const songId = this.songInfo && this.songInfo.songId;
+        if (!songId) {
+          if (sheetStatus) sheetStatus.textContent = 'Open a song first.';
+          return;
+        }
+        if (sheetStatus) sheetStatus.textContent = 'Checking the sheet against the bass...';
+        try {
+          const resp = await fetch(`/api/analysis/${songId}/sheet`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sheet: text })
+          });
+          const data = await resp.json().catch(() => ({}));
+          if (!resp.ok) throw new Error(data.error || 'Could not save that sheet.');
+          this.analysisUrl = `/api/analysis/${songId}`;
+        } catch (err) {
+          if (sheetStatus) sheetStatus.textContent = err.message || 'Could not save that sheet.';
+        }
+      };
+      if (sheetSave) sheetSave.addEventListener('click', () => sendSheet(sheetBox ? sheetBox.value : ''));
+      if (sheetClear) sheetClear.addEventListener('click', () => {
+        if (sheetBox) sheetBox.value = '';
+        sendSheet('');
+      });
+    }
     this.refreshBar();
   }
 
@@ -640,6 +685,7 @@ class VocalHighway {
     this.detected = null;
     this.key = null;
     this.chords = [];
+    this.showChords = false;
     this.applyKeyRange();
     this.refreshBar();
     this.lastKey = '';
@@ -656,7 +702,14 @@ class VocalHighway {
       if (id !== this.keyRequestId) return;
       this.detected = data.key || null;
       this.chords = Array.isArray(data.chords) ? data.chords : [];
+      this.showChords = this.chords.length > 0;
       this.tuningCents = data.tuning_cents || 0;
+      const sheetBox = document.getElementById('chordSheetText');
+      const sheetStatus = document.getElementById('chordSheetStatus');
+      if (sheetStatus && data.note) sheetStatus.textContent = data.note;
+      if (sheetBox && document.activeElement !== sheetBox && typeof data.sheet === 'string') {
+        sheetBox.value = data.sheet;
+      }
       if (this.detected) this.setKey(this.detected, false);
       else this.refreshBar();
     } catch (err) {
@@ -901,10 +954,10 @@ class VocalHighway {
     return this.showChords && this.chordsNow.length ? this.chordBarHeight : 0;
   }
 
-  // The chord ribbon follows what is on show: the song's chords, or the ones this stem's notes make.
+  // Chord names that survived the bass check. The piano roll's own guesses stay off this ribbon.
   get chordsNow() {
     if (this.kind === 'drums') return [];
-    return this.kind === 'notes' ? this.rollChords : this.chords;
+    return this.chords;
   }
 
   midiToY(midi) {

@@ -525,6 +525,42 @@ body::before {
   display: none;
 }
 
+.chord-sheet-wrap {
+  position: relative;
+}
+
+.chord-sheet-panel {
+  position: fixed;
+  right: auto;
+  width: 320px;
+  z-index: 80;
+}
+
+.chord-sheet-hint,
+.chord-sheet-status {
+  margin: 0 0 0.55rem;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+.chord-sheet-status:empty {
+  display: none;
+}
+
+#chordSheetText {
+  width: 100%;
+  min-height: 4.5rem;
+  margin-bottom: 0.55rem;
+  padding: 0.4rem 0.5rem;
+  resize: vertical;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface-2);
+  color: var(--text-primary);
+  font: inherit;
+}
+
 .key-fit-title {
   font-size: 0.8rem;
   font-weight: 700;

@@ -279,6 +279,19 @@
           <option value="minor">minor</option>
         </select>
         <button type="button" class="preset-chip" id="highwayKeyReset" title="Go back to the key the app found" hidden>Use detected key</button>
+        <span class="chord-sheet-wrap">
+          <button type="button" class="preset-chip" id="chordSheetBtn" title="Paste the chords in order. The app slides them to the key the bass is playing.">Chord sheet</button>
+          <div class="key-fit-panel chord-sheet-panel" id="chordSheetPanel" hidden>
+            <div class="key-fit-title">Chord sheet</div>
+            <p class="chord-sheet-hint">Paste the chords in the order they happen, like G D Em C. The app moves them to the key the bass is playing, and only keeps a chord when the bass agrees.</p>
+            <textarea id="chordSheetText" rows="4" spellcheck="false" placeholder="G  D  Em  C"></textarea>
+            <div class="key-fit-actions">
+              <button type="button" class="preset-chip" id="chordSheetSave">Use this sheet</button>
+              <button type="button" class="preset-chip" id="chordSheetClear">Clear</button>
+            </div>
+            <p class="chord-sheet-status" id="chordSheetStatus"></p>
+          </div>
+        </span>
       </div>
       <canvas id="vocalHighwayCanvas" title="Pitch highway. Click to jump to that moment."></canvas>
     </div>
@@ -521,7 +534,7 @@
         <p><strong>Reset</strong> puts every stem volume back to the middle, clears mute and solo, and turns those switches off.</p>
 
         <h3>The highway and Sing along</h3>
-        <p>The picture above the seek bar shows the notes coming toward a line that means now. Click it to jump there. <strong>Sing along</strong> stays under that picture. It uses your microphone, with Level, a guide tone, and Mic timing if your voice looks a little early or late.</p>
+        <p>The picture above the seek bar shows the notes coming toward a line that means now. Click it to jump there. A chord line appears along the top only when a chord sheet (or a chart looked up for this recording) agrees with the bass. <strong>Chord sheet</strong> is where you paste chords in order, like G D Em C. <strong>Sing along</strong> stays under that picture. It uses your microphone, with Level, a guide tone, and Mic timing if your voice looks a little early or late.</p>
 
         <h3>Lyrics</h3>
         <p>When the words have timing, you see four lines: the one just sung, the line being sung, and the next two. The current line fills in as it is sung. Click a line to jump to it. If the words are a little early or late, use <strong>−0.5s</strong> and <strong>+0.5s</strong>. Words without timing stay as a scrolling list. <strong>Find lyrics</strong> searches by artist and title.</p>

@@ -780,6 +780,115 @@ def load_song_lyrics(song_id):
     return payload
 
 
+CHORD_SHEET_NAME = "chord-sheet.txt"
+KARALYR_CACHE_NAME = "karalyr-chords.json"
+
+
+def song_chord_query(song_id):
+    """YouTube id and artist/title, for looking the song up on Karalyr."""
+    youtube_id = None
+    try:
+        with library_db() as conn:
+            row = conn.execute(
+                "SELECT content_key, source_label FROM songs WHERE id = ?", (song_id,)
+            ).fetchone()
+        if row:
+            key = row["content_key"] or ""
+            rest = key[3:] if key.startswith("yt:") else ""
+            if re.fullmatch(r"[A-Za-z0-9_-]{11}", rest):
+                youtube_id = rest
+            if not youtube_id and row["source_label"]:
+                match = YOUTUBE_ID_RE.search(row["source_label"])
+                if match:
+                    youtube_id = match.group(1)
+    except sqlite3.Error:
+        pass
+    artist = title = None
+    try:
+        with open(os.path.join(song_dir(song_id), "meta.json"), "r", encoding="utf-8") as handle:
+            meta = json.load(handle)
+        artist = str(meta.get("artist") or "").strip() or None
+        title = str(meta.get("title") or "").strip() or None
+    except (OSError, ValueError):
+        pass
+    return youtube_id, artist, title
+
+
+def load_chord_sheet(folder):
+    try:
+        with open(os.path.join(folder, CHORD_SHEET_NAME), "r", encoding="utf-8") as handle:
+            return handle.read()
+    except OSError:
+        return ""
+
+
+def save_chord_sheet(folder, text):
+    path = os.path.join(folder, CHORD_SHEET_NAME)
+    text = (text or "").strip()
+    if not text:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+        return
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as handle:
+        handle.write(text + "\n")
+    os.replace(tmp, path)
+
+
+def cached_karalyr(folder, youtube_id, artist, title):
+    """Karalyr's timed chords, remembered with the song so the lookup happens once."""
+    path = os.path.join(folder, KARALYR_CACHE_NAME)
+    identity = {"youtube_id": youtube_id or "", "artist": artist or "", "title": title or ""}
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            saved = json.load(handle)
+        if all(saved.get(key) == value for key, value in identity.items()):
+            return saved.get("chords") or []
+    except (OSError, ValueError):
+        pass
+    chords = separator_module("chord_pass").fetch_karalyr(youtube_id, artist, title)
+    write_json_file(path, {**identity, "chords": chords})
+    return chords
+
+
+def chords_for_song(song_id, folder, audio):
+    """First pass is a chord sheet (or Karalyr). Second pass is the app, kept only when the bass agrees."""
+    chord_pass = separator_module("chord_pass")
+    sheet = load_chord_sheet(folder)
+    runs = audio.get("bass_runs") or []
+    app_chords = audio.get("chords") or []
+    key = audio.get("key") or {}
+    try:
+        key_flats = bool(key) and separator_module("music_analysis").uses_flats(
+            int(key.get("tonic") or 0), key.get("mode") or "major")
+    except (TypeError, ValueError):
+        key_flats = False
+
+    external, timed, source, flats = [], False, "sheet", key_flats
+    if sheet.strip():
+        external, flats = chord_pass.parse_sheet(sheet)
+    else:
+        youtube_id, artist, title = song_chord_query(song_id)
+        if youtube_id or (artist and title):
+            try:
+                external = cached_karalyr(folder, youtube_id, artist, title)
+            except Exception:
+                traceback.print_exc()
+                external = []
+            timed, source = True, "karalyr"
+    chords = chord_pass.combine(external, app_chords, runs, timed, source, flats)
+    sheet_used = any(chord.get("source") == "sheet" for chord in chords)
+    karalyr_used = any(chord.get("source") == "karalyr" for chord in chords)
+    return {
+        "chords": chords,
+        "sheet": sheet,
+        "note": chord_pass.explain(sheet, sheet_used, karalyr_used, len(chords)),
+        "chord_from": "sheet" if sheet_used else "karalyr" if karalyr_used else "bass" if chords else None,
+    }
+
+
 _device_info_cache = None
 _device_info_lock = threading.Lock()
 
@@ -1590,7 +1699,16 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
                     except ImportError:
                         pass
                 result = music_analysis.cached_analysis(folder, os.path.join(folder, "analysis.json"), vocal_midi)
-            self.send_json({k: result[k] for k in ("key", "chords", "tuning_cents", "sources")})
+            passed = chords_for_song(song_id, folder, result)
+            self.send_json({
+                "key": result.get("key"),
+                "chords": passed["chords"],
+                "tuning_cents": result.get("tuning_cents"),
+                "sources": result.get("sources"),
+                "sheet": passed["sheet"],
+                "note": passed["note"],
+                "chord_from": passed["chord_from"],
+            })
             return
 
         elif parsed.path.startswith("/api/lyrics/"):
@@ -1653,6 +1771,29 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
                 LIFECYCLE.closing()
             self.send_response(204)
             self.end_headers()
+            return
+
+        if parsed.path.startswith("/api/analysis/") and parsed.path.endswith("/sheet"):
+            if not self.local_request():
+                self.send_json({"error": "Not allowed"}, 403)
+                return
+            parts = [part for part in parsed.path.split("/") if part]
+            song_id = parts[2] if len(parts) > 2 else ""
+            folder = song_dir(song_id)
+            if not SONG_ID_RE.match(song_id) or not os.path.isdir(folder):
+                self.send_json({"error": "Song not found"}, 404)
+                return
+            try:
+                data = self.read_json_body()
+            except (ValueError, UnicodeError):
+                self.send_json({"error": "Could not read that."}, 400)
+                return
+            text = str(data.get("sheet") or "")
+            if len(text) > 8000:
+                self.send_json({"error": "That sheet is too long."}, 400)
+                return
+            save_chord_sheet(folder, text)
+            self.send_json({"ok": True})
             return
 
         if parsed.path in ("/api/update/check", "/api/update/apply"):
