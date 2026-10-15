@@ -6,8 +6,8 @@
     autochord  autochord (Bayron): NNLS chroma into a bi-LSTM-CRF.
     btc        BTC (Park et al.): a bi-directional transformer over a constant-Q spectrum.
 
-The four outside guessers are optional. tools/install_chord_guessers.py puts them in .venv-chords
-and .chord-tools, and chord_guess_run.py runs them there. Each one hears the song without the
+The four outside guessers are optional. tools/install_chord_guessers.py puts them in .chord-tools,
+and chord_guess_run.py runs them with the app's own Python, each as a process of its own. Each one hears the song without the
 vocal and the drums (bass, guitar, piano and other added together), and its answer is kept with
 the song in chords-<engine>.json, so a song is only read once per guesser.
 """
@@ -24,7 +24,6 @@ import numpy as np
 import chord_guess_run
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-VENV = os.path.join(ROOT, ".venv-chords")
 TOOLS = os.path.join(ROOT, ".chord-tools")
 STATUS = os.path.join(TOOLS, "installed.json")
 RUNNER = os.path.join(ROOT, "separator", "chord_guess_run.py")
@@ -57,10 +56,6 @@ DEGREE = {"1": 0, "b2": 1, "2": 2, "b3": 3, "3": 4, "4": 5, "#4": 6, "b5": 6, "5
 _NOTE = re.compile(r"^([A-Ga-g])([#b]*)")
 
 
-def venv_python():
-    return os.path.join(VENV, "Scripts", "python.exe") if os.name == "nt" else os.path.join(VENV, "bin", "python")
-
-
 def _status():
     try:
         with open(STATUS, "r", encoding="utf-8") as handle:
@@ -74,9 +69,9 @@ def ready(engine):
         return True
     if not _status().get(engine, {}).get("ok"):
         return False
-    if engine in ("chordino", "autochord") and not chord_guess_run.chordino_ready(TOOLS):
-        return False
-    return engine == "chordino" or os.path.isfile(venv_python())
+    if engine in ("chordino", "autochord"):
+        return chord_guess_run.chordino_ready(TOOLS)
+    return os.path.isdir(os.path.join(TOOLS, "python", "madmom" if engine == "madmom" else "yaml"))
 
 
 def listing():
@@ -219,14 +214,10 @@ def load_if_fresh(folder, engine):
 
 
 def _run(engine, wav, out, progress):
-    if engine == "chordino":
-        # Chordino is a program of its own, so it does not need the chord-guesser environment.
-        command = [sys.executable, RUNNER, engine, TOOLS, wav, out]
-        if os.name == "nt" and os.path.basename(sys.executable).lower() == "pythonw.exe":
-            command[0] = os.path.join(os.path.dirname(sys.executable), "python.exe")
-    else:
-        command = [venv_python(), RUNNER, engine, TOOLS, wav, out]
-    env = {**os.environ, "PYTHONUNBUFFERED": "1", "TF_CPP_MIN_LOG_LEVEL": "2"}
+    command = [sys.executable, RUNNER, engine, TOOLS, wav, out]
+    if os.name == "nt" and os.path.basename(sys.executable).lower() == "pythonw.exe":
+        command[0] = os.path.join(os.path.dirname(sys.executable), "python.exe")
+    env = {**os.environ, "PYTHONUNBUFFERED": "1"}
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
                                encoding="utf-8", errors="replace", env=env, **NO_WINDOW)
     errors = []
