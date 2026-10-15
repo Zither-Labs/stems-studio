@@ -22,6 +22,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const lyricsPanelEl = document.getElementById('lyricsPanel');
   if (lyricsPanelEl && typeof LyricsPanel !== 'undefined') {
     lyricsPanel = new LyricsPanel({ engine, panel: lyricsPanelEl });
+    window.lyricsPanel = lyricsPanel;
   }
   let animationFrameId = null;
 
@@ -61,6 +62,9 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnPresetAcapella = document.getElementById('btnPresetAcapella');
   const btnPresetRhythm = document.getElementById('btnPresetRhythm');
   const btnPresetReset = document.getElementById('btnPresetReset');
+  const helpModal = document.getElementById('helpModal');
+  // Which mix switch is lit: 'karaoke', 'acapella', 'rhythm', or null.
+  let activeMix = null;
 
   const btnExportMix = document.getElementById('btnExportMix');
   const btnExportKaraoke = document.getElementById('btnExportKaraoke');
@@ -72,11 +76,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const dropzoneModal = document.getElementById('dropzoneModal');
   const modalCloseBtn = document.getElementById('modalCloseBtn');
   const dropzoneBox = document.getElementById('dropzoneBox');
-
-  const btnSaveSession = document.getElementById('btnSaveSession');
-  const btnLoadSession = document.getElementById('btnLoadSession');
-  const sessionFileInput = document.getElementById('sessionFileInput');
-
 
   // Starting lanes, shown empty until a song is loaded. Neutral names: the app does not
   // assume any particular style of music.
@@ -150,8 +149,14 @@ document.addEventListener('DOMContentLoaded', () => {
       const target = !parts.every(t => t[flag]);
       parts.forEach(t => { if (t[flag] !== target) toggle(t.id); });
     };
-    group.querySelector('#drumGroupMute').addEventListener('click', () => setAll('isMuted', id => engine.toggleTrackMute(id)));
-    group.querySelector('#drumGroupSolo').addEventListener('click', () => setAll('isSoloed', id => engine.toggleTrackSolo(id)));
+    group.querySelector('#drumGroupMute').addEventListener('click', () => {
+      clearActiveMix();
+      setAll('isMuted', id => engine.toggleTrackMute(id));
+    });
+    group.querySelector('#drumGroupSolo').addEventListener('click', () => {
+      clearActiveMix();
+      setAll('isSoloed', id => engine.toggleTrackSolo(id));
+    });
     return group;
   }
 
@@ -216,13 +221,7 @@ document.addEventListener('DOMContentLoaded', () => {
           <div class="slider-row">
             <span class="slider-label">VOL</span>
             <input type="range" class="studio-slider track-vol-slider" min="0" max="1.5" step="0.01" value="${track.volume}" data-track-id="${track.id}">
-            <span class="slider-readout" id="volReadout_${track.id}">0.0 dB</span>
-          </div>
-
-          <div class="slider-row">
-            <span class="slider-label">PAN</span>
-            <input type="range" class="studio-slider track-pan-slider" min="-1" max="1" step="0.02" value="${track.pan}" data-track-id="${track.id}">
-            <span class="slider-readout" id="panReadout_${track.id}">C</span>
+            <span class="slider-readout" id="volReadout_${track.id}">${formatDb(track.volume)}</span>
           </div>
 
           <div class="track-vu-container">
@@ -253,12 +252,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const muteBtn = card.querySelector('.btn-mute');
     muteBtn.addEventListener('click', () => {
+      clearActiveMix();
       const isMuted = engine.toggleTrackMute(track.id);
       muteBtn.classList.toggle('active', isMuted);
     });
 
     const soloBtn = card.querySelector('.btn-solo');
     soloBtn.addEventListener('click', () => {
+      clearActiveMix();
       const isSoloed = engine.toggleTrackSolo(track.id);
       soloBtn.classList.toggle('active', isSoloed);
     });
@@ -269,14 +270,6 @@ document.addEventListener('DOMContentLoaded', () => {
       const val = parseFloat(e.target.value);
       engine.setTrackVolume(track.id, val);
       volReadout.textContent = formatDb(val);
-    });
-
-    const panSlider = card.querySelector('.track-pan-slider');
-    const panReadout = card.querySelector(`#panReadout_${track.id}`);
-    panSlider.addEventListener('input', (e) => {
-      const val = parseFloat(e.target.value);
-      engine.setTrackPan(track.id, val);
-      panReadout.textContent = formatPan(val);
     });
 
     // Waveform click to seek
@@ -295,12 +288,6 @@ document.addEventListener('DOMContentLoaded', () => {
     if (val <= 0.001) return '-inf dB';
     const db = 20 * Math.log10(val);
     return `${db >= 0 ? '+' : ''}${db.toFixed(1)} dB`;
-  }
-
-  function formatPan(val) {
-    if (Math.abs(val) < 0.05) return 'C';
-    if (val < 0) return `L${Math.round(Math.abs(val) * 100)}%`;
-    return `R${Math.round(val * 100)}%`;
   }
 
   function formatTime(seconds) {
@@ -1395,36 +1382,70 @@ document.addEventListener('DOMContentLoaded', () => {
     masterFaderVal.textContent = formatDb(val);
   });
 
-  // Presets
-  btnPresetKaraoke.addEventListener('click', () => {
-    const vocalTrack = engine.tracks.get('vocal');
-    if (vocalTrack) vocalTrack.isMuted = true;
-    engine.updateMuteSoloStates();
-    syncMuteSoloButtons();
-    showToast('Karaoke: Vocals Muted (गायन बन्द)', 'success');
-  });
+  // Mix switches. Only one of Karaoke, Acapella, and Rhythm can be on.
+  // Clicking the lit one turns it off. None of them move the volume sliders.
+  const MIX_ON = {
+    karaoke: 'Karaoke: vocals are muted',
+    acapella: 'Acapella: only the vocals',
+    rhythm: 'Rhythm: drums and bass'
+  };
+  const MIX_OFF = {
+    karaoke: 'Karaoke off: vocals are back',
+    acapella: 'Acapella off: the other stems are back',
+    rhythm: 'Rhythm off: the other stems are back'
+  };
 
-  btnPresetAcapella.addEventListener('click', () => {
-    for (const track of engine.tracks.values()) {
-      track.isSoloed = (track.id === 'vocal');
-      track.isMuted = false;
-    }
-    engine.updateMuteSoloStates();
-    syncMuteSoloButtons();
-    showToast('Acapella: Solo Vocals (स्वर मात्र)', 'success');
-  });
+  function paintMixButtons() {
+    btnPresetKaraoke.classList.toggle('active', activeMix === 'karaoke');
+    btnPresetAcapella.classList.toggle('active', activeMix === 'acapella');
+    btnPresetRhythm.classList.toggle('active', activeMix === 'rhythm');
+    btnPresetKaraoke.setAttribute('aria-pressed', activeMix === 'karaoke' ? 'true' : 'false');
+    btnPresetAcapella.setAttribute('aria-pressed', activeMix === 'acapella' ? 'true' : 'false');
+    btnPresetRhythm.setAttribute('aria-pressed', activeMix === 'rhythm' ? 'true' : 'false');
+  }
 
-  btnPresetRhythm.addEventListener('click', () => {
+  function clearActiveMix() {
+    if (activeMix === null) return;
+    activeMix = null;
+    paintMixButtons();
+  }
+
+  function clearMuteSolo() {
     for (const track of engine.tracks.values()) {
-      track.isSoloed = (track.id === 'drums' || track.id.startsWith('drums_') || track.id === 'bass');
       track.isMuted = false;
+      track.isSoloed = false;
     }
+  }
+
+  function applyMix(mode) {
+    const turningOff = activeMix === mode;
+    clearMuteSolo();
+    if (!turningOff) {
+      if (mode === 'karaoke') {
+        const vocal = engine.tracks.get('vocal');
+        if (vocal) vocal.isMuted = true;
+      } else if (mode === 'acapella') {
+        for (const track of engine.tracks.values()) track.isSoloed = track.id === 'vocal';
+      } else if (mode === 'rhythm') {
+        for (const track of engine.tracks.values()) {
+          track.isSoloed = track.id === 'drums' || track.id.startsWith('drums_') || track.id === 'bass';
+        }
+      }
+    }
+    activeMix = turningOff ? null : mode;
+    paintMixButtons();
     engine.updateMuteSoloStates();
     syncMuteSoloButtons();
-    showToast('Rhythm: Solo Drums & Bass', 'success');
-  });
+    showToast(turningOff ? MIX_OFF[mode] : MIX_ON[mode], turningOff ? 'info' : 'success');
+  }
+
+  btnPresetKaraoke.addEventListener('click', () => applyMix('karaoke'));
+  btnPresetAcapella.addEventListener('click', () => applyMix('acapella'));
+  btnPresetRhythm.addEventListener('click', () => applyMix('rhythm'));
 
   btnPresetReset.addEventListener('click', () => {
+    activeMix = null;
+    paintMixButtons();
     for (const track of engine.tracks.values()) {
       track.isMuted = false;
       track.isSoloed = false;
@@ -1435,7 +1456,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     engine.updateMuteSoloStates();
     renderAllTrackCards();
-    showToast('All track levels reset to default', 'info');
+    showToast('Volumes are back to the middle', 'info');
   });
 
   function syncMuteSoloButtons() {
@@ -1558,85 +1579,32 @@ document.addEventListener('DOMContentLoaded', () => {
   btnExportKaraoke.addEventListener('click', () => runExport('karaoke'));
   btnExportAcapella.addEventListener('click', () => runExport('acapella'));
 
-  // Session Save & Load
-  btnSaveSession.addEventListener('click', () => {
-    const sessionData = {
-      version: 2,
-      timestamp: Date.now(),
-      playbackRate: engine.playbackRate,
-      pitchSemitones: engine.pitchSemitones,
-      loop: {
-        enabled: engine.isLooping,
-        start: engine.loopStart,
-        end: engine.loopEnd
-      },
-      tracks: []
-    };
-
-    for (const track of engine.tracks.values()) {
-      sessionData.tracks.push({
-        id: track.id,
-        name: track.name,
-        stemType: track.stemType,
-        volume: track.volume,
-        pan: track.pan,
-        isMuted: track.isMuted,
-        isSoloed: track.isSoloed
-      });
-    }
-
-    const blob = new Blob([JSON.stringify(sessionData, null, 2)], { type: 'application/json' });
-    ExportEngine.triggerDownload(blob, 'session.stems-studio.json');
-    showToast('Session saved to file', 'success');
+  // Help
+  const helpClose = document.getElementById('helpClose');
+  document.getElementById('btnHelp').addEventListener('click', () => helpModal.classList.add('open'));
+  helpClose.addEventListener('click', () => helpModal.classList.remove('open'));
+  helpModal.addEventListener('click', (e) => {
+    if (e.target === helpModal) helpModal.classList.remove('open');
   });
 
-  btnLoadSession.addEventListener('click', () => sessionFileInput.click());
-
-  sessionFileInput.addEventListener('change', async (e) => {
-    if (!e.target.files || e.target.files.length === 0) return;
-    const file = e.target.files[0];
-    try {
-      const text = await file.text();
-      const session = JSON.parse(text);
-
-      if (session.playbackRate) {
-        engine.setPlaybackRate(session.playbackRate);
-        speedSelect.value = String(session.playbackRate);
-      }
-      if (session.pitchSemitones !== undefined) {
-        engine.setPitchSemitones(session.pitchSemitones);
-        pitchValEl.textContent = `${session.pitchSemitones >= 0 ? '+' : ''}${session.pitchSemitones} st`;
-      }
-      if (session.loop) {
-        engine.setLoop(session.loop.enabled, session.loop.start, session.loop.end);
-        loopToggleBtn.classList.toggle('active', session.loop.enabled);
-      }
-      if (session.tracks && Array.isArray(session.tracks)) {
-        session.tracks.forEach(tData => {
-          let track = engine.tracks.get(tData.id);
-          if (!track) {
-            track = engine.addTrack(tData.id, tData.name, tData.stemType, null);
-          }
-          track.name = tData.name || track.name;
-          track.volume = tData.volume !== undefined ? tData.volume : 1.0;
-          track.pan = tData.pan !== undefined ? tData.pan : 0;
-          track.isMuted = !!tData.isMuted;
-          track.isSoloed = !!tData.isSoloed;
-          engine.setTrackVolume(track.id, track.volume);
-          engine.setTrackPan(track.id, track.pan);
-        });
-        engine.updateMuteSoloStates();
-        renderAllTrackCards();
-      }
-      showToast('Session restored successfully!', 'success');
-    } catch (err) {
-      showToast('Invalid session JSON: ' + err.message, 'error');
-    }
-  });
+  function closeOpenModals() {
+    dropzoneModal.classList.remove('open');
+    createStemsModal.classList.remove('open');
+    libraryModal.classList.remove('open');
+    helpModal.classList.remove('open');
+  }
 
   // Global Keyboard Shortcuts
   window.addEventListener('keydown', (e) => {
     if (['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName)) return;
+
+    if (document.querySelector('.modal-backdrop.open')) {
+      if (e.code === 'Escape') {
+        e.preventDefault();
+        closeOpenModals();
+      }
+      return;
+    }
 
     if (e.code === 'Space') {
       e.preventDefault();
@@ -1651,9 +1619,7 @@ document.addEventListener('DOMContentLoaded', () => {
       e.preventDefault();
       btnPresetKaraoke.click();
     } else if (e.code === 'Escape') {
-      dropzoneModal.classList.remove('open');
-      createStemsModal.classList.remove('open');
-      libraryModal.classList.remove('open');
+      closeOpenModals();
     }
   });
 
