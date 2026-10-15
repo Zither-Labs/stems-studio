@@ -2459,9 +2459,23 @@ def schedule_restart():
     threading.Thread(target=go, daemon=True).start()
 
 
+def warm_up_pitch():
+    """Load the pitch detector on this thread, before any request thread can.
+
+    Opening a song and making stems both read pitch on a background thread. On Windows the
+    detector's library crashes the whole engine if that thread is the first to load it, and the
+    page then says it cannot reach 127.0.0.1:8099.
+    """
+    try:
+        separator_module("pitch_track").warm_up()
+    except Exception:
+        traceback.print_exc()
+
+
 def serve(httpd, quit_with_window=True):
     """Serve until the app window closes (or forever, for development)."""
     global LIFECYCLE
+    warm_up_pitch()
     warm_up_device_info()
     updater.start_background_checks()
     if quit_with_window:

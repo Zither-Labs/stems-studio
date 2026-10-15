@@ -21,6 +21,7 @@ meaning "nobody is singing".
 import json
 import os
 import sys
+import threading
 
 import numpy as np
 
@@ -596,6 +597,34 @@ def _track(detector, mono, rate, profile):
     return clean_track(hz, confidence, loudness, fmin, fmax, keep_low=bool(profile.get("keep_low"))), t0
 
 
+_DETECTOR = None
+_DETECTOR_LOCK = threading.Lock()
+
+
+def pitch_detector():
+    """The shared SwiftF0 detector, created once.
+
+    On Windows, onnxruntime (which SwiftF0 is built on) crashes the whole process if it is
+    loaded for the first time on a background thread. warm_up() loads it on the main thread
+    before the engine starts taking requests; this lock covers any later first use.
+    """
+    global _DETECTOR
+    with _DETECTOR_LOCK:
+        if _DETECTOR is None:
+            from swift_f0 import SwiftF0
+            _DETECTOR = SwiftF0(threads=4, spin=False)
+        return _DETECTOR
+
+
+def warm_up():
+    """Load the pitch detector now, on the calling thread. Failures are reported, not fatal."""
+    try:
+        pitch_detector()
+    except Exception as exc:
+        print(f"Pitch detector is not available ({exc}). Songs still open; their pitch is read when it can be.",
+              file=sys.stderr, flush=True)
+
+
 def analyze_file(path, instruments=None, profile=None):
     """Read a stem (any WAV/FLAC) and return {"dt", "t0", "midi"} for the highway.
 
@@ -610,8 +639,7 @@ def analyze_file(path, instruments=None, profile=None):
     mono = audio.mean(axis=1)
     midi, t0, detector = None, 0.0, None
     try:
-        from swift_f0 import SwiftF0
-        detector = SwiftF0(threads=4, spin=False)
+        detector = pitch_detector()
         try:
             midi, t0 = _track(detector, mono, rate, profile)
         except Exception:
