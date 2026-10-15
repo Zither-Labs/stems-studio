@@ -50,8 +50,23 @@ def _set(**values):
         _state.update(values)
 
 
+def update_plan(branch, head, remote, ahead, dirty):
+    """What Update should do. The published copy is origin/main, not whatever branch is checked out.
+
+    ahead is how many commits on main are not on origin/main. Commits on some other branch do not
+    count: switching to main leaves them where they are.
+    """
+    if dirty:
+        return "dirty"
+    if branch == "main" and ahead:
+        return "ahead"
+    if head != remote or branch != "main":
+        return "update"
+    return "current"
+
+
 def check():
-    """Ask the repository whether there is something newer. Returns the new state."""
+    """Ask GitHub whether origin/main is newer than this copy. Returns the new state."""
     if not enabled():
         _set(state="off")
         return get_state()
@@ -67,21 +82,29 @@ def check():
 
     _set(state="checking")
     try:
-        fetched = _git("fetch", "--quiet", timeout=40)
+        fetched = _git("fetch", "origin", "main", "--quiet", timeout=40)
         if fetched.returncode != 0:
             raise RuntimeError((fetched.stderr or "git fetch failed").strip().splitlines()[-1])
-        upstream = _git("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
-        if upstream.returncode != 0:
-            raise RuntimeError("This branch does not follow a branch on GitHub.")
-        counts = _out(_git("rev-list", "--left-right", "--count", "HEAD...@{u}")).split()
-        ahead, behind = int(counts[0]), int(counts[1])
+        branch = _out(_git("rev-parse", "--abbrev-ref", "HEAD"))
+        head = _out(_git("rev-parse", "HEAD"))
+        remote = _out(_git("rev-parse", "origin/main"))
+        if not remote:
+            raise RuntimeError("The main copy was not found on GitHub.")
+        ahead = 0
+        if branch == "main":
+            ahead = int(_out(_git("rev-list", "--count", "origin/main..HEAD")) or "0")
+        behind = int(_out(_git("rev-list", "--count", "HEAD..origin/main")) or "0")
         dirty = bool(_out(_git("status", "--porcelain", "--untracked-files=no")))
+        plan = update_plan(branch, head, remote, ahead, dirty)
         changes = []
         if behind:
-            log = _out(_git("log", "--format=%s", f"-{MAX_CHANGES_LISTED}", "HEAD..@{u}"))
+            log = _out(_git("log", "--format=%s", f"-{MAX_CHANGES_LISTED}", "HEAD..origin/main"))
             changes = [line for line in log.splitlines() if line.strip()]
-        _set(state="available" if behind else "current", behind=behind, ahead=ahead, dirty=dirty,
-             changes=changes, branch=_out(_git("rev-parse", "--abbrev-ref", "HEAD")),
+        # A dirty folder only matters when there is actually something to bring in.
+        newer = plan == "update" or (plan == "dirty" and (head != remote or branch != "main"))
+        state = "available" if newer else "current"
+        _set(state=state, behind=behind, ahead=ahead, dirty=dirty, plan=plan,
+             changes=changes, branch=branch,
              current=_out(_git("rev-parse", "--short", "HEAD")), checked_at=time.time())
     except subprocess.TimeoutExpired:
         _set(state="error", reason="The check took too long (no internet?).", checked_at=time.time())
@@ -91,20 +114,33 @@ def check():
 
 
 def apply():
-    """Bring in the newer versions. Returns {"ok": bool, "message": str, ...}."""
+    """Bring in origin/main, the same copy Update Stems Studio downloads. Returns {"ok": bool, ...}."""
     info = check()
+    plan = info.get("plan")
     if info["state"] != "available":
         return {"ok": False, "message": "Already up to date." if info["state"] == "current"
                 else info.get("reason", "Cannot update right now.")}
-    if info.get("dirty"):
+    if plan == "dirty" or info.get("dirty"):
         return {"ok": False, "message": "This copy has changes of its own that are not saved in git, "
                                         "so it was not updated. Commit or undo them first."}
-    if info.get("ahead"):
+    if plan == "ahead" or (info.get("branch") == "main" and info.get("ahead")):
         return {"ok": False, "message": "This copy has versions of its own that are not on GitHub, "
                                         "so it cannot be fast-forwarded. Update it by hand with git."}
     try:
         before = _out(_git("rev-parse", "HEAD"))
-        pulled = _git("pull", "--ff-only", "--quiet", timeout=120)
+        if info.get("branch") != "main":
+            if _git("rev-parse", "--verify", "main").returncode != 0:
+                switched = _git("checkout", "-b", "main", "origin/main")
+            else:
+                switched = _git("checkout", "main")
+            if switched.returncode != 0:
+                detail = (switched.stderr or switched.stdout or "could not switch to the main copy").strip()
+                raise RuntimeError(detail.splitlines()[-1])
+        ahead_now = int(_out(_git("rev-list", "--count", "origin/main..HEAD")) or "0")
+        if ahead_now:
+            return {"ok": False, "message": "This copy has versions of its own that are not on GitHub, "
+                                            "so it cannot be fast-forwarded. Update it by hand with git."}
+        pulled = _git("pull", "--ff-only", "origin", "main", "--quiet", timeout=120)
         if pulled.returncode != 0:
             raise RuntimeError((pulled.stderr or pulled.stdout or "git pull failed").strip().splitlines()[-1])
         changed = _out(_git("diff", "--name-only", before, "HEAD")).splitlines()
@@ -112,8 +148,7 @@ def apply():
         return {"ok": False, "message": "The update took too long. Nothing was changed; try again."}
     except Exception as exc:
         return {"ok": False, "message": f"The update failed: {exc}"}
-    check()
-    return {"ok": True, "message": "Updated. Close Stems Studio and open it again to use the new version.",
+    return {"ok": True, "message": "Updated. Reopening Stems Studio.",
             "run_install": any(name.lower() in ("install.bat", "install.command") for name in changed)}
 
 

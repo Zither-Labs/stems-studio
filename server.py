@@ -202,6 +202,29 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 NO_WINDOW = {"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}
 
 
+def current_build():
+    """Which copy this process is. A newer launch must not keep talking to an older one.
+
+    The number above stayed the same across real updates, so opening the app after an update
+    found the still-running old engine and treated it as current.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=BASE_DIR, capture_output=True, text=True, timeout=5,
+            env=dict(os.environ, GIT_TERMINAL_PROMPT="0"), **NO_WINDOW,
+        )
+        sha = (result.stdout or "").strip()
+        if result.returncode == 0 and sha:
+            return sha
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return f"{APP_VERSION}-local"
+
+
+APP_BUILD = current_build()
+
+
 def cli_python():
     """A console-capable Python for helper processes (pythonw.exe has no stdout)."""
     exe = sys.executable
@@ -1750,7 +1773,7 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
             dev_info = peek_device_info()
             if dev_info is None:
                 dev_info = {"device": "unknown", "device_name": "", "cuda_available": False, "pending": True}
-            self.send_json(dict(dev_info, library=True, app=APP_NAME, version=APP_VERSION,
+            self.send_json(dict(dev_info, library=True, app=APP_NAME, version=APP_BUILD,
                                 clean_vocals_available=roformer_cli() is not None,
                                 drum_split_available=roformer_cli() is not None,
                                 library_dir=OUTPUT_DIR, library_note=LIBRARY_NOTE))
@@ -1957,7 +1980,13 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
             if parsed.path.endswith("/check"):
                 self.send_json(updater.check())
             else:
-                self.send_json(updater.apply())
+                result = updater.apply()
+                if result.get("ok"):
+                    result["restart"] = True
+                    result["message"] = "Updated. Reopening Stems Studio."
+                self.send_json(result)
+                if result.get("ok"):
+                    schedule_restart()
             return
 
         if parsed.path in ("/api/preferences", "/api/library/folder", "/api/library/browse"):
@@ -2280,27 +2309,83 @@ LIFECYCLE = None
 
 
 def create_server(preferred_port=PORT):
-    """Bind the preferred port, or any free one if something else is using it."""
+    """Bind the preferred port, or any free one if something else is using it.
+
+    The preferred port is tried more than once: a restart can arrive while the previous
+    engine is still letting go of it.
+    """
     last_error = None
-    for port in (preferred_port, 0):
+    for _ in range(25):
         try:
-            return ThreadedServer(("127.0.0.1", port), StudioRequestHandler)
+            return ThreadedServer(("127.0.0.1", preferred_port), StudioRequestHandler)
         except OSError as exc:
             last_error = exc
-    raise last_error
+            time.sleep(0.3)
+    try:
+        return ThreadedServer(("127.0.0.1", 0), StudioRequestHandler)
+    except OSError as exc:
+        raise last_error or exc
 
 
-def find_running_instance(port=PORT):
-    """Return the URL of an up-to-date Stems Studio already running on this port, else None."""
+def probe_instance(port=PORT):
+    """The Stems Studio already listening on this port, or None. Includes its url."""
     url = f"http://127.0.0.1:{port}"
     try:
         with urllib.request.urlopen(f"{url}/api/engine", timeout=2) as resp:
             info = json.loads(resp.read().decode("utf-8"))
-        if info.get("app") == APP_NAME and info.get("version") == APP_VERSION:
-            return url
     except Exception:
-        pass
+        return None
+    if not isinstance(info, dict) or info.get("app") != APP_NAME:
+        return None
+    info["url"] = url
+    return info
+
+
+def same_build(reported, current=None):
+    """True when a running engine is this same copy, so it is safe to reopen it."""
+    if reported is None:
+        return False
+    return str(reported) == str(APP_BUILD if current is None else current)
+
+
+def find_running_instance(port=PORT):
+    """Return the URL of this same Stems Studio already running, else None.
+
+    An older engine on the port is not reused: it would keep serving the previous code
+    after an update had already been downloaded.
+    """
+    info = probe_instance(port)
+    if info and same_build(info.get("version")):
+        return info["url"]
     return None
+
+
+def schedule_restart():
+    """Leave this process, then start the app again so the downloaded code is what actually runs."""
+    script = os.path.join(BASE_DIR, "app.py")
+    helper = (
+        "import sys, time, subprocess, urllib.request\n"
+        f"url = 'http://127.0.0.1:{PORT}/api/engine'\n"
+        "for _ in range(50):\n"
+        "    try:\n"
+        "        urllib.request.urlopen(url, timeout=0.4)\n"
+        "        time.sleep(0.2)\n"
+        "    except Exception:\n"
+        "        break\n"
+        "time.sleep(0.5)\n"
+        "subprocess.Popen([sys.executable, sys.argv[1]], cwd=sys.argv[2])\n"
+    )
+
+    def go():
+        time.sleep(0.6)
+        subprocess.Popen(
+            [sys.executable, "-c", helper, script, BASE_DIR],
+            cwd=BASE_DIR, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **NO_WINDOW,
+        )
+        if LIFECYCLE is not None:
+            LIFECYCLE.httpd.shutdown()
+
+    threading.Thread(target=go, daemon=True).start()
 
 
 def serve(httpd, quit_with_window=True):

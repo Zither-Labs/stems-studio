@@ -428,6 +428,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let createFileChoice = null;
   let createBusy = false;
   let stemMakerReady = false;
+  let engineBuild = '';
   let cleanVocalsInstalled = false;   // from the server: is the Roformer tool installed?
   let drumSplitInstalled = false;     // the same tool also splits the drums
   let createRunId = 0;
@@ -494,6 +495,11 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       if (checkId !== stemMakerCheckId) return;
       stemMakerReady = true;
+      if (engineBuild && info.version && info.version !== engineBuild) {
+        location.reload();
+        return;
+      }
+      engineBuild = info.version || engineBuild;
       cleanVocalsInstalled = info.clean_vocals_available === true;
       const drumSplitChanged = drumSplitInstalled !== (info.drum_split_available === true);
       drumSplitInstalled = info.drum_split_available === true;
@@ -523,6 +529,19 @@ document.addEventListener('DOMContentLoaded', () => {
       }, 2000);
     }
   }
+
+  // If Update replaced the engine while this page was open, load the new page.
+  setInterval(async () => {
+    try {
+      const info = await (await fetch('/api/engine')).json();
+      if (!info.version) return;
+      if (!engineBuild) {
+        engineBuild = info.version;
+        return;
+      }
+      if (info.version !== engineBuild) location.reload();
+    } catch (err) { /* the engine is restarting */ }
+  }, 4000);
 
   function resetCreateDialog() {
     createFileChoice = null;
@@ -2043,6 +2062,30 @@ document.addEventListener('DOMContentLoaded', () => {
         updateNow.disabled = false;
         updateLater.hidden = out.ok;
         if (!out.ok) updateLater.hidden = false;
+        if (out.ok && out.restart) {
+          const previous = engineBuild;
+          // Reload only after the old engine has actually gone. An empty previous
+          // version would otherwise match the still-running engine and reload too soon.
+          let sawGap = false;
+          const started = Date.now();
+          const waitForRestart = async () => {
+            if (Date.now() - started > 20000) {
+              updateText.textContent = 'Updated. Close this window and open Stems Studio again.';
+              return;
+            }
+            try {
+              const info = await (await fetch('/api/engine')).json();
+              if (sawGap && info.version && info.version !== previous) {
+                location.reload();
+                return;
+              }
+            } catch (err) {
+              sawGap = true;
+            }
+            setTimeout(waitForRestart, 400);
+          };
+          setTimeout(waitForRestart, 700);
+        }
       } catch (err) {
         updateText.textContent = 'The update could not be started.';
         updateNow.disabled = false;
