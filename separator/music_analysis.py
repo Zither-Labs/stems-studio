@@ -22,7 +22,7 @@ import os
 
 import numpy as np
 
-ANALYSIS_VERSION = 4          # 4 counts the low B (31 Hz) in the bass, not only its overtones
+ANALYSIS_VERSION = 5          # 5 lets the bass flip a chord back when the guitar is between two chords
 
 ONSET_SR = 22050
 ONSET_HOP = 512
@@ -418,15 +418,22 @@ def estimate_groove(onset, frame_seconds=ONSET_FRAME):
     }
 
 
-def harmony_root(profile):
-    """The chord the rhythm guitar is holding, or None when the bar is too muddy to call."""
+# How close the second chord may be, and still be the one the bass is playing.
+# Em and G share G and B, so a ringing G still scores well over an Em the bass has returned to.
+CHORD_NEAR = 0.20
+# The guitar has to actually be sounding that root. A walk under a held chord does not.
+ROOT_PRESENT = 0.18
+
+
+def _chord_scores(profile):
+    """(score, root) for each pitch class, best first. Empty when the guitar is silent."""
     if profile is None:
-        return None
+        return []
     profile = np.asarray(profile, dtype=np.float64)
     if profile.sum() <= 0:
-        return None
+        return []
     profile = profile / profile.sum()
-    ranked = []
+    best_for_root = {}
     for root in range(12):
         for quality in ("", "m"):
             intervals, weights, _penalty = CHORD_SHAPES[quality]
@@ -437,11 +444,44 @@ def harmony_root(profile):
                 score += heard * weight
                 covered += heard
             score -= 0.45 * (1.0 - covered)
-            ranked.append((score, root))
-    ranked.sort(reverse=True)
+            if root not in best_for_root or score > best_for_root[root]:
+                best_for_root[root] = score
+    return sorted(((score, root) for root, score in best_for_root.items()), reverse=True)
+
+
+def harmony_root(profile):
+    """The chord the rhythm guitar is holding, or None when the bar is too muddy to call."""
+    ranked = _chord_scores(profile)
+    if len(ranked) < 2:
+        return None
     if ranked[0][0] - ranked[1][0] < 0.015:
         return None
     return ranked[0][1]
+
+
+def root_on_beat(bass, harmony, start, end):
+    """One beat. The guitar picks the chord, unless it is between two and the bass names the other.
+
+    The bass note has to be sounding in the guitar as well. A walking note under a chord the
+    guitar is still holding does not get its own chord.
+    """
+    heard = _chroma_span(harmony, start, end)
+    choices = _chord_scores(heard)
+    low = _chroma_span(bass, start, end)
+    bass_root = int(np.argmax(low)) if low is not None and float(np.sum(low)) > 0 else None
+    if not choices:
+        return bass_root
+    best_score, best_root = choices[0]
+    if bass_root is None or bass_root == best_root:
+        return best_root
+    loud = float(np.max(heard))
+    for score, root in choices:
+        if root != bass_root:
+            continue
+        if best_score - score <= CHORD_NEAR and loud > 0 and float(heard[root]) >= ROOT_PRESENT * loud:
+            return root
+        break
+    return best_root
 
 
 def _chroma_span(chroma, start, end):
@@ -456,7 +496,23 @@ def _chroma_span(chroma, start, end):
 
 
 def root_for_span(bass, harmony, start, end, beat, meter):
-    """One bar's root. A clear rhythm-guitar chord wins over a bass line that walks around it."""
+    """One bar's root. A clear rhythm-guitar chord wins over a bass line that walks around it.
+
+    When every beat of the bar agrees, including a bass note that flips the guitar between two
+    chords, that is the root. A walk that disagrees with itself falls through to the downbeat.
+    """
+    if harmony is not None and meter > 0 and beat > 0:
+        found = []
+        for beat_index in range(meter):
+            beat_at = start + beat_index * beat
+            beat_end = min(end, beat_at + beat)
+            if beat_end - beat_at < beat * 0.45:
+                continue
+            root = root_on_beat(bass, harmony, beat_at, beat_end)
+            if root is not None:
+                found.append(root)
+        if found and all(root == found[0] for root in found):
+            return int(found[0])
     guessed = harmony_root(_chroma_span(harmony, start, end))
     if guessed is not None:
         return int(guessed)
@@ -487,8 +543,22 @@ def _beat_groups(meter):
     return [(0, meter)]
 
 
+def _append_run(runs, root, start, end):
+    if root is None:
+        return
+    if runs and runs[-1]["root"] == root and start - runs[-1]["end"] < 0.2:
+        runs[-1]["end"] = round(end, 3)
+    else:
+        runs.append({"start": round(start, 3), "end": round(end, 3), "root": int(root)})
+
+
 def bars_as_runs(bass_chroma, harmony_chroma, groove):
-    """Roots on the bar, or on each half of a 4/4 bar. Notes between the beats are not roots."""
+    """One root per beat when the guitar is there, otherwise per half-bar.
+
+    Two chords can trade places every beat (Em then G, then Em again). Averaging a
+    half-bar kept the louder of the two and the return disappeared. With no guitar,
+    the downbeat still decides, so a walking bass does not become a new chord per note.
+    """
     beat = float(groove["beat_seconds"])
     meter = int(groove["beats_per_bar"])
     bar = beat * meter
@@ -501,19 +571,23 @@ def bars_as_runs(bass_chroma, harmony_chroma, groove):
     duration = frames * FRAME_SECONDS
     t = float(groove["phase_seconds"]) % bar
     runs = []
+    guitar = harmony_chroma is not None and float(np.sum(harmony_chroma)) > 0
     while t < duration - beat * 0.45:
-        for beat_from, beat_to in _beat_groups(meter):
+        if guitar:
+            spans = [(i, i + 1) for i in range(meter)]
+        else:
+            spans = _beat_groups(meter)
+        for beat_from, beat_to in spans:
             start = t + beat_from * beat
             end = min(duration, t + beat_to * beat)
             if start >= duration - beat * 0.25 or end - start < beat * 0.45:
                 continue
-            root = root_for_span(bass_chroma, harmony_chroma, start, end, beat, beat_to - beat_from)
-            if root is None:
-                continue
-            if runs and runs[-1]["root"] == root and start - runs[-1]["end"] < 0.2:
-                runs[-1]["end"] = round(end, 3)
+            if guitar and beat_to - beat_from == 1:
+                root = root_on_beat(bass_chroma, harmony_chroma, start, end)
             else:
-                runs.append({"start": round(start, 3), "end": round(end, 3), "root": int(root)})
+                root = root_for_span(
+                    bass_chroma, harmony_chroma, start, end, beat, beat_to - beat_from)
+            _append_run(runs, root, start, end)
         t += bar
     return runs
 

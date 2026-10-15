@@ -73,6 +73,18 @@ shuffled, shuffled_flats = cp.parse_sections("verse Em G chorus F# C G#")
 shuffled_place = cp.align_sections(shuffled, song, shuffled_flats, "sheet")
 assert names(shuffled_place) == names(placed)
 
+# Em and G keep trading. The chorus uses E as well, so a return to the verse must
+# come back to Em instead of staying on the chorus's E. The shape is the general one:
+# two chords alternate, then a later part shares a root with the first.
+girl = runs(
+    (4, 1), (7, 1), (4, 1), (7, 1), (4, 1), (7, 1), (4, 1), (7, 1),
+    (1, 1), (8, 1), (6, 1), (4, 1), (9, 1), (0, 1),
+    (4, 1), (7, 1), (4, 1), (7, 1),
+)
+girl_sections, girl_flats = cp.parse_sections("intro Em G\nverse Em G\nchorus C# G# F# E A C")
+girl_names = names(cp.align_sections(girl_sections, girl, girl_flats, "sheet"))
+assert girl_names == ["Em", "G"] * 4 + ["C#", "G#", "F#", "E", "A", "C"] + ["Em", "G"] * 2, girl_names
+
 # Words that are not chords are ignored. Flats stay flats.
 parsed, uses_flats = cp.parse_sheet("Verse: Bb F C7  |  capo 3")
 assert [cp.spell(c["root"], c["quality"], uses_flats) for c in parsed] == ["Bb", "F", "C7"]

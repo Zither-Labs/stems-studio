@@ -186,11 +186,45 @@ def _collapse(pieces):
     return merged
 
 
+def _follow_sections(tables, runs):
+    """Which part each bass note belongs to.
+
+    Stay while this note and the next one are both in the current part, so the chorus
+    starting just ahead does not steal the last chord of the verse. Leave when the next
+    note is somewhere else. A root that sits in two parts (Em in the verse, E in the chorus)
+    then goes to the part that also explains the notes just ahead, so the verse can return.
+    """
+    roots = [int(run["root"]) % 12 for run in runs]
+    index = 0
+    matched = []
+    score = 0.0
+    for at, run in enumerate(runs):
+        root = roots[at]
+        nxt = roots[at + 1] if at + 1 < len(roots) else None
+        if not (root in tables[index] and (nxt is None or nxt in tables[index])):
+            window = roots[at:at + 4]
+            chosen = None
+            chosen_score = -1
+            for candidate, table in enumerate(tables):
+                if root not in table:
+                    continue
+                explained = sum(1 for item in window if item in table)
+                if explained > chosen_score or (explained == chosen_score and candidate == index):
+                    chosen = candidate
+                    chosen_score = explained
+            if chosen is None:
+                continue
+            index = chosen
+        matched.append((run, root, tables[index][root]))
+        score += run["end"] - run["start"]
+    return score, matched
+
+
 def align_sections(sections, runs, flats, source):
     """Place each part wherever the bass plays it, for as many repeats as the bass does.
 
     Inside a part the chords can come back in any order and any number of times. The part
-    changes when the bass lands on a chord from a later part. The number of lines does not matter.
+    changes when the bass lands on a chord from another part. The number of lines does not matter.
     """
     sections = [section for section in sections if section.get("chords")]
     if not sections or not runs:
@@ -206,27 +240,7 @@ def align_sections(sections, runs, flats, source):
             for chord in section["chords"]:
                 table.setdefault((chord["root"] + shift) % 12, chord["quality"])
             tables.append(table)
-        index = 0
-        matched = []
-        score = 0.0
-        for run in runs:
-            root = int(run["root"]) % 12
-            duration = run["end"] - run["start"]
-            if root in tables[index]:
-                matched.append((run, root, tables[index][root]))
-                score += duration
-                continue
-            found = None
-            for step in range(1, len(tables)):
-                nxt = (index + step) % len(tables)
-                if root in tables[nxt]:
-                    found = nxt
-                    break
-            if found is None:
-                continue
-            index = found
-            matched.append((run, root, tables[index][root]))
-            score += duration
+        score, matched = _follow_sections(tables, runs)
         if best is None or score > best[0] or (score == best[0] and shift < best[1]):
             best = (score, shift, matched)
     # Most of the bass has to be one of these chords. A long outro of other chords can stay blank

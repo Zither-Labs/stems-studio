@@ -74,6 +74,36 @@ for beat_index, pitches in enumerate(((7, 11), (7, 2), (2, 6), (2, 9))):
 split = ma.bars_as_runs(half_bass, half, groove)
 assert [run["root"] for run in split] == [7, 2], split
 
+# Em and G trade every beat. The guitar's Em still rings with some of the G, so the
+# two chords are close. The bass root flips it back. It must not collapse to G.
+exact = frames_per_beat * ma.FRAME_SECONDS
+on_grid = dict(groove, beat_seconds=exact, bpm=round(60.0 / exact, 1))
+trade = []
+for _ in range(4):
+    trade.append((4, ((4, 0.35), (7, 1), (11, 1), (2, 0.3))))
+    trade.append((7, ((7, 1), (11, 1), (2, 1), (4, 0.05))))
+trade_bass = np.zeros((frames_per_beat * len(trade), 12), dtype=np.float32)
+trade_guitar = np.zeros_like(trade_bass)
+for index, (bass_note, tones) in enumerate(trade):
+    sl = slice(index * frames_per_beat, (index + 1) * frames_per_beat)
+    trade_bass[sl, bass_note] = 1
+    for pitch, weight in tones:
+        trade_guitar[sl, pitch] = weight
+traded = ma.bars_as_runs(trade_bass, trade_guitar, on_grid)
+assert [run["root"] for run in traded] == [4, 7, 4, 7, 4, 7, 4, 7], traded
+
+# A power chord G (G and B, no D) with the bass walking through E. E is not in the
+# guitar, so that step stays G. Em is only a step away on paper, because they share G and B.
+power = np.zeros((frames_per_beat * 4, 12), dtype=np.float32)
+power_bass = np.zeros_like(power)
+for frame in range(len(power)):
+    power[frame, 7] = 1
+    power[frame, 11] = 1
+for beat_index, pitch in enumerate((7, 11, 4, 7)):
+    power_bass[beat_index * frames_per_beat:(beat_index + 1) * frames_per_beat, pitch] = 1
+held = ma.bars_as_runs(power_bass, power, on_grid)
+assert [run["root"] for run in held] == [7], held
+
 # The slow spectrogram reports how far it has got, and finishes at 1.
 seen = []
 audio = np.random.default_rng(0).standard_normal(ma.N_FFT + ma.HARMONY_HOP * 600).astype(np.float32)
