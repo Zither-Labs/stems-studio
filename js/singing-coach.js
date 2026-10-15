@@ -551,6 +551,10 @@ class SingingCoach {
 
   history() {
     const id = this.highway.songInfo ? this.highway.songInfo.songId : 'local';
+    if (window.StemsPractice) {
+      const stored = StemsPractice.historyFor(id);
+      if (stored) return stored;
+    }
     try { return JSON.parse(localStorage.getItem(COACH_HISTORY_KEY + id)) || []; } catch (err) { return []; }
   }
 
@@ -560,9 +564,13 @@ class SingingCoach {
     const scoredNotes = rows.reduce((n, r) => n + r.scored, 0);
     if (score !== null && scoredNotes >= 8) {
       const id = this.highway.songInfo ? this.highway.songInfo.songId : 'local';
-      const list = this.history();
-      list.push({ date: Date.now(), score, level: this.settings.level });
-      try { localStorage.setItem(COACH_HISTORY_KEY + id, JSON.stringify(list.slice(-20))); } catch (err) { /* private mode */ }
+      const entry = { date: Date.now(), score, level: this.settings.level };
+      const keptWithSong = window.StemsPractice && StemsPractice.remember(id, entry);
+      if (!keptWithSong) {
+        const list = this.history();
+        list.push(entry);
+        try { localStorage.setItem(COACH_HISTORY_KEY + id, JSON.stringify(list.slice(-20))); } catch (err) { /* private mode */ }
+      }
     }
     this.stats.clear();
     this.times.length = 0;

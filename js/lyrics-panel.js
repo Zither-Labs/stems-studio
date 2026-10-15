@@ -60,7 +60,9 @@ class LyricsPanel {
     this.findStatus.textContent = '';
     this.render();
     try {
-      const resp = await fetch(`/api/lyrics/${songId}`);
+      const pending = [fetch(`/api/lyrics/${songId}`)];
+      if (window.StemsPractice) pending.push(StemsPractice.loadSong(songId));
+      const [resp] = await Promise.all(pending);
       const data = await resp.json();
       if (id !== this.requestId) return;
       this.applyData(data);
@@ -77,9 +79,14 @@ class LyricsPanel {
     const guess = this.guessArtistTitle();
     this.$('lyricsArtist').value = meta.artist || guess.artist || '';
     this.$('lyricsTitle').value = meta.title || guess.title || '';
-    try {
-      this.offset = Number(localStorage.getItem(`stemsStudio.lyricsOffset.${this.songId}`)) || 0;
-    } catch (err) { this.offset = 0; }
+    const stored = window.StemsPractice ? StemsPractice.offsetFor(this.songId) : null;
+    if (stored !== null) {
+      this.offset = stored;
+    } else {
+      try {
+        this.offset = Number(localStorage.getItem(`stemsStudio.lyricsOffset.${this.songId}`)) || 0;
+      } catch (err) { this.offset = 0; }
+    }
     if (!this.lyrics) this.findForm.hidden = false;      // nothing found: offer the search straight away
     this.render();
   }
@@ -133,7 +140,11 @@ class LyricsPanel {
 
   nudge(delta) {
     this.offset = Math.round((this.offset + delta) * 10) / 10;
-    try { localStorage.setItem(`stemsStudio.lyricsOffset.${this.songId}`, String(this.offset)); } catch (err) { /* ignore */ }
+    if (window.StemsPractice && StemsPractice.songId === this.songId) {
+      StemsPractice.setLyricsOffset(this.songId, this.offset);
+    } else {
+      try { localStorage.setItem(`stemsStudio.lyricsOffset.${this.songId}`, String(this.offset)); } catch (err) { /* ignore */ }
+    }
     this.activeIndex = -2;
     this.updateOffsetLabel();
   }

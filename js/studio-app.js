@@ -859,7 +859,63 @@ document.addEventListener('DOMContentLoaded', () => {
 
   let librarySongs = [];
   let libraryFolder = '';
+  let libraryFolderLocked = false;
   let libraryOpening = false;
+  const libraryFolderText = document.getElementById('libraryFolderText');
+  const libraryChangeFolder = document.getElementById('libraryChangeFolder');
+  const libraryFolderEditor = document.getElementById('libraryFolderEditor');
+  const libraryFolderInput = document.getElementById('libraryFolderInput');
+  const libraryFolderError = document.getElementById('libraryFolderError');
+
+  function showLibraryFolder() {
+    libraryFolderText.textContent = libraryFolder
+      ? `Songs are kept in ${libraryFolder}`
+      : 'Songs are kept on this computer.';
+    if (libraryFolderLocked) {
+      libraryChangeFolder.hidden = true;
+      libraryFolderText.textContent += ' This computer\'s library folder is set by STEMS_STUDIO_LIBRARY.';
+    } else {
+      libraryChangeFolder.hidden = false;
+    }
+  }
+
+  function showFolderEditor(open) {
+    libraryFolderEditor.hidden = !open;
+    libraryFolderError.textContent = '';
+    if (open) libraryFolderInput.value = libraryFolder;
+  }
+
+  async function saveLibraryFolder() {
+    libraryFolderError.textContent = '';
+    const path = libraryFolderInput.value.trim();
+    try {
+      const resp = await fetch('/api/library/folder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path })
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error || 'Could not use that folder.');
+      showFolderEditor(false);
+      showToast(`Library folder is now ${data.folder}.`, 'success');
+      await refreshLibrary();
+    } catch (err) {
+      libraryFolderError.textContent = err.message;
+    }
+  }
+
+  async function browseLibraryFolder() {
+    libraryFolderError.textContent = 'Waiting for you to choose a folder...';
+    try {
+      const resp = await fetch('/api/library/browse', { method: 'POST' });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error || 'Could not open a folder window.');
+      libraryFolderError.textContent = '';
+      if (data.path) libraryFolderInput.value = data.path;
+    } catch (err) {
+      libraryFolderError.textContent = err.message;
+    }
+  }
 
   function formatBytes(bytes) {
     if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
@@ -879,34 +935,43 @@ document.addEventListener('DOMContentLoaded', () => {
     const songs = librarySongs.filter(s => s.title.toLowerCase().includes(query));
 
     librarySearch.style.display = librarySongs.length > 5 ? '' : 'none';
-    librarySummary.textContent = librarySongs.length
-      ? `${librarySongs.length} song${librarySongs.length === 1 ? '' : 's'} saved, using ${formatBytes(librarySongs.reduce((n, s) => n + s.size_bytes, 0))} in ${libraryFolder || 'the library'}.`
+    const presentSongs = librarySongs.filter(s => !s.missing);
+    librarySummary.textContent = presentSongs.length
+      ? `${presentSongs.length} song${presentSongs.length === 1 ? '' : 's'} saved, using ${formatBytes(presentSongs.reduce((n, s) => n + s.size_bytes, 0))}.`
       : '';
 
     if (!songs.length) {
       showLibraryMessage(librarySongs.length
         ? 'No songs match your search.'
-        : 'Nothing here yet. Every song you split with Create Stems is saved here automatically, so you only ever do it once.');
+        : 'Nothing in this folder yet. Songs you split with Create Stems are saved here.');
       return;
     }
 
     libraryList.innerHTML = '';
     for (const song of songs) {
       const item = document.createElement('div');
-      item.className = 'library-item';
+      item.className = `library-item${song.missing ? ' missing' : ''}`;
 
       const main = document.createElement('button');
       main.type = 'button';
       main.className = 'library-item-main';
-      main.title = 'Open in the mixer';
+      main.title = song.missing ? 'The audio files could not be opened' : 'Open in the mixer';
       const title = document.createElement('div');
       title.className = 'library-item-title';
       title.textContent = song.title;
       const meta = document.createElement('div');
       meta.className = 'library-item-meta';
-      meta.textContent = `${new Date(song.created_at * 1000).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })} · ${song.stem_count} stems · ${formatBytes(song.size_bytes)}`;
+      meta.textContent = song.missing
+        ? 'The audio files could not be opened.'
+        : `${new Date(song.created_at * 1000).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })} · ${song.stem_count} stems · ${formatBytes(song.size_bytes)}`;
       main.append(title, meta);
-      main.addEventListener('click', () => openLibrarySong(song));
+      main.addEventListener('click', () => {
+        if (song.missing) {
+          showToast('The files for this song could not be opened.', 'error');
+          return;
+        }
+        openLibrarySong(song);
+      });
 
       const del = document.createElement('button');
       del.type = 'button';
@@ -919,6 +984,16 @@ document.addEventListener('DOMContentLoaded', () => {
       });
 
       item.append(main);
+      if (song.vocals_can_undo) {
+        const undo = document.createElement('button');
+        undo.type = 'button';
+        undo.className = 'library-item-action';
+        undo.textContent = 'Undo clean vocals';
+        undo.title = 'Put back the vocal from before the first time it was cleaned';
+        undo.addEventListener('click', () => runLibraryJob(song, undo, meta, 'undo-clean-vocals',
+          'Putting the old vocal back...', 'Restored the vocal of', 'Could not restore the vocal:'));
+        item.append(undo);
+      }
       if (song.vocals_can_clean && cleanVocalsInstalled) {
         const clean = document.createElement('button');
         clean.type = 'button';
@@ -957,6 +1032,8 @@ document.addEventListener('DOMContentLoaded', () => {
       const listing = await resp.json();
       librarySongs = listing.songs;
       libraryFolder = listing.folder || '';
+      libraryFolderLocked = listing.folder_locked === true;
+      showLibraryFolder();
       if (listing.note) showToast(listing.note, 'error');
       renderLibrary();
     } catch (err) {
@@ -1054,6 +1131,13 @@ document.addEventListener('DOMContentLoaded', () => {
     if (e.target === libraryModal) closeLibraryDialog();
   });
   librarySearch.addEventListener('input', renderLibrary);
+  libraryChangeFolder.addEventListener('click', () => showFolderEditor(libraryFolderEditor.hidden));
+  document.getElementById('libraryFolderCancel').addEventListener('click', () => showFolderEditor(false));
+  document.getElementById('libraryFolderSave').addEventListener('click', saveLibraryFolder);
+  document.getElementById('libraryFolderBrowse').addEventListener('click', browseLibraryFolder);
+  libraryFolderInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') saveLibraryFolder();
+  });
 
   btnCreateStems.addEventListener('click', openCreateDialog);
   createStemsClose.addEventListener('click', closeCreateDialog);
@@ -1235,17 +1319,42 @@ document.addEventListener('DOMContentLoaded', () => {
     keyFitBtn.classList.remove('active');
   }
 
-  try {
-    const saved = localStorage.getItem('stemsStudio.voiceType');
-    if (saved && VOICE_RANGES[saved]) keyVoiceEl.value = saved;
-    else keyVoiceEl.value = 'mezzo';
-  } catch (err) { /* private mode: the default stays */ }
+  async function loadVoiceType() {
+    try {
+      const resp = await fetch('/api/preferences');
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data.voice_type && VOICE_RANGES[data.voice_type]) {
+          keyVoiceEl.value = data.voice_type;
+          return;
+        }
+      }
+    } catch (err) { /* use the browser copy, then this computer's settings */ }
+    let saved = null;
+    try { saved = localStorage.getItem('stemsStudio.voiceType'); } catch (err) { /* private mode */ }
+    if (saved && VOICE_RANGES[saved]) {
+      keyVoiceEl.value = saved;
+      fetch('/api/preferences', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ voice_type: saved })
+      }).catch(() => {});
+      return;
+    }
+    keyVoiceEl.value = 'mezzo';
+  }
+  loadVoiceType();
   keyFitBtn.addEventListener('click', () => (keyFitPanel.hidden ? openKeyFit() : closeKeyFit()));
   document.getElementById('keyFitClose').addEventListener('click', closeKeyFit);
   document.getElementById('keyFitReset').addEventListener('click', () => setKeyShift(0));
   keyFitApply.addEventListener('click', () => { if (keyFitSuggestion !== null) setKeyShift(keyFitSuggestion); });
   keyVoiceEl.addEventListener('change', () => {
     try { localStorage.setItem('stemsStudio.voiceType', keyVoiceEl.value); } catch (err) { /* ignore */ }
+    fetch('/api/preferences', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ voice_type: keyVoiceEl.value })
+    }).catch(() => {});
     updateKeyFit();
   });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !keyFitPanel.hidden) closeKeyFit(); });

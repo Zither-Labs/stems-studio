@@ -1797,6 +1797,38 @@ kbd {
   max-width: 560px;
 }
 
+.library-folder {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 0.75rem;
+}
+
+.library-folder-path {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  word-break: break-all;
+}
+
+.library-folder-editor {
+  margin-top: 0.6rem;
+}
+
+.library-folder-actions {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.45rem;
+}
+
+.library-folder-error {
+  margin: 0.4rem 0 0;
+  font-size: 0.75rem;
+  color: #fca5a5;
+  min-height: 1em;
+}
+
 .library-list {
   display: flex;
   flex-direction: column;
@@ -1831,6 +1863,10 @@ kbd {
 
 .library-item:hover {
   border-color: var(--accent-indigo);
+}
+
+.library-item.missing {
+  opacity: 0.72;
 }
 
 .library-item-main {

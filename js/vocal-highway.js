@@ -137,7 +137,11 @@ class VocalHighway {
     this.detected = null;      // { tonic, mode, name, flats, certainty, relative, alternatives }
     this.key = null;           // { tonic, mode, flats, manual }
     this.chords = [];          // [{ start, end, root, quality, name }]
-    this.showChords = true;
+    this.showChords = false;
+    try {
+      const saved = localStorage.getItem('stemsStudio.showChords');
+      if (saved === '1') this.showChords = true;
+    } catch (err) { /* private mode: the ribbon stays hidden */ }
     this.analysisUrl = null;   // set by the app: where the engine keeps this song's key and chords
     this.keyRequestId = 0;
     this.tuningCents = 0;
@@ -616,8 +620,10 @@ class VocalHighway {
     els.reset.addEventListener('click', () => {
       if (this.detected) this.setKey(this.detected, false);
     });
+    els.chords.checked = this.showChords;
     els.chords.addEventListener('change', () => {
       this.showChords = els.chords.checked;
+      try { localStorage.setItem('stemsStudio.showChords', this.showChords ? '1' : '0'); } catch (err) { /* private mode */ }
       this.lastKey = '';
     });
     this.refreshBar();

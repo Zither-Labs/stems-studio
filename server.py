@@ -38,7 +38,7 @@ except Exception:
     pass
 
 APP_NAME = "stems-studio"
-APP_VERSION = 7
+APP_VERSION = 8
 PORT = 8099
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -64,6 +64,33 @@ LIBRARY_NOTE = ""        # shown to the user when the chosen library folder coul
 os.makedirs(DATA_DIR, exist_ok=True)
 
 
+def read_settings():
+    """settings.json in the data folder. A missing or broken file is an empty dict."""
+    try:
+        with open(SETTINGS_PATH, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def write_settings(updates):
+    """Merge updates into settings.json. Other keys (the library folder, the voice type) stay."""
+    data = read_settings()
+    data.update(updates)
+    os.makedirs(DATA_DIR, exist_ok=True)
+    temporary = SETTINGS_PATH + ".tmp"
+    with open(temporary, "w", encoding="utf-8") as handle:
+        json.dump(data, handle, indent=2)
+        handle.write("\n")
+    os.replace(temporary, SETTINGS_PATH)
+
+
+def library_folder_locked():
+    """STEMS_STUDIO_LIBRARY, when set, chooses the folder and the in-app button leaves it alone."""
+    return bool(os.environ.get("STEMS_STUDIO_LIBRARY", "").strip())
+
+
 def chosen_library_dir():
     """The folder the user wants the song library in (for example a network drive), or None for the default.
 
@@ -72,16 +99,21 @@ def chosen_library_dir():
     """
     wanted = os.environ.get("STEMS_STUDIO_LIBRARY")
     if not wanted:
-        try:
-            with open(SETTINGS_PATH, "r", encoding="utf-8") as handle:
-                wanted = json.load(handle).get("library_dir")
-        except (OSError, ValueError, AttributeError):
-            wanted = None
-    return os.path.expandvars(wanted).strip() if wanted else None
+        wanted = read_settings().get("library_dir")
+    return os.path.expandvars(wanted).strip() if isinstance(wanted, str) and wanted.strip() else None
+
+
+def bind_library_db():
+    """Point the database at whatever folder the library is using right now."""
+    global DB_PATH
+    DB_PATH = os.path.join(OUTPUT_DIR, "library.db")
 
 
 def use_library_dir(wanted):
-    """Switch to the chosen folder if it can be written to; otherwise stay local and say why."""
+    """Switch to the chosen folder if it can be written to. Returns an error string, or '' on success.
+
+    On failure the library stays where it was.
+    """
     global OUTPUT_DIR, LIBRARY_NOTE
     try:
         os.makedirs(wanted, exist_ok=True)
@@ -89,15 +121,74 @@ def use_library_dir(wanted):
         with open(probe, "w") as handle:
             handle.write("ok")
         os.remove(probe)
-        OUTPUT_DIR = wanted
     except OSError as exc:
-        LIBRARY_NOTE = (f"The library folder {wanted} cannot be reached ({exc.strerror or exc}). "
-                        "Using this computer's own library until it is back.")
+        return f"The library folder {wanted} cannot be reached ({exc.strerror or exc})."
+    OUTPUT_DIR = wanted
+    LIBRARY_NOTE = ""
+    bind_library_db()
+    return ""
+
+
+def set_library_folder(wanted):
+    """Remember a library folder and switch to it. Returns an error string, or ''."""
+    if library_folder_locked():
+        return "This computer's library folder is set by STEMS_STUDIO_LIBRARY."
+    if any(job.get("status") == "processing" for job in list(JOBS.values())):
+        return "Wait until the current song finishes, then change the folder."
+    path = os.path.expandvars(os.path.expanduser(str(wanted or "").strip().strip('"')))
+    stripped = path.rstrip("/\\")
+    if stripped and not re.fullmatch(r"[A-Za-z]:", stripped):
+        path = stripped
+    if not path:
+        return "Choose a folder."
+    if not os.path.isabs(path):
+        return "Use the full path, for example Z:\\Music\\Stems."
+    error = use_library_dir(path)
+    if error:
+        return error + " The library stayed where it was."
+    write_settings({"library_dir": path})
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    init_library()
+    return ""
+
+
+def browse_for_folder():
+    """Open this computer's folder window. Returns the chosen path, or None if the person cancelled."""
+    if os.name == "nt":
+        script = (
+            "Add-Type -AssemblyName System.Windows.Forms; "
+            "$dialog = New-Object System.Windows.Forms.FolderBrowserDialog; "
+            "$dialog.Description = 'Choose the folder that contains your Stems Studio songs'; "
+            "$dialog.ShowNewFolderButton = $true; "
+            "$owner = New-Object System.Windows.Forms.Form; "
+            "$owner.TopMost = $true; "
+            "$result = $dialog.ShowDialog($owner); "
+            "$owner.Dispose(); "
+            "if ($result -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dialog.SelectedPath; exit 0 }; "
+            "exit 1"
+        )
+        command = ["powershell", "-NoProfile", "-STA", "-Command", script]
+    elif sys.platform == "darwin":
+        command = ["osascript", "-e",
+                   'POSIX path of (choose folder with prompt "Choose the folder that contains your Stems Studio songs")']
+    else:
+        zenity = shutil.which("zenity")
+        if not zenity:
+            raise Exception("Type the folder path. A folder window is not available on this computer.")
+        command = [zenity, "--file-selection", "--directory",
+                   "--title=Choose the folder that contains your Stems Studio songs"]
+    result = subprocess.run(command, capture_output=True, text=True, **NO_WINDOW)
+    if result.returncode != 0:
+        return None
+    path = (result.stdout or "").strip().strip('"').rstrip("/\\")
+    return path or None
 
 
 _wanted_library = chosen_library_dir()
 if _wanted_library:
-    use_library_dir(_wanted_library)
+    _library_error = use_library_dir(_wanted_library)
+    if _library_error:
+        LIBRARY_NOTE = _library_error + " Using this computer's own library until it is back."
 
 # Earlier versions kept the library inside the code folder; move it across once.
 _LEGACY_OUTPUT_DIR = os.path.join(BASE_DIR, "separated_output")
@@ -144,7 +235,7 @@ def roformer_cli():
     return [candidate] if os.path.isfile(candidate) else None
 
 
-DB_PATH = os.path.join(OUTPUT_DIR, "library.db")
+bind_library_db()
 SONG_ID_RE = re.compile(r"^[0-9a-f]{8}$")
 PITCH_LOCK = threading.Lock()
 # Stems the highway can follow (drums have no pitch).
@@ -289,6 +380,8 @@ def display_title(row):
 
 def row_to_summary(row):
     stems = json.loads(row["stems_json"])
+    folder = row_dir(row)
+    present = stems_files_exist(row["id"], stems, folder)
     return {
         "id": row["id"],
         "title": display_title(row),
@@ -300,10 +393,12 @@ def row_to_summary(row):
         "stem_count": sum(1 for s in stems if not s.get("empty")),
         "size_bytes": row["size_bytes"],
         "drums_split": any(s["id"].startswith("drums_") for s in stems),
-        "drums_can_split": any(s["id"] == "drums" for s in stems)
-                           and os.path.isfile(os.path.join(row_dir(row), "drums.wav")),
-        "vocals_can_clean": not row["preset"].endswith(CLEAN_VOCALS_SUFFIX)
-                            and not os.path.isfile(os.path.join(row_dir(row), CLEANED_VOCALS_MARKER)),
+        "drums_can_split": present and any(s["id"] == "drums" for s in stems)
+                           and os.path.isfile(os.path.join(folder, "drums.wav")),
+        "vocals_can_clean": present and not row["preset"].endswith(CLEAN_VOCALS_SUFFIX)
+                            and not os.path.isfile(os.path.join(folder, CLEANED_VOCALS_MARKER)),
+        "vocals_can_undo": present and clean_backups(folder) is not None,
+        "missing": not present,
     }
 
 
@@ -315,19 +410,22 @@ def stems_files_exist(song_id, stems, folder=None):
 
 
 def find_cached_song(content_key, model, preset):
-    """Return the saved song for this exact audio + model, or None."""
+    """Return the saved song for this exact audio + model, or None.
+
+    A song whose files are missing stays in the library. It is not treated as a finished copy,
+    so separating that recording again can replace it once the new files exist.
+    """
     with library_db() as conn:
         row = conn.execute(
             "SELECT * FROM songs WHERE content_key = ? AND model = ? AND preset = ?",
             (content_key, model, preset),
         ).fetchone()
-        if not row:
-            return None
-        stems = json.loads(row["stems_json"])
-        if not stems_files_exist(row["id"], stems, row_dir(row)):
-            conn.execute("DELETE FROM songs WHERE id = ?", (row["id"],))
-            return None
-        return {"id": row["id"], "title": display_title(row), "stems": stems}
+    if not row:
+        return None
+    stems = json.loads(row["stems_json"])
+    if not stems_files_exist(row["id"], stems, row_dir(row)):
+        return None
+    return {"id": row["id"], "title": display_title(row), "stems": stems}
 
 
 def save_song(song_id, title, source_type, source_label, content_key, model, preset, stems):
@@ -337,6 +435,12 @@ def save_song(song_id, title, source_type, source_label, content_key, model, pre
         if os.path.isfile(path):
             size += os.path.getsize(path)
     with library_db() as conn:
+        # The new files are already written. Replace an older row for this same recording
+        # (for example one whose files could not be opened) instead of keeping both.
+        conn.execute(
+            "DELETE FROM songs WHERE content_key = ? AND model = ? AND preset = ? AND id != ?",
+            (content_key, model, preset, song_id),
+        )
         conn.execute(
             """INSERT OR REPLACE INTO songs
                (id, title, source_type, source_label, content_key, model, preset,
@@ -348,15 +452,9 @@ def save_song(song_id, title, source_type, source_label, content_key, model, pre
 
 
 def list_songs():
-    songs = []
     with library_db() as conn:
         rows = conn.execute("SELECT * FROM songs ORDER BY created_at DESC").fetchall()
-        for row in rows:
-            if stems_files_exist(row["id"], json.loads(row["stems_json"]), row_dir(row)):
-                songs.append(row_to_summary(row))
-            else:
-                conn.execute("DELETE FROM songs WHERE id = ?", (row["id"],))
-    return songs
+    return [row_to_summary(row) for row in rows]
 
 
 def get_song(song_id):
@@ -434,6 +532,135 @@ VALID_PRESETS = ("standard", "nepali_folk")
 GUITAR_SPLIT_SUFFIX = "+gsplit"
 CLEAN_VOCALS_SUFFIX = "+clean"
 CLEANED_VOCALS_MARKER = "vocals.cleaned.json"   # written when a saved song got its vocal re-made
+PRACTICE_NAME = "practice.json"                  # coach scores and the lyrics timing nudge, kept with the song
+VOICE_TYPES = ("bass", "baritone", "tenor", "alto", "mezzo", "soprano")
+
+
+def backup_name(stem_id):
+    return f"{stem_id}-before-clean.wav"
+
+
+def keep_backup(folder, stem_id, src_path):
+    """Copy a stem aside the first time it is cleaned. A later clean leaves that copy alone."""
+    name = backup_name(stem_id)
+    dest = os.path.join(folder, name)
+    if not os.path.isfile(dest):
+        shutil.copy2(src_path, dest)
+    return name
+
+
+def clean_backups(folder):
+    """The marker written by Clean vocals, when it names a vocal backup that is still on disk."""
+    marker_path = os.path.join(folder, CLEANED_VOCALS_MARKER)
+    if not os.path.isfile(marker_path):
+        return None
+    try:
+        with open(marker_path, "r", encoding="utf-8") as handle:
+            marker = json.load(handle)
+    except (OSError, ValueError):
+        return None
+    backups = marker.get("backups") if isinstance(marker, dict) else None
+    if not isinstance(backups, dict) or not backups.get("vocals"):
+        return None
+    vocals = os.path.join(folder, os.path.basename(str(backups["vocals"])))
+    if not os.path.isfile(vocals):
+        return None
+    return marker
+
+
+def restore_clean_backups(folder):
+    """Put back the stems from before the first clean. The backup files stay, so this can be done again."""
+    marker = clean_backups(folder)
+    if not marker:
+        raise Exception("This song has no saved copy of the vocal from before cleaning.")
+    for stem_id, name in marker["backups"].items():
+        if not isinstance(stem_id, str) or not re.fullmatch(r"[a-z0-9_]+", stem_id):
+            continue
+        src = os.path.join(folder, os.path.basename(str(name)))
+        if os.path.isfile(src):
+            shutil.copy2(src, os.path.join(folder, stem_id + ".wav"))
+    os.remove(os.path.join(folder, CLEANED_VOCALS_MARKER))
+
+
+def sanitize_history(value):
+    if not isinstance(value, list):
+        return []
+    cleaned = []
+    for entry in value[-20:]:
+        if not isinstance(entry, dict):
+            continue
+        try:
+            score = int(entry.get("score"))
+        except (TypeError, ValueError):
+            continue
+        level = entry.get("level") if entry.get("level") in ("beginner", "medium", "advanced") else "beginner"
+        try:
+            date = int(entry.get("date"))
+        except (TypeError, ValueError):
+            date = int(time.time() * 1000)
+        cleaned.append({"date": date, "score": max(0, min(100, score)), "level": level})
+    return cleaned
+
+
+def sanitize_offset(value):
+    try:
+        offset = float(value)
+    except (TypeError, ValueError):
+        return 0
+    if offset != offset:
+        return 0
+    return max(-30.0, min(30.0, round(offset, 1)))
+
+
+def read_practice(song_id):
+    """Coach scores and the lyrics nudge for one song. None when that song has no folder."""
+    folder = song_dir(song_id)
+    if not os.path.isdir(folder):
+        return None
+    path = os.path.join(folder, PRACTICE_NAME)
+    if not os.path.isfile(path):
+        return {"coach_history": [], "lyrics_offset": 0, "stored": False}
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, ValueError):
+        return {"coach_history": [], "lyrics_offset": 0, "stored": False}
+    if not isinstance(data, dict):
+        data = {}
+    return {
+        "coach_history": sanitize_history(data.get("coach_history")),
+        "lyrics_offset": sanitize_offset(data.get("lyrics_offset")),
+        "stored": True,
+    }
+
+
+def write_practice(song_id, payload):
+    folder = song_dir(song_id)
+    if not os.path.isdir(folder) or not isinstance(payload, dict):
+        return False
+    data = {
+        "coach_history": sanitize_history(payload.get("coach_history")),
+        "lyrics_offset": sanitize_offset(payload.get("lyrics_offset")),
+    }
+    path = os.path.join(folder, PRACTICE_NAME)
+    temporary = path + ".tmp"
+    with open(temporary, "w", encoding="utf-8") as handle:
+        json.dump(data, handle)
+        handle.write("\n")
+    os.replace(temporary, path)
+    return True
+
+
+def current_voice_type():
+    value = read_settings().get("voice_type")
+    return value if value in VOICE_TYPES else None
+
+
+def set_voice_type(value):
+    if value not in VOICE_TYPES:
+        return False
+    write_settings({"voice_type": value})
+    return True
 
 
 def clean_choices(model, preset, split_guitar=False, clean_vocals=False):
@@ -785,6 +1012,7 @@ def run_clean_vocals_job(job_id, song_id):
     The library keeps no copy of the original file, so the song is put back together from its own
     stems (their sum is the song, to within rounding). Whatever the new vocal no longer holds (the
     guitar that had leaked into it) goes to the guitar stem, or to Other, so the stems still add up.
+    Copies from before the first clean are kept, so My Library can put them back.
     """
     import numpy as np
     import soundfile as sf
@@ -837,6 +1065,11 @@ def run_clean_vocals_job(job_id, song_id):
             new_vocals = np.repeat(new_vocals[:, :1], old_vocals.shape[1], axis=1)
         leftover = old_vocals - new_vocals
         home_id = next((k for k in ("guitar", "other") if k in files), None)
+        # Keep the pre-clean copies. A second clean does not overwrite them, so Undo returns
+        # the vocal from before the first clean.
+        backups = {"vocals": keep_backup(folder, "vocals", files["vocals"])}
+        if home_id:
+            backups[home_id] = keep_backup(folder, home_id, files[home_id])
         if home_id:
             home, _ = sf.read(files[home_id], dtype="float32", always_2d=True)
             n = min(len(home), frames)
@@ -850,7 +1083,7 @@ def run_clean_vocals_job(job_id, song_id):
             s["empty"] = os.path.basename(s["url"]) in empty
         update_song_stems(song_id, stems)
         with open(os.path.join(folder, CLEANED_VOCALS_MARKER), "w", encoding="utf-8") as handle:
-            json.dump({"model": ROFORMER_MODEL, "leftover_went_to": home_id}, handle)
+            json.dump({"model": ROFORMER_MODEL, "leftover_went_to": home_id, "backups": backups}, handle)
         job["stems"] = stems
         job["title"] = song["title"]
         job["progress"] = 100
@@ -863,6 +1096,34 @@ def run_clean_vocals_job(job_id, song_id):
         job["message"] = f"Error: {e}"
     finally:
         shutil.rmtree(work, ignore_errors=True)
+
+
+def run_undo_clean_vocals_job(job_id, song_id):
+    """Put back the vocal (and the stem that received the leftover) from before the first clean."""
+    job = JOBS[job_id]
+    folder = song_dir(song_id)
+    try:
+        song = get_song(song_id)
+        if not song:
+            raise Exception("Song not found in the library.")
+        job["message"] = "Putting the old vocal back..."
+        job["progress"] = 40
+        restore_clean_backups(folder)
+        stems = song["stems"]
+        empty = find_empty_stems(folder, [os.path.basename(s["url"]) for s in stems])
+        for s in stems:
+            s["empty"] = os.path.basename(s["url"]) in empty
+        update_song_stems(song_id, stems)
+        job["stems"] = stems
+        job["title"] = song["title"]
+        job["progress"] = 100
+        job["status"] = "completed"
+        job["message"] = "Old vocal restored."
+    except Exception as e:
+        traceback.print_exc()
+        job["status"] = "error"
+        job["error"] = str(e)
+        job["message"] = f"Error: {e}"
 
 
 def busy_job_for(song_id):
@@ -1130,6 +1391,26 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(json.dumps(payload).encode("utf-8"))
 
+    def local_request(self):
+        """The app's own page. Another website must not be able to change the library or the settings."""
+        origin = self.headers.get("Origin")
+        if not origin:
+            return True
+        port = self.server.server_address[1]
+        return origin in (f"http://127.0.0.1:{port}", f"http://localhost:{port}")
+
+    def read_json_body(self):
+        length = int(self.headers.get("Content-Length", 0))
+        if length < 0 or length > 256 * 1024:
+            raise ValueError("too large")
+        raw = self.rfile.read(length).decode("utf-8") if length else ""
+        if not raw.strip():
+            return {}
+        data = json.loads(raw)
+        if not isinstance(data, dict):
+            raise ValueError("expected an object")
+        return data
+
     def start_cached_job(self, job_id, cached):
         JOBS[job_id] = {
             "id": job_id,
@@ -1180,17 +1461,36 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.send_json(updater.get_state())
             return
 
+        elif parsed.path == "/api/preferences":
+            self.send_json({"voice_type": current_voice_type()})
+            return
+
         elif parsed.path == "/api/library":
-            self.send_json({"songs": list_songs(), "folder": OUTPUT_DIR, "note": LIBRARY_NOTE})
+            self.send_json({"songs": list_songs(), "folder": OUTPUT_DIR, "note": LIBRARY_NOTE,
+                            "folder_locked": library_folder_locked()})
             return
 
         elif parsed.path.startswith("/api/library/"):
-            song_id = parsed.path.split("/")[3]
+            parts = [part for part in parsed.path.split("/") if part]
+            song_id = parts[2] if len(parts) >= 3 else ""
+            if len(parts) == 4 and parts[3] == "practice" and SONG_ID_RE.match(song_id):
+                practice = read_practice(song_id)
+                if practice is None:
+                    self.send_json({"error": "Song not found in library"}, 404)
+                else:
+                    self.send_json(practice)
+                return
             song = get_song(song_id) if SONG_ID_RE.match(song_id) else None
             if song:
                 self.send_json(song)
-            else:
-                self.send_json({"error": "Song not found in library"}, 404)
+                return
+            if SONG_ID_RE.match(song_id):
+                with library_db() as conn:
+                    row = conn.execute("SELECT id FROM songs WHERE id = ?", (song_id,)).fetchone()
+                if row:
+                    self.send_json({"error": "The files for this song could not be opened.", "missing": True}, 409)
+                    return
+            self.send_json({"error": "Song not found in library"}, 404)
             return
 
         elif parsed.path == "/api/engine":
@@ -1368,6 +1668,36 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
                 self.send_json(updater.apply())
             return
 
+        if parsed.path in ("/api/preferences", "/api/library/folder", "/api/library/browse"):
+            if not self.local_request():
+                self.send_json({"error": "Not allowed"}, 403)
+                return
+            try:
+                data = {} if parsed.path.endswith("/browse") else self.read_json_body()
+            except (ValueError, UnicodeError):
+                self.send_json({"error": "Could not read that."}, 400)
+                return
+            if parsed.path == "/api/preferences":
+                if not set_voice_type(data.get("voice_type")):
+                    self.send_json({"error": "Unknown voice type."}, 400)
+                    return
+                self.send_json({"voice_type": data.get("voice_type")})
+                return
+            if parsed.path == "/api/library/browse":
+                try:
+                    path = browse_for_folder()
+                except Exception as exc:
+                    self.send_json({"error": str(exc)}, 501)
+                    return
+                self.send_json({"cancelled": True} if not path else {"path": path})
+                return
+            error = set_library_folder(data.get("path"))
+            if error:
+                self.send_json({"error": error}, 400)
+                return
+            self.send_json({"folder": OUTPUT_DIR, "note": LIBRARY_NOTE, "folder_locked": library_folder_locked()})
+            return
+
         if parsed.path == "/api/separate":
             content_type = self.headers.get("Content-Type", "")
             job_id = str(uuid.uuid4())[:8]
@@ -1497,6 +1827,47 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(json.dumps({"job_id": job_id}).encode("utf-8"))
                 return
+
+        if parsed.path.startswith("/api/library/") and parsed.path.endswith("/practice"):
+            song_id = parsed.path.split("/")[3]
+            if not self.local_request():
+                self.send_json({"error": "Not allowed"}, 403)
+                return
+            if not SONG_ID_RE.match(song_id):
+                self.send_json({"error": "Song not found in library"}, 404)
+                return
+            try:
+                data = self.read_json_body()
+            except (ValueError, UnicodeError):
+                self.send_json({"error": "Could not read that."}, 400)
+                return
+            if not write_practice(song_id, data):
+                self.send_json({"error": "Song not found in library"}, 404)
+                return
+            self.send_json(read_practice(song_id))
+            return
+
+        if parsed.path.startswith("/api/library/") and parsed.path.endswith("/undo-clean-vocals"):
+            song_id = parsed.path.split("/")[3]
+            if not SONG_ID_RE.match(song_id) or not get_song(song_id):
+                self.send_json({"error": "Song not found in library"}, 404)
+                return
+            if not clean_backups(song_dir(song_id)):
+                self.send_json({"error": "This song has no saved copy of the vocal from before cleaning."}, 404)
+                return
+            busy = busy_job_for(song_id)
+            if busy:
+                if busy.get("song_task") == "undo-clean-vocals":
+                    self.send_json({"job_id": busy["id"]})
+                else:
+                    self.send_json({"error": "This song is being worked on. Wait for that to finish."}, 409)
+                return
+            job_id = str(uuid.uuid4())[:8]
+            JOBS[job_id] = {"id": job_id, "status": "processing", "progress": 2, "message": "Starting...", "stems": [],
+                            "song_busy": song_id, "song_task": "undo-clean-vocals"}
+            threading.Thread(target=run_undo_clean_vocals_job, args=(job_id, song_id), daemon=True).start()
+            self.send_json({"job_id": job_id})
+            return
 
         if parsed.path.startswith("/api/library/") and parsed.path.endswith("/split-drums"):
             song_id = parsed.path.split("/")[3]

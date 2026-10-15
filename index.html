@@ -168,6 +168,19 @@
           <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" fill="none" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
         </button>
       </div>
+      <div class="library-folder" id="libraryFolderBar">
+        <span class="library-folder-path" id="libraryFolderText"></span>
+        <button type="button" class="btn btn-sm" id="libraryChangeFolder">Change folder</button>
+      </div>
+      <div class="library-folder-editor" id="libraryFolderEditor" hidden>
+        <input type="text" class="create-text-input" id="libraryFolderInput" spellcheck="false" placeholder="Full path to the folder that contains library.db">
+        <div class="library-folder-actions">
+          <button type="button" class="btn btn-sm" id="libraryFolderBrowse">Browse</button>
+          <button type="button" class="btn btn-sm btn-accent" id="libraryFolderSave">Use this folder</button>
+          <button type="button" class="btn btn-sm" id="libraryFolderCancel">Cancel</button>
+        </div>
+        <p class="library-folder-error" id="libraryFolderError"></p>
+      </div>
       <input type="text" class="create-text-input" id="librarySearch" placeholder="Search your songs..." style="display:none;">
       <div class="library-list" id="libraryList"></div>
       <p class="library-summary" id="librarySummary"></p>
@@ -290,7 +303,7 @@
           <option value="minor">minor</option>
         </select>
         <button type="button" class="preset-chip" id="highwayKeyReset" title="Go back to the key the app found" hidden>Use detected key</button>
-        <label class="highway-field highway-check"><input type="checkbox" id="highwayShowChords" checked> Chords <span class="highway-warning" title="The chord guesses are rough and are often wrong. Do not trust them yet.">very experimental, not right yet</span></label>
+        <label class="highway-field highway-check"><input type="checkbox" id="highwayShowChords"> Chords <span class="highway-warning" title="The chord guesses are rough and are often wrong. Do not trust them yet.">very experimental, not right yet</span></label>
       </div>
       <canvas id="vocalHighwayCanvas" title="Pitch highway. Click to jump to that moment."></canvas>
     </div>
@@ -526,6 +539,7 @@
   <script src="js/vocal-recorder.js"></script>
   <script src="js/pitch-visualizer.js"></script>
   <script src="js/vocal-highway.js"></script>
+  <script src="js/practice-store.js"></script>
   <script src="js/singing-coach.js"></script>
   <script src="js/lyrics-panel.js"></script>
   <script src="js/studio-app.js"></script>
