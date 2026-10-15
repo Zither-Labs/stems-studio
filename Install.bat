@@ -88,7 +88,7 @@ if errorlevel 2 goto make_shortcut
 if errorlevel 1 echo   (Could not install it. The app still works without it.)
 
 :make_shortcut
-echo Step 4 of 4: creating the Stems Studio shortcut...
+echo Step 4 of 4: creating the Desktop shortcuts...
 set "PYDIR="
 for %%I in ("%PY%") do set "PYDIR=%%~dpI"
 set "GUI_PY=%PYDIR%pythonw.exe"
@@ -100,7 +100,9 @@ echo.
 echo Checking the compute device the app will use...
 "%PY%" -c "import torch; print('  GPU: ' + torch.cuda.get_device_name(0) if torch.cuda.is_available() else '  CPU only (no usable CUDA GPU)')"
 echo.
-echo All done. Open "Stems Studio" from your Desktop or Start menu.
+echo All done.
+echo Open "Stems Studio" from your Desktop or Start menu.
+echo Double-click "Update Stems Studio" (the green arrow) when you want the newest window.
 echo.
 pause
 exit /b 0

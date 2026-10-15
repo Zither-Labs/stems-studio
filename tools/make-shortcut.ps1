@@ -8,17 +8,31 @@ $ErrorActionPreference = 'Stop'
 $folders = @([Environment]::GetFolderPath('Desktop'), [Environment]::GetFolderPath('Programs'))
 $shell = New-Object -ComObject WScript.Shell
 
+$root = Split-Path -Parent $Script
+$icon = Join-Path $root 'assets\stems-studio.ico'
+$updateBat = Join-Path $root 'Update.bat'
+$updateIcon = Join-Path $root 'assets\install.ico'
+
 foreach ($folder in $folders) {
     if (-not $folder -or -not (Test-Path $folder)) { continue }
     $link = $shell.CreateShortcut((Join-Path $folder 'Stems Studio.lnk'))
     $link.TargetPath = $Target
     $link.Arguments = '"' + $Script + '"'
-    $link.WorkingDirectory = Split-Path -Parent $Script
+    $link.WorkingDirectory = $root
     $link.Description = 'Stems Studio'
-    $icon = Join-Path (Split-Path -Parent $Script) 'assets\stems-studio.ico'
     if (Test-Path $icon) { $link.IconLocation = "$icon,0" }
     $link.Save()
     Write-Host "Shortcut created: $($link.FullName)"
+
+    if (Test-Path $updateBat) {
+        $update = $shell.CreateShortcut((Join-Path $folder 'Update Stems Studio.lnk'))
+        $update.TargetPath = $updateBat
+        $update.WorkingDirectory = $root
+        $update.Description = 'Get the newest Stems Studio and open it'
+        if (Test-Path $updateIcon) { $update.IconLocation = "$updateIcon,0" }
+        $update.Save()
+        Write-Host "Shortcut created: $($update.FullName)"
+    }
 }
 
 # The earlier launcher (it ran git pull and kept a console window open) is no longer needed.

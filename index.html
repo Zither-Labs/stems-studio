@@ -54,41 +54,110 @@
   </script>
   <noscript>Stems Studio needs JavaScript turned on.</noscript>
 
-  <!-- Top App Navigation Bar -->
-  <header class="studio-header">
-    <div class="brand-section">
-      <div class="brand-icon-wrap" aria-hidden="true">
-        <svg viewBox="0 0 24 24"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
-      </div>
-      <div class="brand-text">
-        <h1>Stems Studio</h1>
-        <span class="badge">Multi-Track Workstation</span>
+  <!-- One command bar: songs, playback, practice tools, mix switches, Help -->
+  <header class="command-bar" aria-label="Studio controls">
+    <div class="command-group">
+      <button class="btn btn-create-stems" id="btnCreateStems" title="Split a song into vocals, drums, bass and more">Create</button>
+      <button class="btn" id="btnLibrary" title="Open a song you have already split">Library</button>
+      <button class="btn" id="btnImportStems" title="Import stem files you already have">Import</button>
+      <button class="btn" id="btnLoadDemo" title="Load demo audio to try the app">Demo</button>
+    </div>
+
+    <span class="command-divider" aria-hidden="true"></span>
+
+    <div class="command-group transport-playback">
+      <button class="rewind-btn" id="rewindBtn" title="Return to Start (Enter / Home)">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M11 18V6l-8.5 6 8.5 6zm.5-6l8.5 6V6l-8.5 6z"/></svg>
+      </button>
+      <button class="play-toggle-btn" id="playToggleBtn" title="Play / Pause (Spacebar)">
+        <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+      </button>
+      <button class="stop-btn" id="stopBtn" title="Stop">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M6 6h12v12H6z"/></svg>
+      </button>
+      <div class="time-display-box" aria-live="polite">
+        <span class="current-time" id="currentTime">00:00.00</span>
+        <span class="time-divider">/</span>
+        <span class="total-time" id="totalTime">00:00.00</span>
       </div>
     </div>
 
-    <div class="header-actions">
-      <button class="btn" id="btnSaveSession" title="Save session">💾 Save</button>
-      <button class="btn" id="btnLoadSession" title="Load session">📂 Load</button>
-      <input type="file" id="sessionFileInput" accept=".json" style="display:none;">
+    <span class="command-divider" aria-hidden="true"></span>
+
+    <div class="command-group command-tools">
+      <div class="pitch-tempo-cluster">
+        <div class="control-item">
+          <span class="control-label">Speed</span>
+          <select class="mini-select" id="speedSelect" title="Playback Speed">
+            <option value="0.5">0.50x</option>
+            <option value="0.75">0.75x</option>
+            <option value="0.9">0.90x</option>
+            <option value="1.0" selected>1.00x</option>
+            <option value="1.1">1.10x</option>
+            <option value="1.25">1.25x</option>
+            <option value="1.5">1.50x</option>
+          </select>
+        </div>
+        <div class="control-item key-shift-item">
+          <span class="control-label">Key</span>
+          <div class="pitch-stepper">
+            <button class="step-btn" id="pitchDownBtn" title="Key down one semitone (the speed stays the same)">-</button>
+            <span class="pitch-val" id="pitchVal">0 st</span>
+            <button class="step-btn" id="pitchUpBtn" title="Key up one semitone (the speed stays the same)">+</button>
+          </div>
+          <button class="key-fit-btn" id="keyFitBtn" title="Find the key that suits your voice">Fit my voice</button>
+          <div class="key-fit-panel" id="keyFitPanel" hidden>
+            <div class="key-fit-title">Fit the key to your voice</div>
+            <label class="key-fit-row">I sing as
+              <select class="mini-select" id="keyVoice">
+                <optgroup label="Male voice">
+                  <option value="bass">Bass (low)</option>
+                  <option value="baritone">Baritone (middle)</option>
+                  <option value="tenor">Tenor (high)</option>
+                </optgroup>
+                <optgroup label="Female voice">
+                  <option value="alto">Alto (low)</option>
+                  <option value="mezzo">Mezzo-soprano (middle)</option>
+                  <option value="soprano">Soprano (high)</option>
+                </optgroup>
+              </select>
+            </label>
+            <p class="key-fit-text" id="keyFitText">Open a song to see which key suits you.</p>
+            <div class="key-fit-actions">
+              <button class="btn btn-sm" id="keyFitApply" disabled>Use it</button>
+              <button class="btn btn-sm" id="keyFitReset">Original key</button>
+              <button class="btn btn-sm" id="keyFitClose">Close</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="loop-toolbar">
+        <button class="loop-toggle-btn" id="loopToggleBtn" title="Toggle Looper (L)">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12v-3a4 4 0 014-4h12m0 0l-4-4m4 4l-4 4M20 12v3a4 4 0 01-4 4H4m0 0l4 4m-4-4l4-4"/></svg>
+          Loop
+        </button>
+        <button class="loop-marker-btn" id="setLoopInBtn" title="Set Loop In (A)">A</button>
+        <button class="loop-marker-btn" id="setLoopOutBtn" title="Set Loop Out (B)">B</button>
+        <button class="loop-marker-btn" id="clearLoopBtn" title="Clear Loop">Clear</button>
+      </div>
+    </div>
+
+    <span class="command-divider" aria-hidden="true"></span>
+
+    <div class="command-group preset-toggles" role="group" aria-label="Mix switches">
+      <button class="preset-chip" id="btnPresetKaraoke" title="Mute the vocals. Click again to bring them back. (K)" aria-pressed="false">Karaoke</button>
+      <button class="preset-chip" id="btnPresetAcapella" title="Play only the vocals. Click again to bring the other stems back." aria-pressed="false">Acapella</button>
+      <button class="preset-chip" id="btnPresetRhythm" title="Play only the drums and the bass. Click again to bring the rest back." aria-pressed="false">Rhythm</button>
+      <button class="preset-chip" id="btnPresetReset" title="Put every stem volume back to the middle">Reset</button>
+    </div>
+
+    <span class="command-spacer"></span>
+    <span class="command-divider" aria-hidden="true"></span>
+
+    <div class="command-group">
+      <button class="btn" id="btnHelp" title="How this window works">Help</button>
     </div>
   </header>
-
-  <!-- Simple Song Loader -->
-  <section class="song-loader-simple">
-    <button class="btn btn-create-stems" id="btnCreateStems" title="Split a song into vocals, drums, bass and more">
-      ✨ Create Stems
-    </button>
-    <button class="btn" id="btnLibrary" title="Open a song you have already split - no waiting">
-      📚 My Library
-    </button>
-    <span class="loader-divider">or</span>
-    <button class="btn" id="btnImportStems" title="Import stem files you already have">
-      📁 Import Stems
-    </button>
-    <button class="btn" id="btnLoadDemo" title="Load demo audio to try the app">
-      ▶ Demo
-    </button>
-  </section>
 
   <!-- Create Stems Dialog -->
   <div class="modal-backdrop" id="createStemsModal" role="dialog" aria-modal="true" aria-labelledby="createStemsTitle">
@@ -187,99 +256,6 @@
     </div>
   </div>
 
-  <!-- Master Transport Dock -->
-  <section class="transport-dock" aria-label="Transport Controls">
-    <!-- Playback Core -->
-    <div class="transport-playback">
-      <button class="rewind-btn" id="rewindBtn" title="Return to Start (Enter / Home)">
-        <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M11 18V6l-8.5 6 8.5 6zm.5-6l8.5 6V6l-8.5 6z"/></svg>
-      </button>
-
-      <button class="play-toggle-btn" id="playToggleBtn" title="Play / Pause (Spacebar)">
-        <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-      </button>
-
-      <button class="stop-btn" id="stopBtn" title="Stop">
-        <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M6 6h12v12H6z"/></svg>
-      </button>
-
-      <!-- Time Display -->
-      <div class="time-display-box" aria-live="polite">
-        <span class="current-time" id="currentTime">00:00.00</span>
-        <span class="time-divider">/</span>
-        <span class="total-time" id="totalTime">00:00.00</span>
-      </div>
-    </div>
-
-    <!-- Pitch & Tempo Steppers -->
-    <div class="pitch-tempo-cluster">
-      <div class="control-item">
-        <span class="control-label">Speed</span>
-        <select class="mini-select" id="speedSelect" title="Playback Speed">
-          <option value="0.5">0.50x</option>
-          <option value="0.75">0.75x</option>
-          <option value="0.9">0.90x</option>
-          <option value="1.0" selected>1.00x</option>
-          <option value="1.1">1.10x</option>
-          <option value="1.25">1.25x</option>
-          <option value="1.5">1.50x</option>
-        </select>
-      </div>
-
-      <div class="control-item key-shift-item">
-        <span class="control-label">Key</span>
-        <div class="pitch-stepper">
-          <button class="step-btn" id="pitchDownBtn" title="Key down one semitone (the speed stays the same)">-</button>
-          <span class="pitch-val" id="pitchVal">0 st</span>
-          <button class="step-btn" id="pitchUpBtn" title="Key up one semitone (the speed stays the same)">+</button>
-        </div>
-        <button class="key-fit-btn" id="keyFitBtn" title="Find the key that suits your voice">Fit my voice</button>
-        <div class="key-fit-panel" id="keyFitPanel" hidden>
-          <div class="key-fit-title">Fit the key to your voice</div>
-          <label class="key-fit-row">I sing as
-            <select class="mini-select" id="keyVoice">
-              <optgroup label="Male voice">
-                <option value="bass">Bass (low)</option>
-                <option value="baritone">Baritone (middle)</option>
-                <option value="tenor">Tenor (high)</option>
-              </optgroup>
-              <optgroup label="Female voice">
-                <option value="alto">Alto (low)</option>
-                <option value="mezzo">Mezzo-soprano (middle)</option>
-                <option value="soprano">Soprano (high)</option>
-              </optgroup>
-            </select>
-          </label>
-          <p class="key-fit-text" id="keyFitText">Open a song to see which key suits you.</p>
-          <div class="key-fit-actions">
-            <button class="btn btn-sm" id="keyFitApply" disabled>Use it</button>
-            <button class="btn btn-sm" id="keyFitReset">Original key</button>
-            <button class="btn btn-sm" id="keyFitClose">Close</button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- A/B Looping Toolbar -->
-    <div class="loop-toolbar">
-      <button class="loop-toggle-btn" id="loopToggleBtn" title="Toggle Looper (L)">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12v-3a4 4 0 014-4h12m0 0l-4-4m4 4l-4 4M20 12v3a4 4 0 01-4 4H4m0 0l4 4m-4-4l4-4"/></svg>
-        Loop
-      </button>
-      <button class="loop-marker-btn" id="setLoopInBtn" title="Set Loop In (A)">[ A</button>
-      <button class="loop-marker-btn" id="setLoopOutBtn" title="Set Loop Out (B)">B ]</button>
-      <button class="loop-marker-btn" id="clearLoopBtn" title="Clear Loop">Clear</button>
-    </div>
-
-    <!-- Quick Mix Presets -->
-    <div class="preset-toggles" role="group" aria-label="Mix Presets">
-      <button class="preset-chip" id="btnPresetKaraoke" title="Mute Vocals (K)">Karaoke</button>
-      <button class="preset-chip" id="btnPresetAcapella" title="Solo Vocals">Acapella</button>
-      <button class="preset-chip" id="btnPresetRhythm" title="Solo Drums and Bass">Rhythm</button>
-      <button class="preset-chip" id="btnPresetReset" title="Reset All Mutes and Solos">Reset</button>
-    </div>
-  </section>
-
   <!-- Master Timeline & Global Scrubber Ruler -->
   <section class="timeline-overview-deck" aria-label="Timeline Overview">
     <!-- Vocal highway: the sung pitch scrolls towards the "now" line. Click it to jump. -->
@@ -303,7 +279,6 @@
           <option value="minor">minor</option>
         </select>
         <button type="button" class="preset-chip" id="highwayKeyReset" title="Go back to the key the app found" hidden>Use detected key</button>
-        <label class="highway-field highway-check"><input type="checkbox" id="highwayShowChords"> Chords <span class="highway-warning" title="The chord guesses are rough and are often wrong. Do not trust them yet.">very experimental, not right yet</span></label>
       </div>
       <canvas id="vocalHighwayCanvas" title="Pitch highway. Click to jump to that moment."></canvas>
     </div>
@@ -513,6 +488,51 @@
 
       <div style="text-align:right;">
         <button class="btn" onclick="document.getElementById('dropzoneModal').classList.remove('open')">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Help: how the window works now -->
+  <div class="modal-backdrop" id="helpModal" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
+    <div class="modal-window help-window">
+      <div class="modal-header">
+        <h2 class="modal-title" id="helpTitle">Help</h2>
+        <button class="modal-close-btn" id="helpClose" aria-label="Close">
+          <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" fill="none" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="help-body">
+        <h3>Getting a song in</h3>
+        <p><strong>Create</strong> splits a file, or a YouTube link, into stems. <strong>Library</strong> opens a song you already split. <strong>Import</strong> loads stem files you already have. <strong>Demo</strong> plays a short example so you can try the mixer.</p>
+
+        <h3>Play, speed, key, and loop</h3>
+        <p>The round button plays and pauses (Space). The time shows where you are. <strong>Speed</strong> changes how fast the song plays and leaves the key alone. <strong>Key</strong> moves the song up or down and leaves the speed alone. <strong>Fit my voice</strong> suggests a key for the voice you pick. <strong>Loop</strong> (L) repeats a section. <strong>A</strong> and <strong>B</strong> set the start and end of that section, and <strong>Clear</strong> removes them. Enter or Home jumps back to the start.</p>
+
+        <h3>Each stem</h3>
+        <p>Every stem has <strong>M</strong> (mute that stem), <strong>S</strong> (play only that stem), and a volume slider. The picture beside the slider is there so you can see the sound and click it to jump. Pressing M or S turns Karaoke, Acapella, and Rhythm off. The mute or solo you just set stays.</p>
+
+        <h3>Karaoke, Acapella, and Rhythm</h3>
+        <p>These three are switches. Only one can be on. Click the one that is lit to turn it off. They do not move the volume sliders.</p>
+        <ul>
+          <li><strong>Karaoke</strong> (K) mutes the vocals. Click it again and the vocals come back.</li>
+          <li><strong>Acapella</strong> plays only the vocals. Click it again and the other stems come back.</li>
+          <li><strong>Rhythm</strong> plays only the drums, including the separate drum parts, and the bass. Click it again and the rest come back.</li>
+        </ul>
+        <p><strong>Reset</strong> puts every stem volume back to the middle, clears mute and solo, and turns those switches off.</p>
+
+        <h3>The highway and Sing along</h3>
+        <p>The picture above the seek bar shows the notes coming toward a line that means now. Click it to jump there. <strong>Sing along</strong> stays under that picture. It uses your microphone, with Level, a guide tone, and Mic timing if your voice looks a little early or late.</p>
+
+        <h3>Lyrics</h3>
+        <p>When the words have timing, you see four lines: the one just sung, the line being sung, and the next two. The current line fills in as it is sung. Click a line to jump to it. If the words are a little early or late, use <strong>−0.5s</strong> and <strong>+0.5s</strong>. Words without timing stay as a scrolling list. <strong>Find lyrics</strong> searches by artist and title.</p>
+
+        <h3>Vocal training, master, and export</h3>
+        <p>The panel on the right records your voice: Analyze, Mic, the level meter, monitor, Record, Stop, the timer, clear, and download, plus Target, You, and Accuracy. <strong>Original</strong>, <strong>Mine</strong>, and <strong>Both</strong> choose what you hear. <strong>Master</strong> is the overall left and right level and the overall volume. <strong>Export</strong> writes a wav of the full mix, a karaoke mix, or the vocals, and can use only the loop region.</p>
+
+        <h3>Where the songs live</h3>
+        <p>Library shows the folder the songs are in. <strong>Change folder</strong> points the app at another one, for example a drive that already has your songs, and remembers it. A song whose files cannot be opened stays in the list.</p>
+
+        <p class="help-keys">Space plays. K turns Karaoke on or off. L turns the loop on or off. Escape closes this page and the other windows.</p>
       </div>
     </div>
   </div>

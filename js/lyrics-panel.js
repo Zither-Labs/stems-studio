@@ -1,9 +1,10 @@
 /**
  * Stems Studio - Karaoke lyrics
  *
- * Shows the lyrics of the open song and follows the music: the line being sung is large and
- * fills with colour as it goes, the lines around it scroll past, and clicking a line jumps
- * to it. Lyrics come from the engine (server.py), which takes them from the song file's own
+ * Shows the lyrics of the open song and follows the music. Timed lyrics show four lines:
+ * the one just sung, the line being sung (it fills with colour as it goes), and the next two.
+ * Clicking a line jumps to it. Lyrics without timing stay as a scrolling list. Lyrics come
+ * from the engine (server.py), which takes them from the song file's own
  * tags or from LRCLIB. If a song has none, "Find lyrics" searches LRCLIB by artist and title.
  *
  * All lyric text is put on the page as plain text (never as HTML).
@@ -224,15 +225,33 @@ class LyricsPanel {
     return found;
   }
 
-  // Scrolls the list so the current line sits in the middle of the stage.
+  // Timed lyrics keep four lines on screen: one before the current line, and two after.
+  // Before the first line, the first four upcoming lines are shown.
+  visibleRange(index) {
+    const count = this.lineEls.length;
+    if (count === 0) return [0, -1];
+    if (count <= 4) return [0, count - 1];
+    let start = index < 0 ? 0 : index - 1;
+    if (start < 0) start = 0;
+    let end = start + 3;
+    if (end >= count) {
+      end = count - 1;
+      start = Math.max(0, end - 3);
+    }
+    return [start, end];
+  }
+
+  showWindow(index) {
+    if (!this.inner || !this.lyrics || !this.lyrics.synced) return;
+    const [start, end] = this.visibleRange(index);
+    this.lineEls.forEach((el, i) => {
+      el.hidden = i < start || i > end;
+    });
+    this.inner.style.transform = '';
+  }
+
   centerOn(index) {
-    if (!this.inner) return;
-    if (!this.lyrics.synced) return;
-    const target = this.lineEls[Math.max(0, index)];
-    if (!target) return;
-    const stageH = this.stage.clientHeight;
-    const shift = target.offsetTop + target.offsetHeight / 2 - stageH / 2;
-    this.inner.style.transform = `translateY(${-Math.max(0, shift)}px)`;
+    this.showWindow(index);
   }
 
   loop() {
