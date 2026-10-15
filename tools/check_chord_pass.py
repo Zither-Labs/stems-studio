@@ -66,4 +66,15 @@ payload = {"segments": [
 segs = cp.segments_from_payload(payload)
 assert len(segs) == 1 and segs[0]["root"] == 0 and segs[0]["quality"] == "m", segs
 
+chart = {"arrangement": {"backing_track_progression": ["G / / /", "C / / /", "G / D /", "G / / /"]}}
+changes, uses_flats = cp.chords_from_chart(chart)
+assert [cp.spell(c["root"], c["quality"], uses_flats) for c in changes] == ["G", "C", "G", "D", "G"], changes
+
+exact = {"match_type": "title_exact", "title": "Sitting On Top Of The World", "artist": None, "score": 1}
+assert cp.pick_hit(exact, "Doc Watson", "Sitting on top of the world")["title"].startswith("Sitting")
+low = {"results": [{"match_type": "title_contains", "title": "Wonderwall", "artist": "Oasis", "score": 0.5}]}
+assert cp.pick_hit(low, "Oasis", "Wonderwall") is None
+other = {"results": [{"match_type": "title_exact", "title": "Africa", "artist": "Toto", "score": 1}]}
+assert cp.pick_hit(other, "Weezer", "Africa") is None
+
 print("chord pass ok")

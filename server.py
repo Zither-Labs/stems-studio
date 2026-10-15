@@ -782,17 +782,21 @@ def load_song_lyrics(song_id):
 
 CHORD_SHEET_NAME = "chord-sheet.txt"
 KARALYR_CACHE_NAME = "karalyr-chords.json"
+PUBLISHED_CACHE_NAME = "published-chords.json"
+PUBLISHED_CACHE_SECONDS = 7 * 24 * 3600
 
 
 def song_chord_query(song_id):
-    """YouTube id and artist/title, for looking the song up on Karalyr."""
+    """YouTube id and artist/title, so a published chord chart can be looked up."""
     youtube_id = None
+    library_title = None
     try:
         with library_db() as conn:
             row = conn.execute(
-                "SELECT content_key, source_label FROM songs WHERE id = ?", (song_id,)
+                "SELECT content_key, source_label, title FROM songs WHERE id = ?", (song_id,)
             ).fetchone()
         if row:
+            library_title = row["title"]
             key = row["content_key"] or ""
             rest = key[3:] if key.startswith("yt:") else ""
             if re.fullmatch(r"[A-Za-z0-9_-]{11}", rest):
@@ -811,6 +815,14 @@ def song_chord_query(song_id):
         title = str(meta.get("title") or "").strip() or None
     except (OSError, ValueError):
         pass
+    lyrics = separator_module("lyrics")
+    if title:
+        title = lyrics._clean_title(title)
+    if not title and library_title:
+        artist, title = lyrics.guess_artist_title(library_title)
+    elif title and not artist and library_title:
+        guessed_artist, _guessed_title = lyrics.guess_artist_title(library_title)
+        artist = guessed_artist
     return youtube_id, artist, title
 
 
@@ -853,8 +865,36 @@ def cached_karalyr(folder, youtube_id, artist, title):
     return chords
 
 
+def cached_published_chart(folder, artist, title):
+    """A published chord chart for this song, remembered so the lookup happens once a week."""
+    path = os.path.join(folder, PUBLISHED_CACHE_NAME)
+    identity = {"artist": artist or "", "title": title or ""}
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            saved = json.load(handle)
+        fresh = time.time() - float(saved.get("fetched_at") or 0) < PUBLISHED_CACHE_SECONDS
+        if fresh and saved.get("artist") == identity["artist"] and saved.get("title") == identity["title"]:
+            return saved
+    except (OSError, ValueError, TypeError):
+        pass
+    if not identity["title"]:
+        return None
+    found = separator_module("chord_pass").fetch_jamming(identity["artist"], identity["title"])
+    payload = {
+        **identity,
+        "fetched_at": time.time(),
+        "source": "startjamming",
+        "chords": (found or {}).get("chords") or [],
+        "flats": bool((found or {}).get("flats")),
+        "label": (found or {}).get("label") or "",
+        "url": (found or {}).get("url") or "",
+    }
+    write_json_file(path, payload)
+    return payload
+
+
 def chords_for_song(song_id, folder, audio):
-    """First pass is a chord sheet (or Karalyr). Second pass is the app, kept only when the bass agrees."""
+    """First pass is a published chart (or a pasted sheet). Second pass is the app, kept only when the bass agrees."""
     chord_pass = separator_module("chord_pass")
     sheet = load_chord_sheet(folder)
     runs = audio.get("bass_runs") or []
@@ -866,26 +906,40 @@ def chords_for_song(song_id, folder, audio):
     except (TypeError, ValueError):
         key_flats = False
 
-    external, timed, source, flats = [], False, "sheet", key_flats
+    kept = []
+    chart_label = ""
     if sheet.strip():
         external, flats = chord_pass.parse_sheet(sheet)
+        kept = chord_pass.from_chart(external, runs, False, "sheet", flats)
     else:
         youtube_id, artist, title = song_chord_query(song_id)
-        if youtube_id or (artist and title):
+        if title:
+            try:
+                chart = cached_published_chart(folder, artist, title)
+            except Exception:
+                traceback.print_exc()
+                chart = None
+            if chart and chart.get("chords"):
+                kept = chord_pass.from_chart(chart["chords"], runs, False, "chart", chart.get("flats"))
+                if kept:
+                    chart_label = chart.get("label") or ""
+        if not kept and (youtube_id or title):
             try:
                 external = cached_karalyr(folder, youtube_id, artist, title)
             except Exception:
                 traceback.print_exc()
                 external = []
-            timed, source = True, "karalyr"
-    chords = chord_pass.combine(external, app_chords, runs, timed, source, flats)
+            kept = chord_pass.from_chart(external, runs, True, "karalyr", key_flats)
+    chords = chord_pass.add_app_chords(app_chords, runs, kept)
     sheet_used = any(chord.get("source") == "sheet" for chord in chords)
+    chart_used = any(chord.get("source") == "chart" for chord in chords)
     karalyr_used = any(chord.get("source") == "karalyr" for chord in chords)
+    chord_from = "sheet" if sheet_used else "chart" if chart_used else "karalyr" if karalyr_used else "bass" if chords else None
     return {
         "chords": chords,
         "sheet": sheet,
-        "note": chord_pass.explain(sheet, sheet_used, karalyr_used, len(chords)),
-        "chord_from": "sheet" if sheet_used else "karalyr" if karalyr_used else "bass" if chords else None,
+        "note": chord_pass.explain(sheet, sheet_used, chart_used, karalyr_used, len(chords), chart_label),
+        "chord_from": chord_from,
     }
 
 

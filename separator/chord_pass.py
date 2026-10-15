@@ -1,9 +1,9 @@
 """Two passes for chords.
 
-The first pass is a chord sheet: one the user pasted, or one Karalyr already timed for this
-recording. It is only a guess, and it is often written in a different key. The second pass is
-the app listening to the stems. A chord is kept when its root is the note the bass holds for
-that stretch. Anything else is left off the highway.
+The first pass is a published chord chart the app looks up from the song's name (or a sheet
+someone pasted). It is often written in a different key. The second pass is the app listening
+to the stems. A chord is kept when its root is the note the bass holds for that stretch.
+Anything else is left off the highway.
 """
 
 import json
@@ -12,7 +12,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-KARALYR = "https://karalyr.com/api"
+KARALYR = "https://www.karalyr.com/api"
+JAMMING = "https://www.startjamming.com/api/songs"
 USER_AGENT = "StemsStudio/1.0 (local app; https://github.com/Zither-Labs/stems-studio)"
 TIMEOUT = 8
 
@@ -257,16 +258,127 @@ def combine(external, app_chords, runs, timed, source, flats=False):
     return add_app_chords(app_chords, runs, first)
 
 
-def explain(sheet_text, sheet_used, karalyr_used, count):
+def from_chart(chords, runs, timed, source, flats=False):
+    """The first pass on its own: a chart lined up with the bass, with no app chords mixed in."""
+    if not chords:
+        return []
+    if timed:
+        return align_timed(chords, runs, flats, source)
+    return align_cycle(chords, runs, flats, source)
+
+
+def explain(sheet_text, sheet_used, chart_used, karalyr_used, count, chart_label=""):
     if (sheet_text or "").strip() and not sheet_used:
         return "That sheet did not line up with the bass, so it was not used."
     if count <= 0:
-        return "No chord was sure enough to show."
+        return "No published chord chart matched this song, and the bass was not sure enough on its own."
     if sheet_used:
-        return f"Showing {count} chords from the sheet, checked against the bass."
+        return f"Showing {count} chords from the sheet you pasted, checked against the bass."
+    if chart_used:
+        name = chart_label or "a published chart"
+        return f"Showing {count} chords from {name}, checked against the bass."
     if karalyr_used:
-        return f"Showing {count} chords from Karalyr, checked against the bass."
-    return f"Showing {count} chords the bass agreed with."
+        return f"Showing {count} chords from an automatic chart, checked against the bass."
+    return f"No published chart matched. Showing {count} chords the bass agreed with."
+
+
+# --- published charts (looked up by song name; the app does not ask you to find them) ------
+
+def _norm(text):
+    text = (text or "").lower()
+    text = re.sub(r"[^a-z0-9]+", " ", text)
+    text = re.sub(r"\bthe\b", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def pick_hit(payload, artist, title):
+    """One search result whose title is this song. A different artist is left out."""
+    want = _norm(title)
+    who = _norm(artist)
+    if not want or not isinstance(payload, dict):
+        return None
+    pool = []
+    if payload.get("match_type") == "title_exact" and _norm(payload.get("title")) == want:
+        pool.append(payload)
+    for item in payload.get("results") or []:
+        if not isinstance(item, dict) or item.get("match_type") in ("lyrics", "lyric"):
+            continue
+        if _norm(item.get("title")) != want:
+            continue
+        if item.get("match_type") != "title_exact" and float(item.get("score") or 0) < 0.9:
+            continue
+        pool.append(item)
+
+    def rank(item):
+        got = _norm(item.get("artist"))
+        if who and got and (who == got or who in got or got in who):
+            return 2
+        if who and got:
+            return 0
+        return 1
+
+    ranked = [item for item in pool if rank(item) > 0]
+    if not ranked:
+        return None
+    ranked.sort(key=rank, reverse=True)
+    return ranked[0]
+
+
+def chords_from_chart(payload):
+    """Chord changes from a Start Jamming arrangement, in the order they are played."""
+    arrangement = payload.get("arrangement") if isinstance(payload, dict) else None
+    measures = (arrangement or {}).get("backing_track_progression") or []
+    tokens = []
+    flats = False
+    for measure in measures:
+        current = None
+        for part in str(measure).replace("—", " ").replace("–", " ").split():
+            if part in {"/", "-", ".", "%", "|"}:
+                if current:
+                    tokens.append(current)
+                continue
+            parsed = parse_symbol(part.strip("[]().,"))
+            if not parsed:
+                continue
+            current = {"root": parsed["root"], "quality": parsed["quality"]}
+            flats = flats or parsed["flats"]
+            tokens.append(current)
+    chords = []
+    for item in tokens:
+        if chords and chords[-1] == item:
+            continue
+        chords.append(dict(item))
+    return chords, flats
+
+
+def fetch_jamming(artist, title):
+    """A published chart for this title, or None. Raises on a network failure."""
+    title = (title or "").strip()
+    if not title:
+        return None
+    query = urllib.parse.urlencode({"for": "agent", "q": title, "limit": 8})
+    hit = pick_hit(_get_json(f"{JAMMING}/search?{query}"), artist, title)
+    if not hit:
+        return None
+    full = hit
+    api_url = hit.get("api_url")
+    if api_url and "arrangement" not in (hit if isinstance(hit, dict) else {}):
+        if "for=agent" not in api_url:
+            api_url += ("&" if "?" in api_url else "?") + "for=agent"
+        full = _get_json(api_url)
+    chords, flats = chords_from_chart(full if isinstance(full, dict) else {})
+    if len(chords) < 2:
+        return None
+    label = (full or {}).get("title") or hit.get("title") or title
+    who = (full or {}).get("artist") or hit.get("artist")
+    if who:
+        label = f"{who} — {label}"
+    return {
+        "chords": chords,
+        "flats": flats,
+        "label": label,
+        "url": (full or {}).get("url") or hit.get("url") or "",
+    }
 
 
 # --- Karalyr (a public chord feed; often empty, and always a computer's guess) -----------
