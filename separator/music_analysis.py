@@ -310,8 +310,12 @@ def onset_envelope(mono):
     if mono is None or len(mono) < frame * 4:
         return np.zeros(0, dtype=np.float64)
     count = 1 + (len(mono) - frame) // ONSET_HOP
-    index = (np.arange(count) * ONSET_HOP)[:, None] + np.arange(frame)[None, :]
-    energy = np.sqrt(np.mean(mono[index] ** 2, axis=1) + 1e-12)
+    squared = np.asarray(mono, dtype=np.float64) ** 2
+    running = np.empty(len(squared) + 1, dtype=np.float64)
+    running[0] = 0.0
+    np.cumsum(squared, out=running[1:])
+    starts = np.arange(count) * ONSET_HOP
+    energy = np.sqrt((running[starts + frame] - running[starts]) / frame + 1e-12)
     rise = np.maximum(0.0, np.diff(energy, prepend=energy[0]))
     return np.convolve(rise, np.array([0.2, 0.6, 0.2]), mode="same")
 
@@ -339,40 +343,57 @@ def estimate_groove(onset, frame_seconds=ONSET_FRAME):
     for lag in (peak, peak // 2, peak * 2, int(round(peak / 1.5)), int(round(peak * 1.5))):
         if min_lag <= lag <= max_lag:
             candidates.add(int(lag))
-    top = float(lag_score.max())
+    peaks = []
     for i in range(1, len(lag_score) - 1):
-        if lag_score[i] >= lag_score[i - 1] and lag_score[i] > lag_score[i + 1] and lag_score[i] > 0.45 * top:
-            candidates.add(min_lag + i)
+        if lag_score[i] >= lag_score[i - 1] and lag_score[i] > lag_score[i + 1]:
+            peaks.append((float(lag_score[i]), min_lag + i))
+    peaks.sort(reverse=True)
+    for _, lag in peaks[:5]:
+        candidates.add(int(lag))
+
+    positions = np.arange(len(onset))
+
+    def column_means(bar):
+        """Mean hit strength at each spot in the bar."""
+        if bar < 4 or bar > len(onset) // 3:
+            return None
+        total = np.zeros(bar, dtype=np.float64)
+        count = np.zeros(bar, dtype=np.float64)
+        # bincount already folded by the full length; fold again into this bar.
+        total += np.bincount(positions % bar, weights=onset, minlength=bar)
+        count += np.bincount(positions % bar, minlength=bar)
+        if count.min() < 4:
+            return None
+        return total / count
 
     best = None
     for lag in candidates:
         for meter in (2, 3, 4, 5, 6):
             bar = lag * meter
-            if bar < 4 or bar > len(onset) // 3:
+            columns = column_means(bar)
+            if columns is None:
                 continue
-            for phase in range(bar):
-                levels = []
-                for beat in range(meter):
-                    idx = np.arange(phase + beat * lag, len(onset), bar)
-                    idx = idx[idx < len(onset)]
-                    if len(idx) < 4:
-                        levels = []
-                        break
-                    levels.append(float(onset[idx].mean()))
-                if len(levels) < meter:
-                    continue
-                down, other = levels[0], float(np.mean(levels[1:]))
-                # Every beat in the bar has to land on a hit. A lag that falls
-                # between the notes is not the pulse, even if the downbeat looks loud.
-                if min(levels) < 0.35 * max(levels):
-                    continue
-                score = down - 0.75 * other
-                if meter == 4:
-                    score += 0.02
-                elif meter == 3:
-                    score += 0.015
-                if best is None or score > best[0]:
-                    best = (score, lag, meter, phase, down, other)
+            phases = np.arange(bar)
+            offsets = (phases[:, None] + (np.arange(meter) * lag)) % bar
+            levels = columns[offsets]
+            low = levels.min(axis=1)
+            high = np.maximum(levels.max(axis=1), 1e-12)
+            down = levels[:, 0]
+            other = (levels.sum(axis=1) - down) / (meter - 1)
+            score = down - 0.75 * other
+            if meter == 4:
+                score = score + 0.02
+            elif meter == 3:
+                score = score + 0.015
+            # Every beat in the bar has to land on a hit. A lag that falls
+            # between the notes is not the pulse, even if the downbeat looks loud.
+            score = np.where(low >= 0.35 * high, score, -np.inf)
+            phase = int(np.argmax(score))
+            if not np.isfinite(score[phase]):
+                continue
+            found = (float(score[phase]), int(lag), int(meter), phase, float(down[phase]), float(other[phase]))
+            if best is None or found[0] > best[0]:
+                best = found
     if best is None or best[4] <= best[5] * 1.08:
         return None
     _, lag, meter, phase, _, _ = best

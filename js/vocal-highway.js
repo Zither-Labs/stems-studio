@@ -645,7 +645,7 @@ class VocalHighway {
           if (sheetStatus) sheetStatus.textContent = 'Open a song first.';
           return;
         }
-        if (sheetStatus) sheetStatus.textContent = 'Checking the sheet against the bass...';
+        if (sheetStatus) sheetStatus.textContent = 'Checking the sheet against the bass. The first time also listens through the song.';
         try {
           const resp = await fetch(`/api/analysis/${songId}/sheet`, {
             method: 'POST',
