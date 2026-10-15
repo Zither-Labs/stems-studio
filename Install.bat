@@ -92,7 +92,7 @@ if errorlevel 1 echo   (Could not install it. The app still works without it.)
 if not errorlevel 1 goto make_shortcut
 echo.
 echo Optional: "more chord guessers" adds Chordino, madmom, autochord and BTC next to
-echo the app's own chord guess, so you can compare them. It adds about 1.5 GB.
+echo the app's own chord guess, so you can compare them. It adds under 100 MB.
 echo Any that are already installed are kept.
 choice /c YN /n /m "Install them now? [Y/N] "
 if errorlevel 2 goto make_shortcut
