@@ -132,10 +132,8 @@ The Vocal Training Studio helps you learn to sing songs by:
 Stems Studio is a local desktop app. It runs entirely on your computer and opens in its own window (Chrome or Edge, with no tabs or address bar). GitHub is only used to keep a backup of the code and its history; the app never updates itself.
 
 ### Windows: install once
-1. Double-click **`Install.bat`**. It builds a private Python 3.12 environment in this folder (`.venv`, ignored by git), installs the GPU (CUDA) build of PyTorch when it finds an NVIDIA graphics card, installs the stem maker (several minutes the first time), and puts a **Stems Studio** shortcut on your Desktop and in the Start menu. It ends by printing which GPU the app will use. It is safe to run again whenever something needs repairing.
-2. From then on, just open **Stems Studio** from the shortcut. Closing its window quits the app.
-
-To get newer code later, run `git pull` in this folder yourself when you want it.
+1. Double-click **`Install.bat`**. It builds a private Python 3.12 environment in this folder (`.venv`, ignored by git), installs the GPU (CUDA) build of PyTorch when it finds an NVIDIA graphics card, installs the stem maker (several minutes the first time), and puts two shortcuts on your Desktop and in the Start menu: **Stems Studio**, and **Update Stems Studio** (the green arrow). It ends by printing which GPU the app will use. It is safe to run again whenever something needs repairing.
+2. From then on, open **Stems Studio** from its shortcut. Closing its window quits the app. When you want the newest window, double-click **Update Stems Studio** instead. It closes the app if it is open, downloads that copy, and opens it. You do not run `Install.bat` for that.
 
 ### Mac: install once
 1. Install [Google Chrome](https://www.google.com/chrome/) if you do not have it (Edge also works; otherwise your default browser is used).
@@ -174,15 +172,15 @@ The library and all stems are stored outside the code folder, so git never touch
 If something goes wrong at startup, the details are in `stems-studio.log` in that folder.
 
 ### Setting it up on another computer
-*(Last checked against the app on 2026-10-14. Not yet tried on a clean machine; Mac not tested. The library-folder button was checked against the engine; the folder window itself was not opened on Windows or Mac.)*
+*(Last checked against the app on 2026-10-15. Not yet tried on a clean machine; Mac not tested. The Update shortcut was added to the same Windows script that already creates the Stems Studio shortcut; that script was not double-clicked on Windows for this change. The library-folder button was checked against the engine; the folder window itself was not opened on Windows or Mac.)*
 
 1. Install **Git**, **Chrome or Edge**, and **Python 3.12 from python.org** (`winget install Python.Python.3.12`, or the installer from python.org with "Add python.exe to PATH" ticked). Use the python.org one, not a Python that another tool fetched: Windows' **Smart App Control** blocks programs that are not digitally signed, and the python.org Python is signed by the Python Software Foundation while the uv-fetched one that `Install.bat` falls back to is not (on one PC it was blocked, and the shortcut did nothing). The optional cleaner-vocals and drum-splitting tool is started through its own python.exe (also signed) rather than the unsigned `audio-separator.exe` stub that pip makes. If Smart App Control is on and a program still gets blocked, the Windows Security app lists it under *App & browser control*.
 2. The repository is private, so the person needs a GitHub account that has been invited to `Zither-Labs/stems-studio`. Git asks them to sign in the first time.
 3. Get the app: `git clone https://github.com/Zither-Labs/stems-studio.git C:\Music\StemsStudio` (any folder works; avoid OneDrive folders). Do **not** copy the `.venv` or `.venv-roformer` folders from another computer; they only work where they were made.
-4. Double-click **`Install.bat`** (Mac: `Install.command`). It builds the app's own Python environment, installs the GPU version of PyTorch if there is an NVIDIA card (otherwise it runs on the CPU, slowly), the stem maker and the extras, offers the optional "cleaner vocals" and drum splitting, and makes the **Stems Studio** shortcut. The first time takes several minutes; safe to run again.
+4. Double-click **`Install.bat`** (Mac: `Install.command`). It builds the app's own Python environment, installs the GPU version of PyTorch if there is an NVIDIA card (otherwise it runs on the CPU, slowly), the stem maker and the extras, offers the optional "cleaner vocals" and drum splitting, and makes the shortcuts. On Windows those are **Stems Studio** and **Update Stems Studio** (the green arrow), on the Desktop and in the Start menu. The first time takes several minutes; safe to run again.
 5. Open **Stems Studio** from the shortcut. The first split downloads the separation model.
 6. **To see the same songs as another computer**, open **My Library** and click **Change folder**. Choose the folder that contains `library.db` (the drive has to be connected). The app remembers it in `%LOCALAPPDATA%\StemsStudio\settings.json`. The same file can still be written by hand, as `{"library_dir": "Z:\\Music\\Stems"}`. Without this, each computer has its own library, starting empty. If `STEMS_STUDIO_LIBRARY` is set, that folder is used and the button is hidden.
-7. Updates: when GitHub has a newer version, a bar appears in the app with an **Update now** button (see "Update check"). Keep every computer that shares a library on the same version.
+7. Updates: on Windows, double-click **Update Stems Studio** on the Desktop. It downloads the new window (`cursor/compact-layout-dac8`) and opens the app. The **Update now** bar inside the app only fast-forwards the copy already open (see "Update check"). Keep every computer that shares a library on the same version.
 
 
 ---
