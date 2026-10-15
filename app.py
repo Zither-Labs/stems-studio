@@ -7,6 +7,7 @@ no tabs, no address bar). Closing the window quits the app.
 Double-click the Stems Studio shortcut made by Install.bat, or run:  python app.py
 """
 
+import faulthandler
 import os
 import shutil
 import subprocess
@@ -31,6 +32,8 @@ def route_output_to_log():
             os.replace(LOG_PATH, LOG_PATH + ".old")
         log = open(LOG_PATH, "a", encoding="utf-8", buffering=1)
         sys.stdout = sys.stderr = log
+        # A crash inside a compiled library ends the process without a Python traceback.
+        faulthandler.enable(log)
     except OSError:
         pass
 

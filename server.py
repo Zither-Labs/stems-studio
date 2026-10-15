@@ -2331,7 +2331,9 @@ class ThreadedServer(socketserver.ThreadingTCPServer):
 
 class Lifecycle:
     """Quits the engine when the app window goes away, but never in the middle of a separation."""
-    CLOSE_GRACE_SECONDS = 4
+    # Longer than two of the page's 5-second heartbeats, so a second open window (or a page
+    # that is reloading) can still claim the engine after another window closes.
+    CLOSE_GRACE_SECONDS = 12
     SILENCE_LIMIT_SECONDS = 150
     NEVER_OPENED_LIMIT_SECONDS = 90
 
@@ -2352,18 +2354,25 @@ class Lifecycle:
     def busy():
         return any(job.get("status") == "processing" for job in list(JOBS.values()))
 
-    def should_quit(self, now):
+    def quit_reason(self, now):
+        """Why the engine should stop now, or None while a window still needs it."""
         if self.busy():
-            return False
+            return None
         if self.closing_at and now - self.closing_at > self.CLOSE_GRACE_SECONDS:
-            return True
+            return "the app window was closed"
         if self.last_seen and now - self.last_seen > self.SILENCE_LIMIT_SECONDS:
-            return True
-        return self.last_seen is None and now - self.started > self.NEVER_OPENED_LIMIT_SECONDS
+            return f"no app window has checked in for {self.SILENCE_LIMIT_SECONDS} seconds"
+        if self.last_seen is None and now - self.started > self.NEVER_OPENED_LIMIT_SECONDS:
+            return "the app window never opened"
+        return None
+
+    def should_quit(self, now):
+        return self.quit_reason(now) is not None
 
     def watch(self):
-        while not self.should_quit(time.time()):
+        while (reason := self.quit_reason(time.time())) is None:
             time.sleep(1)
+        print(f"Stems Studio engine stopping: {reason}.", flush=True)
         self.httpd.shutdown()
 
 
