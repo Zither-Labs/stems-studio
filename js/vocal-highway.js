@@ -1612,7 +1612,7 @@ class VocalHighway {
     ctx.lineTo(gutter, h);
     ctx.stroke();
     ctx.textBaseline = 'middle';
-    const fontPx = Math.max(8, Math.min(11, rowH - 0.5));
+    const fontPx = Math.max(8, Math.min(13, rowH - 1));
     for (let m = this.minMidi; m <= this.maxMidi; m++) {
       const pc = pcOf(m);
       const y = this.midiToY(m);
