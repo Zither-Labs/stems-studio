@@ -810,7 +810,23 @@ def prepare_song_listen(song_id, folder, on_progress=None):
                 except Exception:
                     traceback.print_exc()
 
-            saved = music_analysis.load_if_fresh(folder, analysis_path, vocal_midi)
+            # The bass line drawn on the highway, timed to 16 ms. Chord changes follow it.
+            bass_line = None
+            bass_wav = os.path.join(folder, "bass.wav")
+            if os.path.isfile(bass_wav):
+                try:
+                    pitch_track = separator_module("pitch_track")
+                    bass_pitch_path = os.path.join(folder, "bass.pitch.json")
+                    saved_bass = pitch_track.load_if_fresh(bass_wav, bass_pitch_path)
+                    if saved_bass is None:
+                        report(7, "Reading the bass line...")
+                        saved_bass = pitch_track.cached_analysis(bass_wav, bass_pitch_path)
+                    bass_line = {key: saved_bass.get(key)
+                                 for key in ("t0", "dt", "midi", "bass_method", "source_mtime")}
+                except Exception:
+                    traceback.print_exc()
+
+            saved = music_analysis.load_if_fresh(folder, analysis_path, vocal_midi, bass_line)
             if saved is not None:
                 # Already heard this song. Do not flash the bar for a result that is sitting on disk.
                 note_listen(song_id, 100, "Beat and key are ready.", running=False)
@@ -820,7 +836,7 @@ def prepare_song_listen(song_id, folder, on_progress=None):
                 report(12 + percent * 0.87, message)
 
             result = music_analysis.cached_analysis(
-                folder, analysis_path, vocal_midi, progress=analysis_progress)
+                folder, analysis_path, vocal_midi, progress=analysis_progress, bass_line=bass_line)
             report(100, "Beat and key are ready.", running=False)
             return result
     except Exception:

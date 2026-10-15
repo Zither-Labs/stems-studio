@@ -22,7 +22,7 @@ import os
 
 import numpy as np
 
-ANALYSIS_VERSION = 5          # 5 lets the bass flip a chord back when the guitar is between two chords
+ANALYSIS_VERSION = 6          # 6 times each reading by the middle of its window, and follows the highway's bass line
 
 ONSET_SR = 22050
 ONSET_HOP = 512
@@ -82,8 +82,13 @@ def read_mono(path, sample_rate):
 def spectrogram(x, n_fft, hop, progress=None):
     """Magnitude spectrogram, (frames, bins). Hann window.
 
+    Frame i is centred on sample i * hop. The window is long (0.37 s for the guitar,
+    0.74 s for the bass), so timing a frame by its first sample put every chord change
+    up to a beat early, and the bass and guitar early by different amounts.
+
     progress, when given, is called with the fraction finished (0 to 1). This loop is the slow part.
     """
+    x = np.pad(np.asarray(x, dtype=np.float32), (n_fft // 2, n_fft // 2))
     if len(x) < n_fft:
         x = np.pad(x, (0, n_fft - len(x)))
     window = np.hanning(n_fft + 1)[:-1].astype(np.float32)
@@ -303,6 +308,45 @@ def _sum_stems(paths, sample_rate):
             n = min(len(mix), len(x))
             mix = mix[:n] + x[:n]
     return mix
+
+
+def bass_line_chroma(bass_line, frames, tuning):
+    """The highway's bass line as (frames, 12) on the chord grid, or None.
+
+    The bass spectrum needs a 0.74 s window to separate the low strings, so it smears a change
+    across most of a beat. The pitch line is timed to 16 ms. A frame where the line is silent
+    stays empty here and the spectrum fills it in.
+    """
+    if not bass_line or frames <= 0:
+        return None
+    midi = np.asarray(bass_line.get("midi") or [], dtype=np.float64)
+    dt = float(bass_line.get("dt") or 0.0)
+    t0 = float(bass_line.get("t0") or 0.0)
+    if len(midi) < 2 or dt <= 0 or not np.any(midi > 0):
+        return None
+    out = np.zeros((frames, 12), dtype=np.float32)
+    times = t0 + np.arange(len(midi)) * dt
+    slot = np.round(times / FRAME_SECONDS).astype(int)
+    voiced = (midi > 0) & (slot >= 0) & (slot < frames)
+    pitch_class = np.round(midi[voiced] - tuning).astype(int) % 12
+    np.add.at(out, (slot[voiced], pitch_class), 1.0)
+    return out
+
+
+def merge_bass(spectral, line):
+    """The pitch line where it has a note, the spectrum elsewhere, on one scale."""
+    if line is None:
+        return spectral
+    if spectral is None:
+        return line
+    n = min(len(spectral), len(line))
+    spectral, line = spectral[:n], line[:n]
+    line_rows = line.sum(axis=1)
+    loud = spectral.max(axis=1)
+    typical = float(np.median(loud[loud > 0])) if np.any(loud > 0) else 1.0
+    scaled = spectral / max(typical, 1e-9)
+    shaped = line / np.maximum(line.max(axis=1, keepdims=True), 1e-9)
+    return np.where(line_rows[:, None] > 0, shaped, scaled).astype(np.float32)
 
 
 def vocal_histogram(vocal_midi, tuning):
@@ -552,8 +596,89 @@ def _append_run(runs, root, start, end):
         runs.append({"start": round(start, 3), "end": round(end, 3), "root": int(root)})
 
 
+def track_beats(onset, beat_seconds, frame_seconds=ONSET_FRAME, tightness=100.0):
+    """The time of every beat, following a band that speeds up and slows down.
+
+    One tempo and one phase for the whole song slide off the real beat: a 1% tempo error is
+    a fifth of a second after twenty seconds, and a band without a click drifts more. This
+    is the dynamic-programming beat tracker (Ellis, 2007): every beat lands on a hit, and the
+    gap to the previous beat is kept close to the tempo found by estimate_groove.
+    """
+    onset = np.asarray(onset, dtype=np.float64)
+    period = beat_seconds / frame_seconds
+    n = len(onset)
+    if n < 4 or period < 2:
+        return []
+    spread = float(np.std(onset))
+    local = onset / spread if spread > 0 else onset
+    score = local.copy()
+    back = np.full(n, -1, dtype=np.int64)
+    shortest = max(1, int(round(period / 2)))
+    longest = max(shortest + 1, int(round(period * 2)))
+    for t in range(shortest, n):
+        lo = max(0, t - longest)
+        hi = t - shortest + 1
+        prev = np.arange(lo, hi)
+        if len(prev) == 0:
+            continue
+        cand = score[prev] - tightness * np.log((t - prev) / period) ** 2
+        best = int(np.argmax(cand))
+        if cand[best] > 0:
+            score[t] = local[t] + cand[best]
+            back[t] = prev[best]
+    # End on a real hit near the end, not in the silence after the last one.
+    tail = max(0, n - int(round(period * 2)))
+    hits = np.flatnonzero(local[tail:] >= 0.1 * float(np.max(local))) + tail
+    t = int(hits[np.argmax(score[hits])]) if len(hits) else tail + int(np.argmax(score[tail:]))
+    beats = []
+    while t >= 0:
+        beats.append(t)
+        t = int(back[t])
+    beats.reverse()
+    # The rise in loudness is measured over a 1024-sample window that starts at the frame.
+    offset = (1024 - ONSET_HOP / 2) / ONSET_SR
+    return [round(b * frame_seconds + offset, 3) for b in beats]
+
+
+def _first_downbeat(onset, beats, meter, frame_seconds=ONSET_FRAME):
+    """Which of the first `meter` beats starts a bar: the one hit hardest across the song."""
+    if meter <= 1 or len(beats) < meter * 2:
+        return 0
+    offset = (1024 - ONSET_HOP / 2) / ONSET_SR
+    level = []
+    for k in range(meter):
+        idx = [int(round((b - offset) / frame_seconds)) for b in beats[k::meter]]
+        idx = [i for i in idx if 0 <= i < len(onset)]
+        level.append(float(np.mean([onset[i] for i in idx])) if idx else 0.0)
+    return int(np.argmax(level))
+
+
+def _beat_times(groove, duration):
+    """The beats to read chords on, covering the whole song, and the index of a downbeat."""
+    beat = float(groove["beat_seconds"])
+    meter = max(1, int(groove["beats_per_bar"]))
+    beats = [float(b) for b in groove.get("beats") or []]
+    down = int(groove.get("downbeat") or 0)
+    if len(beats) < 2:
+        bar = beat * meter
+        t = float(groove["phase_seconds"]) % bar
+        if t > beat * 0.25:
+            t -= bar
+        beats = list(np.arange(t, duration + beat, beat))
+        down = 0
+    gaps = np.diff(beats)
+    step = float(np.median(gaps)) if len(gaps) else beat
+    # Carry the beat out to both ends of the song, so the opening and the ending get chords too.
+    while beats[0] > step * 0.25:
+        beats.insert(0, beats[0] - step)
+        down += 1
+    while beats[-1] < duration:
+        beats.append(beats[-1] + step)
+    return beats, down % meter
+
+
 def bars_as_runs(bass_chroma, harmony_chroma, groove):
-    """One root per beat when the guitar is there, otherwise per half-bar.
+    """One root per half beat when the guitar is there, otherwise per half-bar.
 
     Two chords can trade places every beat (Em then G, then Em again). Averaging a
     half-bar kept the louder of the two and the return disappeared. With no guitar,
@@ -561,34 +686,51 @@ def bars_as_runs(bass_chroma, harmony_chroma, groove):
     """
     beat = float(groove["beat_seconds"])
     meter = int(groove["beats_per_bar"])
-    bar = beat * meter
-    if beat <= 0 or bar <= 0:
+    if beat <= 0 or meter <= 0:
         return []
     frames = max(len(bass_chroma) if bass_chroma is not None else 0,
                  len(harmony_chroma) if harmony_chroma is not None else 0)
     if frames == 0:
         return []
     duration = frames * FRAME_SECONDS
-    t = float(groove["phase_seconds"]) % bar
+    beats, down = _beat_times(groove, duration)
     runs = []
     guitar = harmony_chroma is not None and float(np.sum(harmony_chroma)) > 0
-    while t < duration - beat * 0.45:
-        if guitar:
-            spans = [(i, i + 1) for i in range(meter)]
-        else:
-            spans = _beat_groups(meter)
-        for beat_from, beat_to in spans:
-            start = t + beat_from * beat
-            end = min(duration, t + beat_to * beat)
-            if start >= duration - beat * 0.25 or end - start < beat * 0.45:
-                continue
-            if guitar and beat_to - beat_from == 1:
-                root = root_on_beat(bass_chroma, harmony_chroma, start, end)
-            else:
-                root = root_for_span(
-                    bass_chroma, harmony_chroma, start, end, beat, beat_to - beat_from)
+    if guitar:
+        # Half beats. The beat finder often settles on half the real tempo, and then two
+        # chords would share one of its beats. The guitar still decides each slot, so a
+        # walking bass does not get extra chords from the finer grid.
+        slots = []
+        for left, right in zip(beats[:-1], beats[1:]):
+            middle = (left + right) / 2.0
+            for start, end in ((left, middle), (middle, right)):
+                start, end = max(0.0, start), min(duration, end)
+                if end - start >= (right - left) * 0.2:
+                    slots.append([start, end, root_on_beat(bass_chroma, harmony_chroma, start, end)])
+        for index in range(2, len(slots) - 2):
+            before, here, after = slots[index - 1][2], slots[index][2], slots[index + 1][2]
+            steady = slots[index - 2][2] == before and slots[index + 2][2] == after
+            if here != before and before == after and steady:
+                slots[index][2] = before
+        for start, end, root in slots:
             _append_run(runs, root, start, end)
-        t += bar
+        return runs
+    groups = _beat_groups(meter)
+    first = down - meter if down else 0
+    for bar_start in range(first, len(beats) - 1, meter):
+        for beat_from, beat_to in groups:
+            a, b = bar_start + beat_from, bar_start + beat_to
+            if b <= 0 or a >= len(beats) - 1:
+                continue
+            start = beats[max(0, a)]
+            end = beats[min(len(beats) - 1, b)]
+            start, end = max(0.0, start), min(duration, end)
+            span_beat = (end - start) / max(1, min(b, len(beats) - 1) - max(0, a))
+            if end - start < span_beat * 0.45:
+                continue
+            root = root_for_span(
+                bass_chroma, harmony_chroma, start, end, span_beat, beat_to - beat_from)
+            _append_run(runs, root, start, end)
     return runs
 
 
@@ -616,10 +758,11 @@ def bass_root_runs(bass_chroma):
     ]
 
 
-def analyze_song(song_dir, vocal_midi=None, progress=None):
+def analyze_song(song_dir, vocal_midi=None, progress=None, bass_line=None):
     """Find the key and chords of a separated song. Returns a JSON-ready dict.
 
     progress, when given, is called with (percent, message) as the slow reads finish.
+    bass_line: the highway's bass pitch ({"t0", "dt", "midi"}), when it has been read.
     """
     def report(percent, message):
         if progress is not None:
@@ -661,6 +804,10 @@ def analyze_song(song_dir, vocal_midi=None, progress=None):
     vec = lambda c: None if c is None else c.sum(axis=0).astype(np.float64)    # noqa: E731
     key = detect_key(vec(harmony_chroma), vec(bass_chroma), vocal_histogram(vocal_midi, tuning))
 
+    frames = max(len(c) for c in (harmony_chroma, bass_chroma) if c is not None)
+    line = bass_line_chroma(bass_line, frames, tuning)
+    bass_chroma = merge_bass(bass_chroma, line)
+
     chords = []
     if key and (harmony_chroma is not None or bass_chroma is not None):
         harmony_for_chords = harmony_chroma if harmony_chroma is not None else bass_chroma
@@ -686,6 +833,10 @@ def analyze_song(song_dir, vocal_midi=None, progress=None):
         onset = onset_envelope(read_mono(pulse, ONSET_SR))
     groove = estimate_groove(onset) if onset is not None and len(onset) else None
     if groove is not None:
+        beats = track_beats(onset, groove["beat_seconds"])
+        if len(beats) >= 4:
+            groove["beats"] = beats
+            groove["downbeat"] = _first_downbeat(onset, beats, groove["beats_per_bar"])
         runs = bars_as_runs(bass_chroma, rhythm_chroma, groove)
         if len(runs) < 2:
             runs = bass_root_runs(bass_chroma)
@@ -697,7 +848,8 @@ def analyze_song(song_dir, vocal_midi=None, progress=None):
     return {
         "version": ANALYSIS_VERSION,
         "tuning_cents": round(tuning * 100),
-        "sources": {"harmony": bool(harmony_paths), "bass": bool(bass_path), "vocal": vocal_midi is not None},
+        "sources": {"harmony": bool(harmony_paths), "bass": bool(bass_path), "vocal": vocal_midi is not None,
+                    "bass_line": _line_tag(bass_line) if line is not None else None},
         "key": key,
         "chords": chords,
         "bass_runs": runs,
@@ -705,7 +857,14 @@ def analyze_song(song_dir, vocal_midi=None, progress=None):
     }
 
 
-def load_if_fresh(song_dir, cache_path, vocal_midi=None):
+def _line_tag(bass_line):
+    """Which reading of the bass line was used, so a new reading redoes the listen."""
+    if not bass_line or not np.any(np.asarray(bass_line.get("midi") or [], dtype=np.float64) > 0):
+        return None
+    return {"bass_method": bass_line.get("bass_method"), "source_mtime": bass_line.get("source_mtime")}
+
+
+def load_if_fresh(song_dir, cache_path, vocal_midi=None, bass_line=None):
     """The saved analysis when it still matches these stems, otherwise None."""
     stems = sorted(f for f in os.listdir(song_dir) if f.endswith(".wav"))
     signature = [[f, os.path.getmtime(os.path.join(song_dir, f))] for f in stems]
@@ -714,22 +873,24 @@ def load_if_fresh(song_dir, cache_path, vocal_midi=None):
             saved = json.load(handle)
     except (OSError, ValueError):
         return None
+    sources = saved.get("sources", {})
     if saved.get("version") == ANALYSIS_VERSION and saved.get("signature") == signature \
-            and saved.get("sources", {}).get("vocal") == (vocal_midi is not None):
+            and sources.get("vocal") == (vocal_midi is not None) \
+            and sources.get("bass_line") == _line_tag(bass_line):
         return saved
     return None
 
 
-def cached_analysis(song_dir, cache_path, vocal_midi=None, progress=None):
+def cached_analysis(song_dir, cache_path, vocal_midi=None, progress=None, bass_line=None):
     """analyze_song(), remembered next to the song so it only has to run once."""
-    saved = load_if_fresh(song_dir, cache_path, vocal_midi)
+    saved = load_if_fresh(song_dir, cache_path, vocal_midi, bass_line)
     if saved is not None:
         if progress is not None:
             progress(100, "Beat and key are ready.")
         return saved
     stems = sorted(f for f in os.listdir(song_dir) if f.endswith(".wav"))
     signature = [[f, os.path.getmtime(os.path.join(song_dir, f))] for f in stems]
-    result = analyze_song(song_dir, vocal_midi, progress=progress)
+    result = analyze_song(song_dir, vocal_midi, progress=progress, bass_line=bass_line)
     result["signature"] = signature
     tmp = cache_path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as handle:
