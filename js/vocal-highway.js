@@ -35,6 +35,7 @@ function vocalHighwayWorkerMain() {
     const gate = Math.max(0.003, p90 * 0.08);
 
     const midi = new Float32Array(frames);          // 0 = no pitch (silence or noise)
+    const threshold = e.data.threshold || (fmin < 60 ? 0.18 : 0.12);
     const d = new Float32Array(maxTau + 1);
     for (let f = 0; f < frames; f++) {
       if (rms[f] < gate) continue;
@@ -52,7 +53,7 @@ function vocalHighwayWorkerMain() {
       }
       let found = -1;
       for (let tau = minTau; tau < maxTau; tau++) {
-        if (d[tau] < 0.12) {
+        if (d[tau] < threshold) {
           while (tau + 1 < maxTau && d[tau + 1] < d[tau]) tau++;
           found = tau;
           break;
@@ -483,8 +484,18 @@ class VocalHighway {
       const resp = await fetch(`${base}${info.songId}?stem=${encodeURIComponent(source.file)}`);
       const data = await resp.json().catch(() => ({}));
       if (!resp.ok) throw new Error(data.error || `request failed (${resp.status})`);
-      if (source.kind === 'notes') finish(this.makeRollView(data.notes));
-      else finish(this.makeMelodyView(Float32Array.from(data.midi), data.t0, data.dt, true, data));
+      if (source.kind === 'notes') {
+        finish(this.makeRollView(data.notes));
+        return;
+      }
+      const view = this.makeMelodyView(Float32Array.from(data.midi || []), data.t0 || 0, data.dt || 0.016, true, data);
+      // An empty bass track used to stop here, even though the page can still hear the line.
+      const track = this.engine.tracks.get(source.trackId);
+      if (view.state === 'nopitch' && source.file === 'bass' && track && track.buffer) {
+        this.analyze(track.buffer, source, finish, fail);
+        return;
+      }
+      finish(view);
     } catch (err) {
       console.warn(`Server could not read the ${source.label} (${err.message})`);
       const track = this.engine.tracks.get(source.trackId);
@@ -936,8 +947,8 @@ class VocalHighway {
       }
 
       if (this.worker) this.worker.terminate();
-      const source = `(${vocalHighwayWorkerMain.toString()})()`;
-      const url = URL.createObjectURL(new Blob([source], { type: 'text/javascript' }));
+      const workerSource = `(${vocalHighwayWorkerMain.toString()})()`;
+      const url = URL.createObjectURL(new Blob([workerSource], { type: 'text/javascript' }));
       this.worker = new Worker(url);
       URL.revokeObjectURL(url);
       this.worker.onmessage = (e) => {
@@ -948,8 +959,11 @@ class VocalHighway {
         console.error('Vocal highway worker failed', err);
         if (id === this.analysisId) fail('error');
       };
+      // `source` is the stem being shown. A worker script string must not reuse that name:
+      // the bass search would then start at 70 Hz and miss the low strings.
       const fmin = source && source.file === 'bass' ? 28 : 70;
-      this.worker.postMessage({ id, samples, fs, fmin }, [samples.buffer]);
+      const threshold = fmin < 60 ? 0.18 : 0.12;
+      this.worker.postMessage({ id, samples, fs, fmin, threshold }, [samples.buffer]);
     } catch (err) {
       console.error('Vocal highway could not start', err);
       fail('error');

@@ -284,6 +284,23 @@ RESCUE_STEP_SEMITONES = 1.5
 RESCUE_MIN_SECONDS = 0.14
 
 
+def steady_low_confidence(hz, confidence, in_range, minimum=0.45, min_seconds=0.12):
+    """Steady runs the detector is only moderately sure about. Used for bass, where a
+    singing-strength frame may never appear, so the whole line would otherwise be dropped."""
+    candidate = in_range & (confidence >= minimum)
+    semitones = hz_to_midi(hz)
+    min_frames = int(round(min_seconds / STEP_SECONDS))
+    accepted = np.zeros(len(hz), dtype=bool)
+    for start, end in _runs(candidate):
+        piece_start = start
+        for i in range(start + 1, end + 1):
+            if i == end or abs(semitones[i] - semitones[i - 1]) > RESCUE_STEP_SEMITONES:
+                if i - piece_start >= min_frames:
+                    accepted[piece_start:i] = True
+                piece_start = i
+    return accepted
+
+
 def rescue_steady_singing(hz, confidence, loudness_db, pitched, level, in_range):
     """Frames that are loud, were not accepted yet, and form a steady low-confidence pitch."""
     candidate = (~pitched) & in_range & (confidence >= RESCUE_CONFIDENCE) \
@@ -321,6 +338,10 @@ def clean_track(hz, confidence, loudness_db, fmin=None, fmax=None, keep_low=Fals
         if confidence[start:end].max() >= STRONG_CONFIDENCE:
             pitched[start:end] = True
 
+    # A bass line often never reaches singing confidence. Keep a steady run at the
+    # detector's own voiced line instead of handing the highway an empty track.
+    if not pitched.any() and keep_low:
+        pitched = steady_low_confidence(hz, confidence, in_range)
     # How loud the singer normally is: a high percentile of the pitched frames.
     if not pitched.any():
         return np.zeros(n)
@@ -369,18 +390,20 @@ def instrument_paths(vocal_path):
     return [p for p in paths if os.path.isfile(p)]
 
 
-# The low strings, read from the sound itself. SwiftF0 cannot hear below 46.9 Hz, and it often
-# reports the second harmonic of a note it can hear (a low E at 41 Hz comes back as 82 Hz).
-# This pass looks for the repeating period down to the 5-string bass's low B (31 Hz) and keeps
-# that period only when the fundamental is actually in the spectrum, so a real higher note is
-# not dragged down an octave.
+# The bass line, read from the sound itself. SwiftF0 cannot hear below 46.9 Hz, and on a bass
+# note it often reports a harmonic. This pass finds the repeating period from the low B (31 Hz)
+# up through the ordinary bass range. It keeps the shortest period that clearly repeats, then
+# steps down an octave only when that lower note is actually in the spectrum. The deepest dip
+# is the wrong one to follow: on a mid-bass note it is often a fake period one or two octaves
+# too low, and writing that over the detector's note leaves the highway with no note it can draw.
 LOW_SR = 8000
 LOW_FMIN = 27.0
-LOW_FMAX = 160.0
-LOW_BASS_MAX_MIDI = 46.0          # about Bb2; fills and solos above this stay with SwiftF0
+LOW_FMAX = 280.0                  # a little above the bass profile's top, so E3 and G3 stay in range
+BASS_FILL_MAX_MIDI = 62.0         # about D4; a higher solo stays with SwiftF0
 FUNDAMENTAL_PRESENT = 0.28        # energy at half the detected pitch, compared with the pitch itself
 HARMONIC_ONLY = 3.0               # a "fundamental" this much quieter than its octave is not really there
-BASS_METHOD = 2                   # saved on bass.pitch.json; old files are read again on the next open
+YIN_THRESHOLD = 0.18              # first clear dip. A looser one also accepts a random high blip.
+BASS_METHOD = 3                   # saved on bass.pitch.json; old files are read again on the next open
 
 
 def _to_low_rate(mono, rate):
@@ -426,12 +449,14 @@ def _frame_fundamental(frame, sr):
     cmnd = np.ones(max_tau + 1)
     cmnd[1:] = diff * taus / np.maximum(running, 1e-12)
 
-    minima = [tau for tau in range(min_tau + 1, max_tau)
-              if cmnd[tau] <= cmnd[tau - 1] and cmnd[tau] <= cmnd[tau + 1] and cmnd[tau] < 0.45]
-    if not minima:
-        return 0.0
-    best = min(minima, key=lambda tau: cmnd[tau])
-    if cmnd[best] > 0.30:
+    # The first clear dip, not the deepest. A bass note repeats at its own period and
+    # again at twice and three times that, and the longer fake period often scores lower.
+    best = None
+    for tau in range(min_tau + 1, max_tau):
+        if cmnd[tau] < YIN_THRESHOLD and cmnd[tau] <= cmnd[tau - 1] and cmnd[tau] <= cmnd[tau + 1]:
+            best = tau
+            break
+    if best is None:
         return 0.0
 
     def refine(tau):
@@ -446,8 +471,12 @@ def _frame_fundamental(frame, sr):
     chosen_hz = sr / chosen
     chosen_energy = _band_peak(mag, freqs, chosen_hz)
 
-    lower = int(round(best * 2))
-    if min_tau < lower < max_tau and cmnd[lower] < 0.55:
+    # A low note is often found at its second harmonic. Step down, at most twice,
+    # only when the lower frequency is really in the sound.
+    for _ in range(2):
+        lower = int(round(best * 2))
+        if not (min_tau < lower < max_tau and cmnd[lower] < 0.55):
+            break
         for step in range(-4, 5):
             tau = lower + step
             if min_tau < tau < max_tau and cmnd[tau] <= cmnd[tau - 1] and cmnd[tau] <= cmnd[tau + 1]:
@@ -455,15 +484,18 @@ def _frame_fundamental(frame, sr):
                 break
         low_tau = refine(lower)
         low_hz = sr / low_tau
-        if LOW_FMIN <= low_hz <= LOW_FMAX and cmnd[lower] < 0.50:
-            low_energy = _band_peak(mag, freqs, low_hz)
-            if low_energy >= FUNDAMENTAL_PRESENT * max(chosen_energy, 1e-9):
-                chosen, chosen_hz, chosen_energy = low_tau, low_hz, low_energy
+        if not (LOW_FMIN <= low_hz <= LOW_FMAX and cmnd[lower] < 0.50):
+            break
+        low_energy = _band_peak(mag, freqs, low_hz)
+        if low_energy < FUNDAMENTAL_PRESENT * max(chosen_energy, 1e-9):
+            break
+        best = lower
+        chosen, chosen_hz, chosen_energy = low_tau, low_hz, low_energy
 
     # A pure higher note also repeats every two cycles. Keep it up there when the
     # lower frequency is barely in the sound.
     octave = _band_peak(mag, freqs, chosen_hz * 2.0)
-    if octave > HARMONIC_ONLY * max(chosen_energy, 1e-9) and chosen_hz * 2.0 <= LOW_FMAX:
+    if octave > HARMONIC_ONLY * max(chosen_energy, 1e-9) and LOW_FMIN <= chosen_hz * 2.0 <= LOW_FMAX:
         chosen_hz *= 2.0
     if chosen_hz < LOW_FMIN or chosen_hz > LOW_FMAX:
         return 0.0
@@ -486,6 +518,15 @@ def low_fundamental_track(mono, rate):
     voiced = midi > 0
     if voiced.any():
         midi = median_filter(midi, voiced, radius=2)
+        voiced = midi > 0
+        # Join a note the reader blinked on, when both sides are the same pitch.
+        max_bridge = int(round(0.06 / STEP_SECONDS))
+        for start, end in _runs(~voiced):
+            if start == 0 or end >= len(midi) or end - start > max_bridge:
+                continue
+            left, right = midi[start - 1], midi[end]
+            if left and right and abs(left - right) < 1.2:
+                midi[start:end] = (left + right) / 2.0
         min_frames = max(2, int(round(0.07 / STEP_SECONDS)))
         for start, end in _runs(midi > 0):
             if end - start < min_frames:
@@ -499,7 +540,11 @@ def _octave_above(higher, lower):
 
 
 def apply_low_bass(midi, t0, low_midi, low_t0):
-    """Where the low-string reader hears a real fundamental, use it instead of a reading an octave higher."""
+    """Fill a silent frame from the bass reader, and replace a reading an octave or two higher.
+
+    A frame SwiftF0 already got right is left alone. Notes above the bass range stay with
+    SwiftF0 too, so a high solo is not pulled down.
+    """
     out = np.array(midi, dtype=np.float64, copy=True)
     if len(low_midi) == 0:
         return out
@@ -508,7 +553,7 @@ def apply_low_bass(midi, t0, low_midi, low_t0):
         if j < 0 or j >= len(low_midi):
             continue
         low = float(low_midi[j])
-        if low <= 0 or low > LOW_BASS_MAX_MIDI:
+        if low <= 0 or low > BASS_FILL_MAX_MIDI:
             continue
         cur = float(out[i])
         if cur <= 0 or abs(cur - low) <= 0.8 or (cur > low and _octave_above(cur, low)):
