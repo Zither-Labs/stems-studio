@@ -20,6 +20,7 @@ meaning "nobody is singing".
 
 import json
 import os
+import subprocess
 import sys
 import threading
 
@@ -602,12 +603,7 @@ _DETECTOR_LOCK = threading.Lock()
 
 
 def pitch_detector():
-    """The shared SwiftF0 detector, created once.
-
-    On Windows, onnxruntime (which SwiftF0 is built on) crashes the whole process if it is
-    loaded for the first time on a background thread. warm_up() loads it on the main thread
-    before the engine starts taking requests; this lock covers any later first use.
-    """
+    """The shared SwiftF0 detector, created once per process."""
     global _DETECTOR
     with _DETECTOR_LOCK:
         if _DETECTOR is None:
@@ -616,13 +612,34 @@ def pitch_detector():
         return _DETECTOR
 
 
-def warm_up():
-    """Load the pitch detector now, on the calling thread. Failures are reported, not fatal."""
-    try:
-        pitch_detector()
-    except Exception as exc:
-        print(f"Pitch detector is not available ({exc}). Songs still open; their pitch is read when it can be.",
-              file=sys.stderr, flush=True)
+def _console_python():
+    """python.exe on Windows. pythonw.exe has no output, so a helper run with it cannot report back."""
+    exe = sys.executable
+    if os.name == "nt" and os.path.basename(exe).lower() == "pythonw.exe":
+        candidate = os.path.join(os.path.dirname(exe), "python.exe")
+        if os.path.isfile(candidate):
+            return candidate
+    return exe
+
+
+def _analyze_in_child(path, instruments, profile):
+    """Read the pitch in a separate process.
+
+    SwiftF0 is built on onnxruntime, and on Windows that library can crash the whole process
+    when it loads. The crash then stays in the helper, and the app keeps running.
+    """
+    command = [_console_python(), os.path.abspath(__file__), "--json"]
+    hidden = {"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}
+    done = subprocess.run(
+        command,
+        input=json.dumps({"path": path, "instruments": instruments or [], "profile": profile}),
+        capture_output=True, text=True, timeout=900, encoding="utf-8", errors="replace",
+        env={**os.environ, "STEMS_STUDIO_PITCH_CHILD": "1"}, **hidden,
+    )
+    if done.returncode != 0 or not (done.stdout or "").strip():
+        detail = (done.stderr or "").strip().splitlines()
+        raise RuntimeError(detail[-1] if detail else f"the pitch reader stopped (code {done.returncode})")
+    return json.loads(done.stdout)
 
 
 def analyze_file(path, instruments=None, profile=None):
@@ -635,6 +652,8 @@ def analyze_file(path, instruments=None, profile=None):
     import soundfile as sf
 
     profile = profile or PROFILES["vocals"]
+    if os.environ.get("STEMS_STUDIO_PITCH_CHILD") != "1":
+        return _analyze_in_child(path, instruments, profile)
     audio, rate = sf.read(path, dtype="float32", always_2d=True)
     mono = audio.mean(axis=1)
     midi, t0, detector = None, 0.0, None
@@ -757,6 +776,15 @@ def cached_analysis(wav_path, cache_path):
     return result
 
 if __name__ == "__main__":
+    if len(sys.argv) > 1 and sys.argv[1] == "--json":
+        request = json.load(sys.stdin)
+        try:
+            json.dump(analyze_file(request["path"], request.get("instruments") or None, request.get("profile")),
+                      sys.stdout)
+        except Exception as exc:
+            print(exc, file=sys.stderr)
+            sys.exit(1)
+        sys.exit(0)
     name = os.path.splitext(os.path.basename(sys.argv[1]))[0]
     out = analyze_file(sys.argv[1], instrument_paths(sys.argv[1]) if name == "vocals" else None, profile_for(name))
     voiced = sum(1 for m in out["midi"] if m)
