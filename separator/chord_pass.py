@@ -86,20 +86,72 @@ def parse_symbol(token):
     return {"root": root, "quality": _quality(quality, extension), "flats": (accidental or "").lower() == "b"}
 
 
+_SECTION_WORDS = {
+    "verse", "chorus", "bridge", "intro", "outro", "refrain", "prechorus", "hook", "interlude",
+}
+
+
+def _sheet_tokens(text):
+    """Words from a pasted sheet. A slash or a blank line starts a new part."""
+    lines = []
+    for line in (text or "").replace("|", " ").splitlines():
+        tokens = []
+        for token in re.split(r"[\s,]+", line):
+            token = token.strip().strip("[]().:")
+            if not token or token.lower().startswith("capo") or token.isdigit():
+                continue
+            if token in {"/", "//"}:
+                tokens.append("/")
+                continue
+            tokens.append(token)
+        if tokens:
+            lines.append(tokens)
+    return lines
+
+
 def parse_sheet(text):
     """Chords in the order they were written. Returns (chords, prefers_flats)."""
-    chords = []
-    flats = False
-    for token in re.split(r"[\s|,]+", text or ""):
-        token = token.strip().strip("[]().")
-        if not token or token.lower().startswith("capo") or token.isdigit():
-            continue
-        parsed = parse_symbol(token)
-        if not parsed:
-            continue
-        flats = flats or parsed["flats"]
-        chords.append({"root": parsed["root"], "quality": parsed["quality"]})
+    sections, flats = parse_sections(text)
+    chords = [chord for section in sections for chord in section["chords"]]
     return chords, flats
+
+
+def parse_sections(text):
+    """Parts of a sheet, in order. 'verse G Em' and 'chorus C G# F#' stay separate.
+
+    A slash or a new line can split parts too. Returns (sections, prefers_flats).
+    Each section is {"name", "chords"}.
+    """
+    sections = []
+    current = {"name": "", "chords": []}
+    flats = False
+
+    def push():
+        nonlocal current
+        if current["chords"]:
+            sections.append(current)
+        current = {"name": "", "chords": []}
+
+    for tokens in _sheet_tokens(text):
+        for token in tokens:
+            if token == "/":
+                push()
+                continue
+            word = token.lower().replace("-", "")
+            if word in _SECTION_WORDS:
+                push()
+                current["name"] = word
+                continue
+            parsed = parse_symbol(token)
+            if not parsed:
+                continue
+            flats = flats or parsed["flats"]
+            current["chords"].append({"root": parsed["root"], "quality": parsed["quality"]})
+        # A line that named a part ends that part, so the next line can be the next part.
+        if current["name"] and current["chords"]:
+            push()
+    push()
+    return sections, flats
 
 
 def dominant_root(runs, start, end):
@@ -132,6 +184,67 @@ def _collapse(pieces):
         else:
             merged.append(piece)
     return merged
+
+
+def align_sections(sections, runs, flats, source):
+    """Place each part wherever the bass plays it, for as many repeats as the bass does.
+
+    Inside a part the chords can come back in any order and any number of times. The part
+    changes when the bass lands on a chord from a later part. The number of lines does not matter.
+    """
+    sections = [section for section in sections if section.get("chords")]
+    if not sections or not runs:
+        return []
+    bass_time = sum(run["end"] - run["start"] for run in runs)
+    if bass_time <= 0:
+        return []
+    best = None
+    for shift in range(12):
+        tables = []
+        for section in sections:
+            table = {}
+            for chord in section["chords"]:
+                table.setdefault((chord["root"] + shift) % 12, chord["quality"])
+            tables.append(table)
+        index = 0
+        matched = []
+        score = 0.0
+        for run in runs:
+            root = int(run["root"]) % 12
+            duration = run["end"] - run["start"]
+            if root in tables[index]:
+                matched.append((run, root, tables[index][root]))
+                score += duration
+                continue
+            found = None
+            for step in range(1, len(tables)):
+                nxt = (index + step) % len(tables)
+                if root in tables[nxt]:
+                    found = nxt
+                    break
+            if found is None:
+                continue
+            index = found
+            matched.append((run, root, tables[index][root]))
+            score += duration
+        if best is None or score > best[0] or (score == best[0] and shift < best[1]):
+            best = (score, shift, matched)
+    # Most of the bass has to be one of these chords. A long outro of other chords can stay blank
+    # and the verse and chorus still show. A sheet for a different song does not.
+    if best is None or best[0] < 0.45 * bass_time:
+        return []
+    pieces = []
+    for run, root, quality in best[2]:
+        pieces.append({
+            "start": round(run["start"], 2),
+            "end": round(run["end"], 2),
+            "root": root,
+            "quality": quality,
+            "name": spell(root, quality, flats),
+            "source": source,
+            "sure": True,
+        })
+    return _collapse(pieces)
 
 
 def align_cycle(chords, runs, flats, source):

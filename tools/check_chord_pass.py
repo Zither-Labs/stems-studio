@@ -53,6 +53,26 @@ timed = [
 slid = cp.align_timed(timed, bass, flats=False, source="karalyr")
 assert names(slid) == ["G", "D", "Em", "C"], names(slid)
 
+# Verse and chorus can bounce for as many lines as the bass plays, then the verse can come back.
+# An outro on some other note is left blank. The written key can be wrong.
+# G Em C G# F# written from C is C Am F C# B.
+song = runs(
+    (7, 2), (4, 2), (7, 2), (4, 2),          # verse G Em G Em
+    (0, 2), (8, 2), (6, 2),                  # chorus C G# F#
+    (7, 2), (4, 2), (7, 2),                  # verse again
+    (0, 2), (8, 2), (6, 2), (6, 2),          # chorus again, held
+    (9, 4),                                  # outro on A, not in the sheet
+)
+sections, section_flats = cp.parse_sections("verse C Am\nchorus F C# B")
+placed = cp.align_sections(sections, song, section_flats, "sheet")
+assert names(placed) == ["G", "Em", "G", "Em", "C", "G#", "F#", "G", "Em", "G", "C", "G#", "F#"], names(placed)
+assert placed[-1]["end"] <= 28
+
+# The same parts on one line, in the right key, with the chords inside a part shuffled.
+shuffled, shuffled_flats = cp.parse_sections("verse Em G chorus F# C G#")
+shuffled_place = cp.align_sections(shuffled, song, shuffled_flats, "sheet")
+assert names(shuffled_place) == names(placed)
+
 # Words that are not chords are ignored. Flats stay flats.
 parsed, uses_flats = cp.parse_sheet("Verse: Bb F C7  |  capo 3")
 assert [cp.spell(c["root"], c["quality"], uses_flats) for c in parsed] == ["Bb", "F", "C7"]
