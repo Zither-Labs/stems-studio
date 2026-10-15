@@ -997,10 +997,46 @@ def cached_published_chart(folder, artist, title):
     return payload
 
 
-def chords_for_song(song_id, folder, audio):
-    """First pass is a published chart (or a pasted sheet). Second pass is the app, kept only when the bass agrees."""
+def guessed_chords(song_id, folder, guesser):
+    """The chords one of the outside guessers hears (Chordino, madmom, autochord or BTC).
+
+    Returns (chords, note). The chords are None when that guesser is not installed or failed,
+    so the app's own guess is drawn instead.
+    """
+    guessers = separator_module("chord_guessers")
+    label = guessers.LABELS.get(guesser, guesser)
+    if not guessers.ready(guesser):
+        return None, (f"{label} is not installed yet, so these are Stems Studio's own chords. "
+                      "Run Install again and answer Y to \"more chord guessers\".")
+
+    def progress(percent, message):
+        note_listen(song_id, percent, message or f"{label} is listening...", percent < 100)
+
+    try:
+        segments = guessers.guess(folder, guesser, progress)
+    except Exception as exc:
+        traceback.print_exc()
+        note_listen(song_id, 100, f"{label} could not read this song.", False)
+        return None, f"{label} could not read this song ({exc}), so these are Stems Studio's own chords."
+    note_listen(song_id, 100, "Chords are ready.", False)
+    chords = guessers.tidy(segments)
+    if not chords:
+        return None, f"{label} heard no chords in this song, so these are Stems Studio's own chords."
+    return chords, f"Showing {len(chords)} chords guessed by {label}. Nothing here is checked against the bass."
+
+
+def chords_for_song(song_id, folder, audio, guesser="app"):
+    """First pass is a published chart (or a pasted sheet). Second pass is the app, kept only when the bass agrees.
+
+    With another guesser chosen, its chords are drawn as it heard them. A pasted sheet still comes first.
+    """
     chord_pass = separator_module("chord_pass")
     sheet = load_chord_sheet(folder)
+    guesser_note = ""
+    if guesser != "app" and not sheet.strip():
+        chords, guesser_note = guessed_chords(song_id, folder, guesser)
+        if chords:
+            return {"chords": chords, "sheet": sheet, "note": guesser_note, "chord_from": guesser}
     runs = audio.get("bass_runs") or []
     app_chords = audio.get("chords") or []
     key = audio.get("key") or {}
@@ -1051,6 +1087,10 @@ def chords_for_song(song_id, folder, audio):
         note = "Chord names are along the top of the highway. They are the app's guess: no published chart matched this song."
     else:
         note = chord_pass.explain(sheet, sheet_used, chart_used, karalyr_used, len(chords), chart_label)
+    if guesser_note:
+        note = guesser_note
+    elif guesser != "app" and sheet_used:
+        note += " Your sheet comes before the chord guesser. Clear it to see what the guesser hears."
     return {
         "chords": chords,
         "sheet": sheet,
@@ -1888,8 +1928,14 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
             if not result:
                 self.send_json({"error": "Could not read the beat for this song."}, 500)
                 return
-            passed = chords_for_song(song_id, folder, result)
+            guessers = separator_module("chord_guessers")
+            guesser = urllib.parse.parse_qs(parsed.query).get("guesser", ["app"])[0]
+            if guesser not in guessers.LABELS:
+                guesser = "app"
+            passed = chords_for_song(song_id, folder, result, guesser)
             self.send_json({
+                "guesser": guesser,
+                "guessers": guessers.listing(),
                 "key": result.get("key"),
                 "chords": passed["chords"],
                 "tuning_cents": result.get("tuning_cents"),

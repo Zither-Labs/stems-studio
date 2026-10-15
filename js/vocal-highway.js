@@ -160,6 +160,8 @@ class VocalHighway {
     this.chords = [];          // [{ start, end, root, quality, name }]
     this.showChords = false;   // turned on only when a chord survived the bass check
     this.analysisUrl = null;   // set by the app: where the engine keeps this song's key and chords
+    this.chordGuesser = 'app'; // who guesses the chords: the app, or Chordino, madmom, autochord, BTC
+    this.chordsBy = null;      // the outside guesser whose chords are on the highway now
     this.keyRequestId = 0;
     this.listenId = null;
     this.listenTimer = null;
@@ -662,6 +664,19 @@ class VocalHighway {
       els.chords.checked = false;
       this.showChords = false;
     }
+    const guesserSelect = bar.querySelector('#chordGuesser');
+    if (guesserSelect) {
+      let saved = 'app';
+      try { saved = localStorage.getItem('stemsStudio.chordGuesser') || 'app'; } catch (err) { /* private mode */ }
+      if (Array.from(guesserSelect.options).some((option) => option.value === saved)) guesserSelect.value = saved;
+      this.chordGuesser = guesserSelect.value;
+      guesserSelect.addEventListener('change', () => {
+        this.chordGuesser = guesserSelect.value;
+        try { localStorage.setItem('stemsStudio.chordGuesser', this.chordGuesser); } catch (err) { /* private mode */ }
+        const songId = this.songInfo && this.songInfo.songId;
+        if (songId) this.analysisUrl = `/api/analysis/${songId}`;
+      });
+    }
     const sheetBtn = bar.querySelector('#chordSheetBtn');
     const sheetPanel = bar.querySelector('#chordSheetPanel');
     const sheetSave = bar.querySelector('#chordSheetSave');
@@ -821,6 +836,7 @@ class VocalHighway {
     this.detected = null;
     this.key = null;
     this.chords = [];
+    this.chordsBy = null;
     this.showChords = false;
     this.applyKeyRange();
     this.refreshBar();
@@ -833,6 +849,7 @@ class VocalHighway {
     const songId = this.listenSongId(url);
     if (this.barEls) this.barEls.text.textContent = 'Key: finding it from the bass, instruments and vocal...';
     if (songId) this.startListenProgress(songId, id);
+    if (this.chordGuesser && !url.includes('?')) url += `?guesser=${encodeURIComponent(this.chordGuesser)}`;
     try {
       const resp = await fetch(url);
       if (!resp.ok) throw new Error(`analysis request failed (${resp.status})`);
@@ -842,6 +859,8 @@ class VocalHighway {
       this.detected = data.key || null;
       this.chords = Array.isArray(data.chords) ? data.chords : [];
       this.showChords = this.chords.length > 0;
+      this.showGuessers(data.guessers);
+      this.chordsBy = (data.guessers || []).find((item) => item.id === data.chord_from && item.id !== 'app');
       this.tuningCents = data.tuning_cents || 0;
       const sheetBox = document.getElementById('chordSheetText');
       const sheetStatus = document.getElementById('chordSheetStatus');
@@ -861,6 +880,16 @@ class VocalHighway {
       if (id === this.keyRequestId) this.stopListenProgress(true);
     }
     this.lastKey = '';
+  }
+
+  // Mark the chord guessers that still need the optional install.
+  showGuessers(list) {
+    const select = document.getElementById('chordGuesser');
+    if (!select || !Array.isArray(list)) return;
+    for (const item of list) {
+      const option = Array.from(select.options).find((entry) => entry.value === item.id);
+      if (option) option.textContent = item.ready ? item.label : `${item.label} (not installed)`;
+    }
   }
 
   noteSpelling(pc, flats = this.key ? this.prefersFlats(this.tonic, this.key.mode) : false) {
@@ -895,7 +924,7 @@ class VocalHighway {
       }
     }
     text += `  \u00B7  Sa = ${this.noteSpelling(this.tonic)}`;
-    if (this.chords.length) text += '  \u00B7  chords along the top';
+    if (this.chords.length) text += this.chordsBy ? `  \u00B7  ${this.chordsBy.label}'s chords along the top` : '  \u00B7  chords along the top';
     if (this.shift) text += `  (moved ${this.shift > 0 ? '+' : ''}${this.shift} by the pitch control)`;
     els.text.textContent = text;
     els.reset.hidden = !(this.key.manual && this.detected);
