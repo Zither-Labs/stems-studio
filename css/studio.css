@@ -527,6 +527,7 @@ body::before {
 
 .chord-sheet-wrap {
   position: relative;
+  flex: 0 0 auto;
 }
 
 .chord-sheet-panel {
@@ -740,6 +741,7 @@ body::before {
 .highway-bar {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 0.6rem;
   flex: 0 0 auto;
   padding: 0.3rem 0.6rem;

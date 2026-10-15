@@ -271,14 +271,6 @@
           <input type="checkbox" id="highwayRough"> Rough voice (dashed)
         </label>
         <span class="highway-key" id="highwayKeyText">Key: not found yet</span>
-        <label class="highway-field">Sa =
-          <select id="highwayTonic" title="The home note. Sa is whatever note you decide: change it to follow your singer."></select>
-        </label>
-        <select id="highwayMode" title="Major or minor scale">
-          <option value="major">major</option>
-          <option value="minor">minor</option>
-        </select>
-        <button type="button" class="preset-chip" id="highwayKeyReset" title="Go back to the key the app found" hidden>Use detected key</button>
         <span class="chord-sheet-wrap">
           <button type="button" class="preset-chip" id="chordSheetBtn" title="Paste the chords in each part. The bass decides how long they last.">Chord sheet</button>
           <div class="key-fit-panel chord-sheet-panel" id="chordSheetPanel" hidden>
@@ -292,6 +284,14 @@
             <p class="chord-sheet-status" id="chordSheetStatus"></p>
           </div>
         </span>
+        <label class="highway-field">Sa =
+          <select id="highwayTonic" title="The home note. Sa is whatever note you decide: change it to follow your singer."></select>
+        </label>
+        <select id="highwayMode" title="Major or minor scale">
+          <option value="major">major</option>
+          <option value="minor">minor</option>
+        </select>
+        <button type="button" class="preset-chip" id="highwayKeyReset" title="Go back to the key the app found" hidden>Use detected key</button>
       </div>
       <canvas id="vocalHighwayCanvas" title="Pitch highway. Click to jump to that moment."></canvas>
     </div>
