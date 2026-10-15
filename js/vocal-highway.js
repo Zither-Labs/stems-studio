@@ -140,6 +140,10 @@ class VocalHighway {
     this.showChords = false;   // turned on only when a chord survived the bass check
     this.analysisUrl = null;   // set by the app: where the engine keeps this song's key and chords
     this.keyRequestId = 0;
+    this.listenId = null;
+    this.listenTimer = null;
+    this.listenReveal = null;
+    this.listenHide = null;
     this.tuningCents = 0;
     this.barEls = null;
     this.barRoot = bar || null;
@@ -645,7 +649,7 @@ class VocalHighway {
           if (sheetStatus) sheetStatus.textContent = 'Open a song first.';
           return;
         }
-        if (sheetStatus) sheetStatus.textContent = 'Checking the sheet against the bass. The first time also listens through the song.';
+        if (sheetStatus) sheetStatus.textContent = 'Checking the sheet against the bass.';
         try {
           const resp = await fetch(`/api/analysis/${songId}/sheet`, {
             method: 'POST',
@@ -679,9 +683,103 @@ class VocalHighway {
     this.lastKey = '';
   }
 
+  listenSongId(url) {
+    const match = /\/api\/analysis\/([0-9a-f]{8})(?:$|[/?])/.exec(url || '');
+    return match ? match[1] : '';
+  }
+
+  showListenBars() {
+    const highway = document.getElementById('highwayListen');
+    const sheet = document.getElementById('chordSheetProgress');
+    if (highway) highway.hidden = false;
+    if (sheet) sheet.hidden = false;
+    for (const id of ['highwayListenFill', 'chordSheetFill']) {
+      const fill = document.getElementById(id);
+      if (fill && (!fill.style.width || fill.style.width === '0%')) fill.style.width = '3%';
+    }
+  }
+
+  paintListen(percent, message, running) {
+    const width = `${Math.max(0, Math.min(100, percent))}%`;
+    const highwayFill = document.getElementById('highwayListenFill');
+    const sheetFill = document.getElementById('chordSheetFill');
+    const label = document.getElementById('chordSheetProgressLabel');
+    if (highwayFill) highwayFill.style.width = width;
+    if (sheetFill) sheetFill.style.width = width;
+    if (label && message) label.textContent = message;
+    if (running && message && this.barEls) this.barEls.text.textContent = message;
+  }
+
+  // The listen can take a while on an older song. Poll its stages and draw them.
+  startListenProgress(songId, requestId) {
+    this.stopListenProgress(false);
+    this.listenId = requestId;
+    const reveal = () => {
+      if (this.listenId === requestId) this.showListenBars();
+    };
+    this.listenReveal = setTimeout(reveal, 450);
+    const tick = async () => {
+      if (this.listenId !== requestId) return;
+      try {
+        const resp = await fetch(`/api/analysis/${songId}/progress`);
+        if (!resp.ok || this.listenId !== requestId) return;
+        const data = await resp.json();
+        if (this.listenId !== requestId) return;
+        const percent = Number(data.progress) || 0;
+        if (data.running) this.showListenBars();
+        this.paintListen(percent, data.message || '', Boolean(data.running));
+      } catch (err) {
+        // The analysis request still owns the result.
+      }
+    };
+    tick();
+    this.listenTimer = setInterval(tick, 400);
+  }
+
+  stopListenProgress(done) {
+    if (this.listenTimer) {
+      clearInterval(this.listenTimer);
+      this.listenTimer = null;
+    }
+    if (this.listenReveal) {
+      clearTimeout(this.listenReveal);
+      this.listenReveal = null;
+    }
+    if (this.listenHide) {
+      clearTimeout(this.listenHide);
+      this.listenHide = null;
+    }
+    this.listenId = null;
+    const highway = document.getElementById('highwayListen');
+    const sheet = document.getElementById('chordSheetProgress');
+    const highwayFill = document.getElementById('highwayListenFill');
+    const sheetFill = document.getElementById('chordSheetFill');
+    if (!done) {
+      if (highway) highway.hidden = true;
+      if (sheet) sheet.hidden = true;
+      if (highwayFill) highwayFill.style.width = '0%';
+      if (sheetFill) sheetFill.style.width = '0%';
+      return;
+    }
+    if (highway && !highway.hidden) {
+      if (highwayFill) highwayFill.style.width = '100%';
+    }
+    if (sheet && !sheet.hidden) {
+      if (sheetFill) sheetFill.style.width = '100%';
+    }
+    this.listenHide = setTimeout(() => {
+      if (this.listenId) return;
+      if (highway) highway.hidden = true;
+      if (sheet) sheet.hidden = true;
+      if (highwayFill) highwayFill.style.width = '0%';
+      if (sheetFill) sheetFill.style.width = '0%';
+    }, 700);
+  }
+
   // Forget the key and chords (a new song is loading, or the song has none).
   resetKey() {
     this.keyRequestId++;
+    this.stopListenProgress(false);
     this.detected = null;
     this.key = null;
     this.chords = [];
@@ -694,12 +792,15 @@ class VocalHighway {
   async fetchAnalysis(url) {
     this.resetKey();
     const id = this.keyRequestId;
+    const songId = this.listenSongId(url);
     if (this.barEls) this.barEls.text.textContent = 'Key: finding it from the bass, instruments and vocal...';
+    if (songId) this.startListenProgress(songId, id);
     try {
       const resp = await fetch(url);
       if (!resp.ok) throw new Error(`analysis request failed (${resp.status})`);
       const data = await resp.json();
       if (id !== this.keyRequestId) return;
+      this.stopListenProgress(true);
       this.detected = data.key || null;
       this.chords = Array.isArray(data.chords) ? data.chords : [];
       this.showChords = this.chords.length > 0;
@@ -718,6 +819,8 @@ class VocalHighway {
         this.chords = [];
         this.refreshBar('Key: not available (install the extras to turn this on).');
       }
+    } finally {
+      if (id === this.keyRequestId) this.stopListenProgress(true);
     }
     this.lastKey = '';
   }

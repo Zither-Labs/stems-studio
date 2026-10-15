@@ -79,8 +79,11 @@ def read_mono(path, sample_rate):
     return mono.astype(np.float32)
 
 
-def spectrogram(x, n_fft, hop):
-    """Magnitude spectrogram, (frames, bins). Hann window."""
+def spectrogram(x, n_fft, hop, progress=None):
+    """Magnitude spectrogram, (frames, bins). Hann window.
+
+    progress, when given, is called with the fraction finished (0 to 1). This loop is the slow part.
+    """
     if len(x) < n_fft:
         x = np.pad(x, (0, n_fft - len(x)))
     window = np.hanning(n_fft + 1)[:-1].astype(np.float32)
@@ -90,6 +93,8 @@ def spectrogram(x, n_fft, hop):
         last = min(n_frames, first + 256)
         index = (np.arange(first, last) * hop)[:, None] + np.arange(n_fft)[None, :]
         out[first:last] = np.abs(np.fft.rfft(x[index] * window, axis=1))
+        if progress is not None and n_frames:
+            progress(last / n_frames)
     return out
 
 
@@ -530,8 +535,20 @@ def bass_root_runs(bass_chroma):
     ]
 
 
-def analyze_song(song_dir, vocal_midi=None):
-    """Find the key and chords of a separated song. Returns a JSON-ready dict."""
+def analyze_song(song_dir, vocal_midi=None, progress=None):
+    """Find the key and chords of a separated song. Returns a JSON-ready dict.
+
+    progress, when given, is called with (percent, message) as the slow reads finish.
+    """
+    def report(percent, message):
+        if progress is not None:
+            progress(max(0, min(100, int(percent))), message)
+
+    def read_spec(audio, hop, start, span, message):
+        def tick(fraction):
+            report(start + span * fraction, f"{message} {int(fraction * 100)}%")
+        return spectrogram(audio, N_FFT, hop, progress=tick)
+
     def stem(name):
         path = os.path.join(song_dir, name + ".wav")
         return path if os.path.isfile(path) else None
@@ -545,16 +562,19 @@ def analyze_song(song_dir, vocal_midi=None):
     harmony_mag = bass_mag = None
     tuning = 0.0
 
+    report(1, "Reading the instruments...")
     if harmony_paths:
-        harmony_mag = spectrogram(_sum_stems(harmony_paths, HARMONY_SR), N_FFT, HARMONY_HOP)
+        harmony_mag = read_spec(_sum_stems(harmony_paths, HARMONY_SR), HARMONY_HOP, 2, 38, "Reading the instruments...")
         tuning = estimate_tuning(harmony_mag, HARMONY_SR, 110.0, 2000.0)
         harmony_chroma = chromagram(harmony_mag, HARMONY_SR, 110.0, 2000.0, tuning)
     if bass_path:
-        bass_mag = spectrogram(read_mono(bass_path, BASS_SR), N_FFT, BASS_HOP)
+        report(42, "Reading the bass...")
+        bass_mag = read_spec(read_mono(bass_path, BASS_SR), BASS_HOP, 42, 26, "Reading the bass...")
         if harmony_chroma is None:
             tuning = estimate_tuning(bass_mag, BASS_SR, 40.0, 400.0)
         bass_chroma = chromagram(bass_mag, BASS_SR, 40.0, 400.0, tuning)
 
+    report(70, "Finding the key...")
     vec = lambda c: None if c is None else c.sum(axis=0).astype(np.float64)    # noqa: E731
     key = detect_key(vec(harmony_chroma), vec(bass_chroma), vocal_histogram(vocal_midi, tuning))
 
@@ -571,9 +591,11 @@ def analyze_song(song_dir, vocal_midi=None):
     rhythm_paths = [p for p in (stem(name) for name in rhythm_names) if p]
     rhythm_chroma = harmony_chroma
     if rhythm_paths and rhythm_paths != harmony_paths:
-        rhythm_mag = spectrogram(_sum_stems(rhythm_paths, HARMONY_SR), N_FFT, HARMONY_HOP)
+        report(74, "Reading the rhythm guitar...")
+        rhythm_mag = read_spec(_sum_stems(rhythm_paths, HARMONY_SR), HARMONY_HOP, 74, 16, "Reading the rhythm guitar...")
         rhythm_chroma = chromagram(rhythm_mag, HARMONY_SR, 110.0, 2000.0, tuning)
 
+    report(92, "Finding the beat...")
     onset = None
     pulse = stem("drums") or (rhythm_paths[0] if rhythm_paths else bass_path)
     if pulse:
@@ -586,6 +608,7 @@ def analyze_song(song_dir, vocal_midi=None):
             groove = None
     else:
         runs = bass_root_runs(bass_chroma)
+    report(100, "Beat and key are ready.")
 
     return {
         "version": ANALYSIS_VERSION,
@@ -598,7 +621,7 @@ def analyze_song(song_dir, vocal_midi=None):
     }
 
 
-def cached_analysis(song_dir, cache_path, vocal_midi=None):
+def cached_analysis(song_dir, cache_path, vocal_midi=None, progress=None):
     """analyze_song(), remembered next to the song so it only has to run once."""
     stems = sorted(f for f in os.listdir(song_dir) if f.endswith(".wav"))
     signature = [[f, os.path.getmtime(os.path.join(song_dir, f))] for f in stems]
@@ -607,10 +630,12 @@ def cached_analysis(song_dir, cache_path, vocal_midi=None):
             saved = json.load(handle)
         if saved.get("version") == ANALYSIS_VERSION and saved.get("signature") == signature \
                 and saved.get("sources", {}).get("vocal") == (vocal_midi is not None):
+            if progress is not None:
+                progress(100, "Beat and key are ready.")
             return saved
     except (OSError, ValueError):
         pass
-    result = analyze_song(song_dir, vocal_midi)
+    result = analyze_song(song_dir, vocal_midi, progress=progress)
     result["signature"] = signature
     tmp = cache_path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as handle:

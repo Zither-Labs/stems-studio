@@ -74,4 +74,12 @@ for beat_index, pitches in enumerate(((7, 11), (7, 2), (2, 6), (2, 9))):
 split = ma.bars_as_runs(half_bass, half, groove)
 assert [run["root"] for run in split] == [7, 2], split
 
+# The slow spectrogram reports how far it has got, and finishes at 1.
+seen = []
+audio = np.random.default_rng(0).standard_normal(ma.N_FFT + ma.HARMONY_HOP * 600).astype(np.float32)
+mag = ma.spectrogram(audio, ma.N_FFT, ma.HARMONY_HOP, progress=seen.append)
+assert mag.shape[0] > 256, mag.shape
+assert seen and seen[-1] == 1.0, seen
+assert seen == sorted(seen), seen
+
 print("groove ok", four["bpm"], "bpm", four["beats_per_bar"])

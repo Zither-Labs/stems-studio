@@ -238,6 +238,8 @@ def roformer_cli():
 bind_library_db()
 SONG_ID_RE = re.compile(r"^[0-9a-f]{8}$")
 PITCH_LOCK = threading.Lock()
+# What the beat/key listen is doing right now, so the page can draw a bar while it runs.
+LISTEN_PROGRESS = {}
 # Stems the highway can follow (drums have no pitch).
 HIGHWAY_STEMS = ("vocals", "bass", "guitar", "guitar_lead", "guitar_rhythm", "piano", "other")
 YOUTUBE_ID_RE = re.compile(r"(?:v=|youtu\.be/|shorts/|embed/|live/)([A-Za-z0-9_-]{11})")
@@ -739,6 +741,58 @@ def separator_module(name):
     if path not in sys.path:
         sys.path.insert(0, path)
     return __import__(name)
+
+
+def note_listen(song_id, percent, message, running=True):
+    """Remember the latest listen stage. The page polls this; it does not wait on the listen itself."""
+    LISTEN_PROGRESS[song_id] = {
+        "progress": max(0, min(100, int(percent))),
+        "message": message,
+        "running": bool(running),
+    }
+
+
+def prepare_song_listen(song_id, folder, on_progress=None):
+    """Read the vocal, the beat, the key and the bass, and keep the result next to the song.
+
+    A later chord sheet only has to line the chords up against that saved result. Doing this
+    while the stems are first made means opening the song does not start the long listen again.
+    The vocal pitch is saved too, so the highway's later request matches the cache.
+    """
+    def report(percent, message, running=True):
+        note_listen(song_id, percent, message, running and percent < 100)
+        if on_progress is not None:
+            on_progress(max(0, min(100, int(percent))), message)
+
+    try:
+        music_analysis = separator_module("music_analysis")
+    except ImportError:
+        note_listen(song_id, 100, "Beat and key need the extras.", running=False)
+        raise
+    try:
+        with PITCH_LOCK:
+            vocal_midi = None
+            vocals = os.path.join(folder, "vocals.wav")
+            if os.path.isfile(vocals):
+                report(2, "Reading the vocal...")
+                try:
+                    pitch_track = separator_module("pitch_track")
+                    vocal_midi = pitch_track.cached_analysis(
+                        vocals, os.path.join(folder, "vocals.pitch.json"))["midi"]
+                except Exception:
+                    traceback.print_exc()
+
+            def analysis_progress(percent, message):
+                report(12 + percent * 0.87, message)
+
+            result = music_analysis.cached_analysis(
+                folder, os.path.join(folder, "analysis.json"), vocal_midi, progress=analysis_progress)
+            report(100, "Beat and key are ready.", running=False)
+            return result
+    except Exception:
+        traceback.print_exc()
+        report(100, "Could not read the beat.", running=False)
+        return None
 
 
 def read_song_tags(audio_path, fallback_name=None):
@@ -1368,12 +1422,13 @@ def run_separation_job(job_id, source_type, source_val, model="htdemucs_6s", pre
         # (the music without the voice) is then split into drums, bass, guitar... by Demucs.
         demucs_input = audio_file
         roformer_vocals = None
-        progress_base, progress_span = 35, 0.55      # where Demucs' progress bar starts and how far it goes
+        # Leave the last stretch of the bar for reading the beat, the key and the bass.
+        progress_base, progress_span = 28, 0.50      # where Demucs' progress bar starts and how far it goes
         if clean_vocals:
             job["message"] = "Making a cleaner vocal (the first time, a 600 MB model is downloaded)..."
             job["progress"] = 12
             roformer_vocals, demucs_input = run_roformer(audio_file, job_dir, job)
-            progress_base, progress_span = 50, 0.40
+            progress_base, progress_span = 42, 0.36
 
         # Step 2: Run Demucs Separation with GPU acceleration
         job["message"] = f"Running neural separation with {model} on {dev_info['device_name']}..."
@@ -1425,7 +1480,7 @@ def run_separation_job(job_id, source_type, source_val, model="htdemucs_6s", pre
 
         # Step 3: Collect generated stems
         job["message"] = "Finalizing stem channels..."
-        job["progress"] = 92
+        job["progress"] = 80
 
         audio_base = os.path.splitext(os.path.basename(demucs_input))[0]
         stems_source_dir = os.path.join(job_dir, model, audio_base)
@@ -1448,7 +1503,7 @@ def run_separation_job(job_id, source_type, source_val, model="htdemucs_6s", pre
 
         if split_guitar and "guitar.wav" in stem_files:
             job["message"] = "Splitting the guitar into lead and rhythm (by stereo position)..."
-            job["progress"] = 93
+            job["progress"] = 82
             try:
                 sys.path.insert(0, os.path.join(BASE_DIR, "separator"))
                 import guitar_split
@@ -1463,7 +1518,7 @@ def run_separation_job(job_id, source_type, source_val, model="htdemucs_6s", pre
 
         if split_drums and "drums.wav" in stem_files and roformer_cli():
             job["message"] = "Splitting the drums into kick, snare, hi-hat and cymbals..."
-            job["progress"] = 93
+            job["progress"] = 82
             try:
                 parts = split_drums_in_folder(stems_source_dir, job, 93, 3)
                 # The whole drum track stays on disk (the highway can still use it); the parts replace it in the mixer.
@@ -1509,7 +1564,7 @@ def run_separation_job(job_id, source_type, source_val, model="htdemucs_6s", pre
             })
 
         job["message"] = "Looking for the lyrics..."
-        job["progress"] = 96
+        job["progress"] = 84
         try:
             save_song_lyrics(job_dir, lyrics_tags,
                              source_label if source_type == "file" else job.get("title"), lyrics_extra)
@@ -1528,6 +1583,17 @@ def run_separation_job(job_id, source_type, source_val, model="htdemucs_6s", pre
             save_song(job_id, job.get("title", "Untitled"), source_type, source_label,
                       content_key, model, library_preset, stems_result)
             name_song_folder(job_id)
+
+        # The beat, the key and the bass are read now, on this same bar, so a chord sheet
+        # later only has to line up against a result that is already saved.
+        def listen_progress(percent, message):
+            job["progress"] = 84 + int(max(0, min(100, percent)) * 15 / 100)
+            job["message"] = message
+
+        try:
+            prepare_song_listen(job_id, song_dir(job_id), listen_progress)
+        except Exception:
+            traceback.print_exc()          # the song is still usable if the listen cannot run
 
         job["stems"] = stems_result
         job["progress"] = 100
@@ -1556,6 +1622,7 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
     def send_json(self, payload, code=200):
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
+        self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(json.dumps(payload).encode("utf-8"))
 
@@ -1736,6 +1803,15 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.send_json({"lanes": result["lanes"], "approximate": result["approximate"]})
             return
 
+        elif parsed.path.startswith("/api/analysis/") and parsed.path.endswith("/progress"):
+            parts = [part for part in parsed.path.split("/") if part]
+            song_id = parts[2] if len(parts) > 2 else ""
+            if not SONG_ID_RE.match(song_id):
+                self.send_json({"error": "Song not found"}, 404)
+                return
+            self.send_json(LISTEN_PROGRESS.get(song_id) or {"progress": 0, "message": "", "running": False})
+            return
+
         elif parsed.path.startswith("/api/analysis/"):
             # Key and chords of a song, found from its separated stems.
             song_id = parsed.path.split("/")[3]
@@ -1744,20 +1820,17 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
                 self.send_json({"error": "Song not found"}, 404)
                 return
             try:
-                music_analysis = separator_module("music_analysis")
+                result = prepare_song_listen(song_id, folder)
             except ImportError as exc:
                 self.send_json({"error": f"Key finder is not installed: {exc}"}, 501)
                 return
-            with PITCH_LOCK:
-                vocal_midi = None
-                vocals = os.path.join(folder, "vocals.wav")
-                if os.path.isfile(vocals):
-                    try:
-                        pitch_track = separator_module("pitch_track")
-                        vocal_midi = pitch_track.cached_analysis(vocals, os.path.join(folder, "vocals.pitch.json"))["midi"]
-                    except ImportError:
-                        pass
-                result = music_analysis.cached_analysis(folder, os.path.join(folder, "analysis.json"), vocal_midi)
+            except Exception:
+                traceback.print_exc()
+                self.send_json({"error": "Could not read the beat for this song."}, 500)
+                return
+            if not result:
+                self.send_json({"error": "Could not read the beat for this song."}, 500)
+                return
             passed = chords_for_song(song_id, folder, result)
             self.send_json({
                 "key": result.get("key"),

@@ -275,11 +275,15 @@
           <button type="button" class="preset-chip" id="chordSheetBtn" title="Paste the chords in each part. The bass decides how long they last.">Chord sheet</button>
           <div class="key-fit-panel chord-sheet-panel" id="chordSheetPanel" hidden>
             <div class="key-fit-title">Chord sheet</div>
-            <p class="chord-sheet-hint">Name each part and its chords, like verse G Em and chorus C G# F#. The parts can repeat. The app finds the beat and the meter, and a walking bass does not change the chord while the rhythm guitar holds it. The key can be wrong.</p>
+            <p class="chord-sheet-hint">Name each part and its chords, like verse G Em and chorus C G# F#. The parts can repeat. A new song already listens for the beat while the stems are made. On an older song the bar below shows that listen the first time. A walking bass does not change the chord while the rhythm guitar holds it. The key can be wrong.</p>
             <textarea id="chordSheetText" rows="4" spellcheck="false" placeholder="verse G Em&#10;chorus C G# F#"></textarea>
             <div class="key-fit-actions">
               <button type="button" class="preset-chip" id="chordSheetSave">Use this sheet</button>
               <button type="button" class="preset-chip" id="chordSheetClear">Clear</button>
+            </div>
+            <div class="chord-sheet-progress" id="chordSheetProgress" hidden>
+              <p class="chord-sheet-progress-label" id="chordSheetProgressLabel">Listening through the song...</p>
+              <div class="create-progress-track"><div class="create-progress-fill" id="chordSheetFill"></div></div>
             </div>
             <p class="chord-sheet-status" id="chordSheetStatus"></p>
           </div>
@@ -292,6 +296,9 @@
           <option value="minor">minor</option>
         </select>
         <button type="button" class="preset-chip" id="highwayKeyReset" title="Go back to the key the app found" hidden>Use detected key</button>
+      </div>
+      <div class="highway-listen" id="highwayListen" hidden>
+        <div class="highway-listen-fill" id="highwayListenFill"></div>
       </div>
       <canvas id="vocalHighwayCanvas" title="Pitch highway. Click to jump to that moment."></canvas>
     </div>
@@ -534,7 +541,7 @@
         <p><strong>Reset</strong> puts every stem volume back to the middle, clears mute and solo, and turns those switches off.</p>
 
         <h3>The highway and Sing along</h3>
-        <p>The picture above the seek bar shows the notes coming toward a line that means now. Click it to jump there. A chord line appears along the top when a published chord chart for this song agrees with the bass. The app looks that chart up from the song's name. <strong>Chord sheet</strong> is where you can type the chords you do know, by part: <strong>verse G Em</strong> and <strong>chorus C G# F#</strong>. You do not count the lines. The app finds the beat and the meter first. A note the bass plays between beats does not move the chord if the rhythm guitar is still holding it. The parts can repeat. <strong>Sing along</strong> stays under that picture. It uses your microphone, with Level, a guide tone, and Mic timing if your voice looks a little early or late.</p>
+        <p>The picture above the seek bar shows the notes coming toward a line that means now. Click it to jump there. While a new song is being made, the same progress bar also reads the vocal, the beat and the key. A thin bar on the highway shows that listen the first time an older song is opened. A chord line appears along the top when a published chord chart for this song agrees with the bass. The app looks that chart up from the song's name. <strong>Chord sheet</strong> is where you can type the chords you do know, by part: <strong>verse G Em</strong> and <strong>chorus C G# F#</strong>. You do not count the lines. The app finds the beat and the meter first. A note the bass plays between beats does not move the chord if the rhythm guitar is still holding it. The parts can repeat. <strong>Sing along</strong> stays under that picture. It uses your microphone, with Level, a guide tone, and Mic timing if your voice looks a little early or late.</p>
 
         <h3>Lyrics</h3>
         <p>When the words have timing, you see four lines: the one just sung, the line being sung, and the next two. The current line fills in as it is sung. Click a line to jump to it. If the words are a little early or late, use <strong>−0.5s</strong> and <strong>+0.5s</strong>. Words without timing stay as a scrolling list. <strong>Find lyrics</strong> searches by artist and title.</p>

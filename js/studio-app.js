@@ -790,7 +790,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const job = await pollSeparation(jobId, runId, Boolean(cached));
       if (!job) return;
 
-      setCreateProgress(97, 'Loading the stems into the mixer...');
+      setCreateProgress(100, 'Loading the stems into the mixer...');
       await loadSeparatedStems(job.stems, false, job.title || '');
 
       closeCreateDialog();

@@ -549,6 +549,38 @@ body::before {
   display: none;
 }
 
+.chord-sheet-progress {
+  margin: 0 0 0.55rem;
+}
+
+.chord-sheet-progress[hidden] {
+  display: none;
+}
+
+.chord-sheet-progress-label {
+  margin: 0 0 0.3rem;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+.highway-listen {
+  flex: 0 0 auto;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.highway-listen[hidden] {
+  display: none;
+}
+
+.highway-listen-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #6366f1, #a855f7, #38bdf8);
+  transition: width 0.25s ease;
+}
+
 #chordSheetText {
   width: 100%;
   min-height: 4.5rem;
