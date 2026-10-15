@@ -477,8 +477,10 @@ def save_song(song_id, title, source_type, source_label, content_key, model, pre
 
 
 def list_songs():
+    """Every saved song, A to Z by the name the library shows (artist, then the song)."""
     with library_db() as conn:
-        rows = conn.execute("SELECT * FROM songs ORDER BY created_at DESC").fetchall()
+        rows = conn.execute("SELECT * FROM songs").fetchall()
+    rows.sort(key=lambda row: (display_title(row).casefold(), row["id"]))
     return [row_to_summary(row) for row in rows]
 
 

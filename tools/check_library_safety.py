@@ -123,6 +123,22 @@ def main():
         assert ask("/api/preferences")["voice_type"] == "alto"
         httpd.shutdown()
 
+        for song_id, artist, track in (
+            ("aa000001", "Zebra", "Apple"),
+            ("aa000002", "adele", "Hello"),
+            ("aa000003", "Adele", "Skyfall"),
+        ):
+            folder = os.path.join(library, song_id)
+            os.makedirs(folder)
+            with open(os.path.join(folder, "vocals.wav"), "wb") as handle:
+                handle.write(b"x")
+            with open(os.path.join(folder, "meta.json"), "w", encoding="utf-8") as handle:
+                json.dump({"artist": artist, "title": track}, handle)
+            stems = [{"id": "vocals", "name": "Vocals", "url": f"/api/stems/{song_id}/vocals.wav", "empty": False}]
+            server.save_song(song_id, "raw", "file", "t.wav", f"file:{song_id}", "htdemucs_6s", "standard", stems)
+        titles = [row["title"] for row in server.list_songs()]
+        assert titles == ["adele - Hello", "Adele - Skyfall", "Test Song", "Zebra - Apple"], titles
+
         assert server.set_voice_type("tenor")
         other = os.path.join(tmp, "other")
         assert server.set_library_folder(other) == ""
