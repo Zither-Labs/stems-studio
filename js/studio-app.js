@@ -1686,6 +1686,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnSetupMic = document.getElementById('btnSetupMic');
   const micSetupText = document.getElementById('micSetupText');
   const micMeterFill = document.getElementById('micMeterFill');
+  const micClipDot = document.getElementById('micClipDot');
   const micMonitorToggle = document.getElementById('micMonitorToggle');
   
   const btnRecord = document.getElementById('btnRecord');
