@@ -264,6 +264,11 @@
         <label class="highway-field" id="highwaySourceWrap" hidden>Show
           <select id="highwaySource" title="Which stem the highway follows. Vocals, bass and lead guitar show one line; piano and rhythm guitar show every note."></select>
         </label>
+        <span class="highway-field" id="highwayZoomWrap" title="Zoom: how many seconds are visible at once. Scroll wheel over the highway to zoom. Click seconds to reset to 10s.">Zoom
+          <button type="button" class="coach-step" id="highwayZoomOut" aria-label="Zoom out" title="Zoom out (wider view, more seconds)">&minus;</button>
+          <span class="highway-zoom-val" id="highwayZoomVal" title="Click to reset to 10s">10s</span>
+          <button type="button" class="coach-step" id="highwayZoomIn" aria-label="Zoom in" title="Zoom in (closer look, fewer seconds)">+</button>
+        </span>
         <label class="highway-field" id="highwayDetailWrap" hidden title="How many notes to show. Fewer hides the weak guesses, more shows everything the note finder heard.">Notes
           <input type="range" id="highwayDetail" min="0" max="40" step="1">
         </label>
@@ -309,7 +314,7 @@
       <div class="highway-listen" id="highwayListen" hidden>
         <div class="highway-listen-fill" id="highwayListenFill"></div>
       </div>
-      <canvas id="vocalHighwayCanvas" title="Pitch highway. Click to jump to that moment."></canvas>
+      <canvas id="vocalHighwayCanvas" title="Pitch highway. Click to jump to that moment. Scroll wheel to zoom."></canvas>
     </div>
     <!-- Singing coach: sing along with the highway and see how close you are. -->
     <div class="coach-bar" id="coachBar">

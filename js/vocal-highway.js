@@ -149,7 +149,7 @@ class VocalHighway {
     this.ctx = canvas.getContext('2d');
     this.engine = engine;
 
-    this.windowSeconds = 10;   // how much time is visible at once
+    this.windowSeconds = this.loadNumber('stemsStudio.highwayZoom', 10);   // how much time is visible at once
     this.nowFraction = 0.25;   // where the "now" line sits across the lane
     this.gutter = 108;         // room for the note names and the Sa Re Ga names on the left
     this.chordBarHeight = 28;  // the chord ribbon along the top
@@ -217,6 +217,30 @@ class VocalHighway {
       window.addEventListener('resize', () => this.resize());
     }
     canvas.addEventListener('click', (e) => this.handleClick(e));
+    canvas.addEventListener('wheel', (e) => this.handleWheel(e), { passive: false });
+
+    let touchStartDist = 0;
+    let touchStartZoom = 10;
+    canvas.addEventListener('touchstart', (e) => {
+      if (e.touches.length === 2) {
+        touchStartDist = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY
+        );
+        touchStartZoom = this.windowSeconds;
+      }
+    }, { passive: true });
+    canvas.addEventListener('touchmove', (e) => {
+      if (e.touches.length === 2 && touchStartDist > 0) {
+        const dist = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY
+        );
+        const factor = touchStartDist / Math.max(10, dist);
+        this.setZoom(touchStartZoom * factor);
+      }
+    }, { passive: true });
+
     if (this.barRoot) this.setupBar(this.barRoot);
 
     this.loop = this.loop.bind(this);
@@ -244,6 +268,35 @@ class VocalHighway {
     };
   }
 
+  setZoom(seconds) {
+    const clamped = Math.max(2, Math.min(30, Math.round(seconds)));
+    if (clamped === this.windowSeconds) return;
+    this.windowSeconds = clamped;
+    try {
+      localStorage.setItem('stemsStudio.highwayZoom', String(clamped));
+    } catch (err) {}
+    this.updateZoomDisplay();
+    this.lastKey = '';
+  }
+
+  updateZoomDisplay() {
+    if (this.barEls && this.barEls.zoomVal) {
+      this.barEls.zoomVal.textContent = `${this.windowSeconds}s`;
+    }
+  }
+
+  handleWheel(e) {
+    e.preventDefault();
+    const step = this.windowSeconds <= 6 ? 1 : 2;
+    if (e.deltaY < 0) {
+      // wheel up: zoom in (closer look, fewer seconds)
+      this.setZoom(this.windowSeconds - step);
+    } else if (e.deltaY > 0) {
+      // wheel down: zoom out (wider view, more seconds)
+      this.setZoom(this.windowSeconds + step);
+    }
+  }
+
   handleClick(e) {
     if (this.state !== 'ready') return;
     const rect = this.canvas.getBoundingClientRect();
@@ -266,7 +319,7 @@ class VocalHighway {
     const t = this.engine.getCurrentTime();
     // The coach has a live line on top, so it needs a fresh picture on every frame while it runs.
     const live = this.coach && this.coach.needsRedraw() ? performance.now() : 0;
-    const key = `${t.toFixed(3)}|${this.width}|${this.height}|${this.state}|${this.notes.length}|${this.chords.length}|${this.showChords ? 1 : 0}|${live}`;
+    const key = `${t.toFixed(3)}|${this.width}|${this.height}|${this.windowSeconds}|${this.state}|${this.notes.length}|${this.chords.length}|${this.showChords ? 1 : 0}|${live}`;
     if (key !== this.lastKey) {
       this.lastKey = key;
       this.draw(t);
@@ -617,6 +670,9 @@ class VocalHighway {
       chords: bar.querySelector('#highwayShowChords'),
       source: bar.querySelector('#highwaySource'),
       sourceWrap: bar.querySelector('#highwaySourceWrap'),
+      zoomIn: bar.querySelector('#highwayZoomIn'),
+      zoomOut: bar.querySelector('#highwayZoomOut'),
+      zoomVal: bar.querySelector('#highwayZoomVal'),
       detail: bar.querySelector('#highwayDetail'),
       detailWrap: bar.querySelector('#highwayDetailWrap'),
       roughWrap: bar.querySelector('#highwayRoughWrap'),
@@ -624,6 +680,22 @@ class VocalHighway {
     };
     this.barEls = els;
     els.source.addEventListener('change', () => this.selectSource(els.source.value));
+    if (els.zoomIn) {
+      els.zoomIn.addEventListener('click', () => {
+        const step = this.windowSeconds <= 6 ? 1 : 2;
+        this.setZoom(this.windowSeconds - step);
+      });
+    }
+    if (els.zoomOut) {
+      els.zoomOut.addEventListener('click', () => {
+        const step = this.windowSeconds < 6 ? 1 : 2;
+        this.setZoom(this.windowSeconds + step);
+      });
+    }
+    if (els.zoomVal) {
+      els.zoomVal.addEventListener('click', () => this.setZoom(10));
+    }
+    this.updateZoomDisplay();
     if (els.rough) {
       els.rough.addEventListener('change', () => {
         this.roughChoice = els.rough.checked;

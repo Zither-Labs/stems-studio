@@ -889,6 +889,20 @@ body::before {
   font-family: "JetBrains Mono", monospace;
 }
 
+.highway-zoom-val {
+  display: inline-block;
+  min-width: 2.2rem;
+  text-align: center;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.82rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.highway-zoom-val:hover {
+  color: var(--accent, #a78bfa);
+}
+
 .coach-status {
   flex: 1 1 12rem;
   color: rgba(255, 255, 255, 0.85);
