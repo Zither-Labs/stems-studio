@@ -63,6 +63,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnPresetRhythm = document.getElementById('btnPresetRhythm');
   const btnPresetReset = document.getElementById('btnPresetReset');
   const helpModal = document.getElementById('helpModal');
+  const installModal = document.getElementById('installModal');
   const aboutModal = document.getElementById('aboutModal');
   // Which mix switch is lit: 'karaoke', 'acapella', 'rhythm', or null.
   let activeMix = null;
@@ -1607,6 +1608,17 @@ document.addEventListener('DOMContentLoaded', () => {
     if (e.target === helpModal) helpModal.classList.remove('open');
   });
 
+  // Installation Guide
+  const installClose = document.getElementById('installClose');
+  const btnInstallGuide = document.getElementById('btnInstallGuide');
+  if (btnInstallGuide && installModal) {
+    btnInstallGuide.addEventListener('click', () => installModal.classList.add('open'));
+    if (installClose) installClose.addEventListener('click', () => installModal.classList.remove('open'));
+    installModal.addEventListener('click', (e) => {
+      if (e.target === installModal) installModal.classList.remove('open');
+    });
+  }
+
   // About
   const aboutClose = document.getElementById('aboutClose');
   const btnAbout = document.getElementById('btnAbout');
@@ -1623,6 +1635,7 @@ document.addEventListener('DOMContentLoaded', () => {
     createStemsModal.classList.remove('open');
     libraryModal.classList.remove('open');
     helpModal.classList.remove('open');
+    if (installModal) installModal.classList.remove('open');
     if (aboutModal) aboutModal.classList.remove('open');
   }
 

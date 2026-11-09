@@ -160,6 +160,7 @@
 
     <div class="command-group">
       <button class="btn" id="btnHelp" title="How this window works">Help</button>
+      <button class="btn" id="btnInstallGuide" title="How to install on Windows, Mac, and Linux">Installation</button>
       <button class="btn" id="btnAbout" title="About Stems Studio and Open Source credits">About</button>
     </div>
   </header>
@@ -713,6 +714,108 @@
           <span style="font-size: 0.85rem; color: #a78bfa; font-weight: 600;">Stems Studio &bull; Created by Bikash Acharya</span>
           <span style="font-size: 0.78rem; color: var(--text-muted);">Crafted with passion for music & code</span>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Installation Guide Modal -->
+  <div class="modal-backdrop" id="installModal" role="dialog" aria-modal="true" aria-labelledby="installTitle">
+    <div class="modal-window install-window">
+      <div class="modal-header">
+        <div>
+          <h2 class="modal-title" id="installTitle">Installation Guide</h2>
+          <p class="install-subtitle" style="margin: 0.25rem 0 0; font-size: 0.88rem; color: #a78bfa; font-weight: 600;">Cross-Platform Setup for Windows, macOS & Linux</p>
+        </div>
+        <button class="modal-close-btn" id="installClose" aria-label="Close">
+          <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" fill="none" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="install-body">
+        <div class="install-os-grid">
+          <!-- Windows -->
+          <div class="install-os-card">
+            <div class="install-os-header">
+              <span class="install-os-title">🪟 Windows (10 / 11)</span>
+              <span class="os-credit-badge">Automatic Installer</span>
+            </div>
+            <ol class="install-steps">
+              <li>Extract the <code>StemsStudio.zip</code> folder to a location on your drive (e.g. <code>C:\Music\StemsStudio</code>).</li>
+              <li>Double-click <strong><code>Install.bat</code></strong>.</li>
+              <li>The installer automatically creates an isolated Python 3.12 environment, configures PyTorch with CUDA GPU acceleration (if an NVIDIA graphics card is present), and sets up all AI models and FFmpeg.</li>
+              <li>Once finished, launch the app anytime via the <strong>Stems Studio</strong> Desktop shortcut or Start Menu.</li>
+            </ol>
+            <div class="install-tip">
+              <strong>Tip:</strong> If you don't have Python installed, the installer automatically fetches Python 3.12 for you.
+            </div>
+          </div>
+
+          <!-- macOS -->
+          <div class="install-os-card">
+            <div class="install-os-header">
+              <span class="install-os-title">🍎 macOS (Apple Silicon & Intel)</span>
+              <span class="os-credit-badge">Native App Bundle</span>
+            </div>
+            <ol class="install-steps">
+              <li>Unzip the <code>StemsStudio.zip</code> folder.</li>
+              <li>Double-click <strong><code>Install.command</code></strong>.<br><em>(If macOS shows a Gatekeeper warning, right-click <code>Install.command</code> and select <strong>Open</strong>).</em></li>
+              <li>The script configures Python 3.12 and installs PyTorch with <strong>Apple Silicon GPU acceleration (Metal / MPS)</strong> on M1/M2/M3/M4 chips.</li>
+              <li>Setup automatically builds <strong><code>~/Applications/Stems Studio.app</code></strong> so you can launch it directly from <strong>Spotlight (Cmd + Space)</strong>, Launchpad, or Finder.</li>
+            </ol>
+            <div class="install-tip">
+              <strong>Browser:</strong> Chrome or Edge gives the best borderless app experience, or it will use your default browser.
+            </div>
+          </div>
+
+          <!-- Linux -->
+          <div class="install-os-card">
+            <div class="install-os-header">
+              <span class="install-os-title">🐧 Linux (Ubuntu, Debian, Fedora, Arch)</span>
+              <span class="os-credit-badge">Desktop Entry</span>
+            </div>
+            <ol class="install-steps">
+              <li>Extract the archive and open a terminal inside the <code>StemsStudio</code> folder.</li>
+              <li>Make the installer executable and run it:
+                <pre class="install-code"><code>chmod +x Install.command
+./Install.command</code></pre>
+              </li>
+              <li>The installer detects NVIDIA GPUs (via <code>nvidia-smi</code>) to enable CUDA acceleration, configures dependencies, and registers a <code>stems-studio.desktop</code> launcher.</li>
+              <li>Launch from your system <strong>Applications menu</strong> or execute:
+                <pre class="install-code"><code>./.venv/bin/python app.py</code></pre>
+              </li>
+            </ol>
+            <div class="install-tip">
+              <strong>Prerequisite:</strong> Ensure <code>python3</code> and <code>curl</code> are installed on your distribution.
+            </div>
+          </div>
+        </div>
+
+        <h3 style="font-family: 'Outfit', sans-serif; font-size: 0.95rem; color: #fff; margin: 1.25rem 0 0.5rem;">Hardware & AI Acceleration Overview</h3>
+        <table class="install-hw-table">
+          <thead>
+            <tr>
+              <th>System Hardware</th>
+              <th>Acceleration Mode</th>
+              <th>Separation Performance</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Windows / Linux + NVIDIA GPU</td>
+              <td>CUDA</td>
+              <td>Fast (~30&ndash;60 seconds per song)</td>
+            </tr>
+            <tr>
+              <td>Mac Apple Silicon (M1 / M2 / M3 / M4)</td>
+              <td>Metal / MPS</td>
+              <td>Fast (~45&ndash;90 seconds per song)</td>
+            </tr>
+            <tr>
+              <td>CPU Only (Intel Mac, AMD/Intel GPU)</td>
+              <td>CPU Multithreading</td>
+              <td>Standard (~3&ndash;5 minutes per song)</td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </div>
   </div>
