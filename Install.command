@@ -92,6 +92,7 @@ if ! "$VENV_PY" -c "import demucs, yt_dlp, static_ffmpeg, soundfile, numpy" >/de
     "$VENV_PY" -m pip install -r "$ROOT/separator/requirements.txt" \
         || fail "The install did not finish. Please copy the messages above and send them over."
 fi
+"$VENV_PY" -c "import static_ffmpeg; static_ffmpeg.add_paths()" >/dev/null 2>&1
 
 # The extras (pitch detector, key finder, lyrics) are optional: the app still works without them.
 if ! "$VENV_PY" -c "import swift_f0, soxr, mutagen" >/dev/null 2>&1; then
