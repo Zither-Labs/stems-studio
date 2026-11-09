@@ -1718,10 +1718,67 @@ kbd {
   transform: translateY(0);
 }
 
-.help-window {
+.help-window,
+.about-window {
   max-width: 720px;
   max-height: 86vh;
   overflow: auto;
+}
+
+.os-credits-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 0.65rem;
+  margin-top: 0.6rem;
+}
+
+.os-credit-item {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 6px;
+  padding: 0.6rem 0.75rem;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.os-credit-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(167, 139, 250, 0.3);
+}
+
+.os-credit-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.25rem;
+}
+
+.os-credit-name {
+  font-weight: 650;
+  color: #fff;
+  font-size: 0.88rem;
+}
+
+.os-credit-badge {
+  font-size: 0.7rem;
+  padding: 0.1rem 0.35rem;
+  border-radius: 3px;
+  background: rgba(167, 139, 250, 0.15);
+  color: #c4b5fd;
+  font-weight: 500;
+}
+
+.os-credit-desc {
+  font-size: 0.78rem !important;
+  line-height: 1.4 !important;
+  color: var(--text-muted) !important;
+  margin: 0 !important;
+}
+
+.os-credit-desc code {
+  color: #e5e7eb;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 0.05rem 0.2rem;
+  border-radius: 3px;
 }
 
 .help-body h3 {

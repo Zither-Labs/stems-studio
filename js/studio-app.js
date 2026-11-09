@@ -63,6 +63,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnPresetRhythm = document.getElementById('btnPresetRhythm');
   const btnPresetReset = document.getElementById('btnPresetReset');
   const helpModal = document.getElementById('helpModal');
+  const aboutModal = document.getElementById('aboutModal');
   // Which mix switch is lit: 'karaoke', 'acapella', 'rhythm', or null.
   let activeMix = null;
 
@@ -1606,11 +1607,23 @@ document.addEventListener('DOMContentLoaded', () => {
     if (e.target === helpModal) helpModal.classList.remove('open');
   });
 
+  // About
+  const aboutClose = document.getElementById('aboutClose');
+  const btnAbout = document.getElementById('btnAbout');
+  if (btnAbout && aboutModal) {
+    btnAbout.addEventListener('click', () => aboutModal.classList.add('open'));
+    if (aboutClose) aboutClose.addEventListener('click', () => aboutModal.classList.remove('open'));
+    aboutModal.addEventListener('click', (e) => {
+      if (e.target === aboutModal) aboutModal.classList.remove('open');
+    });
+  }
+
   function closeOpenModals() {
     dropzoneModal.classList.remove('open');
     createStemsModal.classList.remove('open');
     libraryModal.classList.remove('open');
     helpModal.classList.remove('open');
+    if (aboutModal) aboutModal.classList.remove('open');
   }
 
   // Global Keyboard Shortcuts

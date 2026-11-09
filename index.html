@@ -160,6 +160,7 @@
 
     <div class="command-group">
       <button class="btn" id="btnHelp" title="How this window works">Help</button>
+      <button class="btn" id="btnAbout" title="About Stems Studio and Open Source credits">About</button>
     </div>
   </header>
 
@@ -584,6 +585,134 @@
 
         <p class="help-keys"><strong>Keyboard Shortcuts:</strong> Space (Play / Pause) &bull; K (Toggle Karaoke) &bull; L (Toggle Loop) &bull; Home / Enter (Jump to Start) &bull; Esc (Close Windows)</p>
         <p class="help-footer" style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid rgba(255, 255, 255, 0.08); color: rgba(255, 255, 255, 0.6); font-size: 0.85rem; text-align: center;">Created by Bikash Acharya</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- About Stems Studio -->
+  <div class="modal-backdrop" id="aboutModal" role="dialog" aria-modal="true" aria-labelledby="aboutTitle">
+    <div class="modal-window about-window">
+      <div class="modal-header">
+        <div>
+          <h2 class="modal-title" id="aboutTitle">About Stems Studio</h2>
+          <p class="about-author" style="margin: 0.25rem 0 0; font-size: 0.88rem; color: #a78bfa; font-weight: 600;">Created by Bikash Acharya</p>
+        </div>
+        <button class="modal-close-btn" id="aboutClose" aria-label="Close">
+          <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" fill="none" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="about-body">
+        <p style="font-size: 0.86rem; line-height: 1.5; color: var(--text-secondary); margin-bottom: 1rem;">
+          <strong>Stems Studio</strong> is an interactive audio workstation and stem mixer designed for musicians, vocalists, and producers. It separates complete audio tracks into isolated vocals, drums, bass, guitar, and accompaniment, providing precision speed and pitch shifting, synchronized pitch highway guidance, vocal coach rehearsal, and studio-quality export.
+        </p>
+
+        <h3 style="font-family: 'Outfit', sans-serif; font-size: 0.98rem; color: #fff; margin: 1.1rem 0 0.35rem;">Open Source Projects & AI Models Utilized</h3>
+        <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 0.75rem;">
+          Stems Studio is proudly built with the help of the open-source community, deep learning audio research, and signal processing libraries:
+        </p>
+
+        <div class="os-credits-grid">
+          <div class="os-credit-item">
+            <div class="os-credit-header">
+              <span class="os-credit-name">Demucs</span>
+              <span class="os-credit-badge">Meta AI / FAIR</span>
+            </div>
+            <p class="os-credit-desc">State-of-the-art hybrid transformer architecture (<code>htdemucs_6s</code> and <code>htdemucs</code>) powering multi-stem audio separation for vocals, drums, bass, guitars, and piano.</p>
+          </div>
+
+          <div class="os-credit-item">
+            <div class="os-credit-header">
+              <span class="os-credit-name">Roformer (BS-Roformer)</span>
+              <span class="os-credit-badge">ZFTurbo / UVR Community</span>
+            </div>
+            <p class="os-credit-desc">Band-split rotary position transformer model providing clean, bleed-free vocal extraction and dedicated drum kit component separation.</p>
+          </div>
+
+          <div class="os-credit-item">
+            <div class="os-credit-header">
+              <span class="os-credit-name">PyTorch</span>
+              <span class="os-credit-badge">Linux Foundation</span>
+            </div>
+            <p class="os-credit-desc">Underlying deep learning runtime providing tensor acceleration with NVIDIA CUDA GPU computing and CPU fallback.</p>
+          </div>
+
+          <div class="os-credit-item">
+            <div class="os-credit-header">
+              <span class="os-credit-name">yt-dlp</span>
+              <span class="os-credit-badge">yt-dlp Team</span>
+            </div>
+            <p class="os-credit-desc">Command-line audio and video stream extraction utility enabling instant separation directly from YouTube URLs.</p>
+          </div>
+
+          <div class="os-credit-item">
+            <div class="os-credit-header">
+              <span class="os-credit-name">FFmpeg & FFprobe</span>
+              <span class="os-credit-badge">FFmpeg / static-ffmpeg</span>
+            </div>
+            <p class="os-credit-desc">Cross-platform multimedia framework handling high-performance audio decoding, sample rate conversion, and WAV postprocessing.</p>
+          </div>
+
+          <div class="os-credit-item">
+            <div class="os-credit-header">
+              <span class="os-credit-name">SwiftF0</span>
+              <span class="os-credit-badge">lars76</span>
+            </div>
+            <p class="os-credit-desc">Fast, lightweight neural fundamental frequency (F0) pitch estimator powering the real-time vocal pitch highway.</p>
+          </div>
+
+          <div class="os-credit-item">
+            <div class="os-credit-header">
+              <span class="os-credit-name">SoundFile & libsndfile</span>
+              <span class="os-credit-badge">libsndfile</span>
+            </div>
+            <p class="os-credit-desc">High-quality audio I/O library handling uncompressed WAV and FLAC stream reading and writing.</p>
+          </div>
+
+          <div class="os-credit-item">
+            <div class="os-credit-header">
+              <span class="os-credit-name">NumPy</span>
+              <span class="os-credit-badge">NumPy Developers</span>
+            </div>
+            <p class="os-credit-desc">Fundamental matrix and multidimensional array mathematics engine driving digital signal processing operations.</p>
+          </div>
+
+          <div class="os-credit-item">
+            <div class="os-credit-header">
+              <span class="os-credit-name">Sonic Annotator & Chordino</span>
+              <span class="os-credit-badge">Queen Mary Univ. London</span>
+            </div>
+            <p class="os-credit-desc">Vamp audio feature extraction plugin for automated harmonic analysis and chord transcription.</p>
+          </div>
+
+          <div class="os-credit-item">
+            <div class="os-credit-header">
+              <span class="os-credit-name">Madmom</span>
+              <span class="os-credit-badge">CPJKU</span>
+            </div>
+            <p class="os-credit-desc">Python audio signal processing and music information retrieval (MIR) library for beat tracking and rhythm analysis.</p>
+          </div>
+
+          <div class="os-credit-item">
+            <div class="os-credit-header">
+              <span class="os-credit-name">BTC & Autochord</span>
+              <span class="os-credit-badge">MIR Community</span>
+            </div>
+            <p class="os-credit-desc">Bi-directional Transformer for Chord Recognition and probabilistic HMM models for harmonic tracking.</p>
+          </div>
+
+          <div class="os-credit-item">
+            <div class="os-credit-header">
+              <span class="os-credit-name">Web Audio API</span>
+              <span class="os-credit-badge">W3C Standard</span>
+            </div>
+            <p class="os-credit-desc">Browser-native high-performance multitrack audio graph, real-time gain faders, stereo analysers, and sample-accurate synchronization.</p>
+          </div>
+        </div>
+
+        <div style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid rgba(255, 255, 255, 0.08); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+          <span style="font-size: 0.85rem; color: #a78bfa; font-weight: 600;">Stems Studio &bull; Created by Bikash Acharya</span>
+          <span style="font-size: 0.78rem; color: var(--text-muted);">Crafted with passion for music & code</span>
+        </div>
       </div>
     </div>
   </div>
