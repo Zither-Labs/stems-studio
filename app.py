@@ -17,6 +17,17 @@ import traceback
 import urllib.request
 import webbrowser
 
+# If launched with an external Python, re-exec inside the app's private .venv
+_ROOT = os.path.dirname(os.path.abspath(__file__))
+_VENV = os.path.join(_ROOT, ".venv")
+if os.path.isdir(_VENV) and os.path.normcase(sys.prefix) != os.path.normcase(_VENV):
+    _is_gui = "pythonw" in sys.executable.lower()
+    _target_py = os.path.join(_VENV, "Scripts", "pythonw.exe" if _is_gui else "python.exe")
+    if not os.path.isfile(_target_py):
+        _target_py = os.path.join(_VENV, "Scripts", "python.exe")
+    if os.path.isfile(_target_py) and os.path.normcase(sys.executable) != os.path.normcase(_target_py):
+        sys.exit(subprocess.call([_target_py] + sys.argv))
+
 import server
 
 LOG_PATH = os.path.join(server.DATA_DIR, "stems-studio.log")

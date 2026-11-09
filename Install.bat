@@ -64,10 +64,13 @@ echo No NVIDIA graphics card found. The stem maker will run on the CPU (slower).
 
 :check_parts
 "%PY%" -c "import demucs, yt_dlp, static_ffmpeg, soundfile, numpy" >nul 2>nul
-if not errorlevel 1 goto pitch_parts
+if not errorlevel 1 goto init_ffmpeg
 echo Step 3 of 4: installing the stem maker. This can take several minutes...
 "%PY%" -m pip install -r "%~dp0separator\requirements.txt"
 if errorlevel 1 goto fail_pip
+
+:init_ffmpeg
+"%PY%" -c "import static_ffmpeg; static_ffmpeg.add_paths()" >nul 2>nul
 
 :pitch_parts
 "%PY%" -c "import swift_f0, soxr, mutagen" >nul 2>nul

@@ -32,10 +32,21 @@ import updater
 
 # Auto-configure bundled ffmpeg
 try:
+    if sys.stdout is None:
+        sys.stdout = sys.stderr = open(os.devnull, "w")
     import static_ffmpeg
     static_ffmpeg.add_paths()
 except Exception:
     pass
+
+if not shutil.which("ffmpeg"):
+    for _d in [
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), ".venv", "Lib", "site-packages", "static_ffmpeg", "bin", "win32"),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), ".venv", "lib", "site-packages", "static_ffmpeg", "bin", "win32"),
+    ]:
+        if os.path.isfile(os.path.join(_d, "ffmpeg.exe")):
+            os.environ["PATH"] = _d + os.pathsep + os.environ["PATH"]
+            break
 
 APP_NAME = "stems-studio"
 APP_VERSION = 8
@@ -1484,6 +1495,7 @@ def run_separation_job(job_id, source_type, source_val, model="htdemucs_6s", pre
                 import yt_dlp
             except ImportError:
                 raise Exception("YouTube support (yt-dlp) is not installed. Try a song file instead.")
+            ffmpeg_exe = shutil.which("ffmpeg")
             ydl_opts = {
                 'format': 'bestaudio/best',
                 'outtmpl': os.path.join(job_dir, 'source_audio.%(ext)s'),
@@ -1494,6 +1506,8 @@ def run_separation_job(job_id, source_type, source_val, model="htdemucs_6s", pre
                 }],
                 'quiet': True
             }
+            if ffmpeg_exe:
+                ydl_opts['ffmpeg_location'] = os.path.dirname(ffmpeg_exe)
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(source_val, download=True)
                 job["title"] = info.get("title", "YouTube Audio")
