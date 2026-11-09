@@ -1,0 +1,21 @@
+{
+  "name": "Stems Studio",
+  "short_name": "Stems Studio",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#090b10",
+  "theme_color": "#090b10",
+  "icons": [
+    {
+      "src": "assets/stems-studio.png",
+      "sizes": "256x256",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "favicon.ico",
+      "sizes": "16x16 24x24 32x32 48x48 256x256",
+      "type": "image/x-icon"
+    }
+  ]
+}
