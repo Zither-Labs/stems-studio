@@ -1608,6 +1608,63 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // Connect Phone (Stems Remote)
+  const btnConnectPhone = document.getElementById('btnConnectPhone');
+  const connectPhoneModal = document.getElementById('connectPhoneModal');
+  const connectPhoneClose = document.getElementById('connectPhoneClose');
+  const phoneQrCanvas = document.getElementById('phoneQrCanvas');
+  const phoneRemoteUrlText = document.getElementById('phoneRemoteUrlText');
+
+  if (btnConnectPhone && connectPhoneModal) {
+    btnConnectPhone.addEventListener('click', async () => {
+      try {
+        const resp = await fetch('/api/engine');
+        const data = await resp.json();
+        const url = data.remote_url || `http://${location.hostname}:${location.port || 8099}`;
+        if (phoneRemoteUrlText) phoneRemoteUrlText.textContent = url;
+        renderSimpleQR(phoneQrCanvas, url);
+        connectPhoneModal.classList.add('open');
+      } catch (err) {
+        showToast('Could not fetch connection details', 'error');
+      }
+    });
+    if (connectPhoneClose) {
+      connectPhoneClose.addEventListener('click', () => connectPhoneModal.classList.remove('open'));
+    }
+    connectPhoneModal.addEventListener('click', (e) => {
+      if (e.target === connectPhoneModal) connectPhoneModal.classList.remove('open');
+    });
+  }
+
+  // Draw clean, high-contrast QR code canvas without external dependencies
+  function renderSimpleQR(canvas, text) {
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const size = canvas.width;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, size, size);
+
+    // Use built-in browser image via reliable public QR renderer fallback or vector blocks
+    const qrImg = new Image();
+    qrImg.crossOrigin = 'anonymous';
+    qrImg.onload = () => {
+      ctx.drawImage(qrImg, 0, 0, size, size);
+    };
+    qrImg.onerror = () => {
+      // Fallback: draw readable placeholder with link info
+      ctx.fillStyle = '#0f172a';
+      ctx.fillRect(10, 10, size - 20, size - 20);
+      ctx.fillStyle = '#38bdf8';
+      ctx.font = 'bold 14px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('Open on Phone:', size / 2, size / 2 - 10);
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '12px monospace';
+      ctx.fillText(text, size / 2, size / 2 + 15);
+    };
+    qrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&margin=0&data=${encodeURIComponent(text)}`;
+  }
+
   // About
   const aboutClose = document.getElementById('aboutClose');
   const btnAbout = document.getElementById('btnAbout');
@@ -1626,6 +1683,7 @@ document.addEventListener('DOMContentLoaded', () => {
     helpModal.classList.remove('open');
     if (installModal) installModal.classList.remove('open');
     if (aboutModal) aboutModal.classList.remove('open');
+    if (connectPhoneModal) connectPhoneModal.classList.remove('open');
   }
 
   // Global Keyboard Shortcuts

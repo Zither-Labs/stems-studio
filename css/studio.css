@@ -2629,6 +2629,45 @@ kbd {
   text-overflow: ellipsis;
 }
 
+/* Responsive Mobile Remote View (Stems Remote) */
+@media (max-width: 768px) {
+  body {
+    overflow-x: hidden;
+  }
+  .command-bar {
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 10px;
+  }
+  .command-group {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .command-tools, .preset-toggles {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .studio-columns {
+    flex-direction: column-reverse;
+  }
+  .studio-sidebar {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+  .track-card {
+    flex-direction: column;
+    height: auto;
+  }
+  .track-mixer-strip {
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .track-waveform-zone {
+    height: 68px;
+  }
+}
+
 /* Update bar */
 .update-bar {
   position: fixed;

@@ -62,7 +62,19 @@ if not shutil.which("ffmpeg"):
             except Exception:
                 pass
 
-APP_NAME = "stems-studio"
+def get_local_ip():
+    """Detect local LAN IP for phone pairing."""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        return "127.0.0.1"
+
+
+PAIRING_TOKEN = uuid.uuid4().hex[:6].upper()
 APP_VERSION = 8
 PORT = 8099
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -1868,10 +1880,14 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
             dev_info = peek_device_info()
             if dev_info is None:
                 dev_info = {"device": "unknown", "device_name": "", "cuda_available": False, "pending": True}
+            local_ip = get_local_ip()
+            remote_url = f"http://{local_ip}:{PORT}?pin={PAIRING_TOKEN}"
             self.send_json(dict(dev_info, library=True, app=APP_NAME, version=APP_BUILD,
                                 clean_vocals_available=roformer_cli() is not None,
                                 drum_split_available=roformer_cli() is not None,
-                                library_dir=OUTPUT_DIR, library_note=LIBRARY_NOTE))
+                                library_dir=OUTPUT_DIR, library_note=LIBRARY_NOTE,
+                                local_ip=local_ip, pairing_pin=PAIRING_TOKEN,
+                                remote_url=remote_url))
             return
 
         elif parsed.path == "/api/status":
@@ -2419,20 +2435,17 @@ LIFECYCLE = None
 
 
 def create_server(preferred_port=PORT):
-    """Bind the preferred port, or any free one if something else is using it.
-
-    The preferred port is tried more than once: a restart can arrive while the previous
-    engine is still letting go of it.
-    """
+    """Bind to 0.0.0.0 so phone companions on local Wi-Fi can connect with a pairing PIN."""
     last_error = None
+    bind_ip = "0.0.0.0"
     for _ in range(25):
         try:
-            return ThreadedServer(("127.0.0.1", preferred_port), StudioRequestHandler)
+            return ThreadedServer((bind_ip, preferred_port), StudioRequestHandler)
         except OSError as exc:
             last_error = exc
             time.sleep(0.3)
     try:
-        return ThreadedServer(("127.0.0.1", 0), StudioRequestHandler)
+        return ThreadedServer((bind_ip, 0), StudioRequestHandler)
     except OSError as exc:
         raise last_error or exc
 

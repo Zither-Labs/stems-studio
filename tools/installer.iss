@@ -55,3 +55,4 @@ Name: "{autoprograms}\Update Stems Studio"; Filename: "{app}\Update.bat"; Workin
 
 [Run]
 Filename: "{app}\Install.bat"; WorkingDir: "{app}"; Description: "Complete first-time environment setup (Python 3.12, AI stem models, and Desktop shortcuts)"; Flags: postinstall shellexec waituntilterminated
+

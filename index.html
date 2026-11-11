@@ -159,6 +159,7 @@
     <span class="command-divider" aria-hidden="true"></span>
 
     <div class="command-group">
+      <button class="btn" id="btnConnectPhone" title="Open Stems Remote on your phone or tablet" style="border-color:#8b5cf6;color:#c084fc;">📱 Connect Phone</button>
       <button class="btn" id="btnHelp" title="How this window works">Help</button>
       <button class="btn" id="btnInstallGuide" title="How to install on Windows, Mac, and Linux">Installation</button>
       <button class="btn" id="btnAbout" title="About Stems Studio and Open Source credits">About</button>
@@ -816,6 +817,33 @@
             </tr>
           </tbody>
         </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Connect Phone Modal (Stems Remote) -->
+  <div class="modal-backdrop" id="connectPhoneModal" role="dialog" aria-modal="true" aria-labelledby="connectPhoneTitle">
+    <div class="modal-window" style="max-width: 480px; text-align: center;">
+      <div class="modal-header">
+        <h2 class="modal-title" id="connectPhoneTitle">📱 Stems Remote</h2>
+        <button class="modal-close-btn" id="connectPhoneClose" aria-label="Close">
+          <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" fill="none" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div style="padding: 1.5rem 1rem;">
+        <p style="color: #94a3b8; font-size: 0.95rem; margin-bottom: 1.25rem;">
+          Point your iPhone or Android camera at this code to open the wireless mixer &amp; vocal practice controller in your pocket:
+        </p>
+        <div id="phoneQrContainer" style="background: #ffffff; padding: 16px; border-radius: 12px; display: inline-block; box-shadow: 0 10px 25px rgba(0,0,0,0.4);">
+          <canvas id="phoneQrCanvas" width="200" height="200"></canvas>
+        </div>
+        <div style="margin-top: 1.25rem;">
+          <div style="font-size: 0.85rem; color: #94a3b8;">Or open this address on your phone browser:</div>
+          <code id="phoneRemoteUrlText" style="display: inline-block; margin-top: 4px; padding: 6px 14px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); border-radius: 6px; color: #38bdf8; font-size: 1rem; font-weight: 600;">http://...</code>
+        </div>
+        <div style="margin-top: 1rem; font-size: 0.82rem; color: #64748b;">
+          Make sure your phone is connected to the same home Wi-Fi network as this PC.
+        </div>
       </div>
     </div>
   </div>
