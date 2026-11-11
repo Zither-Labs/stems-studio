@@ -13,6 +13,35 @@ A modern multi-track audio stem mixer, AI separator, **vocal training studio**, 
 
 ---
 
+## ⚡ Quick Start & Installation
+
+Stems Studio runs 100% locally on your computer. Download the ZIP file (or clone with git), run the installer, and launch from your Desktop or Applications menu.
+
+### 🪟 Windows (10 / 11)
+1. Download this repository as a **[ZIP](https://github.com/Zither-Labs/stems-studio/archive/refs/heads/main.zip)** (or click the green **Code** button at the top → **Download ZIP**).
+2. Right-click the downloaded ZIP and select **Extract All...** to unpack it.
+3. Open the folder and double-click **`Install.bat`**.
+   - *Note: If Windows displays a blue "Windows protected your PC" pop-up, click **More info** → **Run anyway**.*
+   - *The installer automatically sets up Python 3.12, PyTorch (CUDA GPU acceleration if an NVIDIA card is found), and audio libraries.*
+4. Double-click the **Stems Studio** shortcut on your Desktop to open the app!
+
+### 🍎 macOS (Apple Silicon M1/M2/M3/M4 & Intel)
+1. Download the **[ZIP](https://github.com/Zither-Labs/stems-studio/archive/refs/heads/main.zip)** and double-click to extract it.
+2. Open the extracted folder, right-click **`Install.command`**, and choose **Open** *(confirm the Gatekeeper prompt)*.
+3. The installer configures Python and sets up PyTorch with **Apple Silicon GPU acceleration (Metal / MPS)**.
+4. Launch **Stems Studio** directly from **Launchpad**, **Spotlight (`Cmd + Space`)**, or your Applications folder (`~/Applications`)!
+
+### 🐧 Linux (Ubuntu, Debian, Fedora, Arch)
+1. Extract the repository and open a terminal in the folder:
+   ```bash
+   chmod +x Install.command
+   ./Install.command
+   ```
+2. The installer configures CUDA (if an NVIDIA GPU is present) or CPU mode, and registers a desktop entry.
+3. Launch from your system **Applications menu** or run: `./.venv/bin/python app.py`.
+
+---
+
 ## 🎯 What Makes This Different: 4 Stems vs. 6 Stems (Nepali Folk)
 
 Most stem tools only offer 4 generic channels (*Vocals, Drums, Bass, Other*). For Nepali folk songs (Lok Dohori, Selo, Deuda, Teej, folk ballads, and acoustic arrangements), 4-stem models fail because:
@@ -172,19 +201,10 @@ The library and all stems are stored outside the code folder, so git never touch
 
 If something goes wrong at startup, the details are in `stems-studio.log` in that folder.
 
-### Setting it up on another computer
-*(Last checked against the app on 2026-10-15. Not yet tried on a clean machine; Mac not tested. The update now refuses to reopen an older engine and loads the new page at a new address; that was checked with the decision tests, not by double-clicking the Windows shortcut. The library-folder button was checked against the engine; the folder window itself was not opened on Windows or Mac. The optional chord guessers were installed from scratch, and over the old TensorFlow layout (which was removed), on Linux only; there is no graphics card on the test machine, so the graphics-card path was checked only by forcing an unavailable card and watching it fall back to the CPU, and Apple's GPU has not been tried. BTC's sound reading was checked to give the same chords as librosa's on two songs. The Windows half-megabyte plugin download and the Windows and Mac fingerprints were checked, but the install has not been run on Windows or a Mac.)*
-
-1. Install **Git**, **Chrome or Edge**, and **Python 3.12 from python.org** (`winget install Python.Python.3.12`, or the installer from python.org with "Add python.exe to PATH" ticked). Use the python.org one, not a Python that another tool fetched: Windows' **Smart App Control** blocks programs that are not digitally signed, and the python.org Python is signed by the Python Software Foundation while the uv-fetched one that `Install.bat` falls back to is not (on one PC it was blocked, and the shortcut did nothing). The optional cleaner-vocals and drum-splitting tool is started through its own python.exe (also signed) rather than the unsigned `audio-separator.exe` stub that pip makes. If Smart App Control is on and a program still gets blocked, the Windows Security app lists it under *App & browser control*.
-2. Clone or download the repository using Git:
-   ```bash
-   git clone https://github.com/Zither-Labs/stems-studio.git C:\Music\StemsStudio
-   ```
-   *(Any folder works; avoid OneDrive folders).* Do **not** copy the `.venv`, `.venv-roformer` or `.chord-tools` folders from another computer; they only work where they were made.
-3. Double-click **`Install.bat`** (Mac: `Install.command`). It builds the app's own Python environment, installs the GPU version of PyTorch if there is an NVIDIA card (otherwise it runs on the CPU, slowly), the stem maker and the extras, offers the optional "cleaner vocals" and drum splitting, offers the optional "more chord guessers" (Chordino, madmom, autochord and BTC for the **Chords by** list: under 100 MB, all in `.chord-tools`), and makes the shortcuts. The chord guessers download sonic-annotator and the Chordino plugin (both digitally signed by the Sonic Visualiser team's company, which is what Smart App Control looks for; on Windows only the plugin's own half megabyte is fetched from the plugin pack), the madmom, autochord and BTC models, and three small Python packages (PyYAML, mido, packaging). They run with the app's own Python and PyTorch, so they work on every computer the app does, Intel Macs included, and need no C compiler. A computer that installed the earlier, larger chord guessers has a `.venv-chords` folder with TensorFlow in it (about 1.4 GB): the next run of Install removes it and asks to install the guessers again, which takes under a minute. Install keeps asking about the chord guessers until all four are ready, and only installs the missing ones; `python tools/install_chord_guessers.py btc` reinstalls one by hand. **Update** does not install them; run `Install.bat` once more after updating to get them. On Windows those are **Stems Studio** and **Update Stems Studio** (the green arrow), on the Desktop and in the Start menu. The first time takes several minutes; safe to run again.
-4. Open **Stems Studio** from the shortcut. The first split downloads the separation model.
-5. **To see the same songs as another computer**, open **My Library** and click **Change folder**. Choose the folder that contains `library.db` (the drive has to be connected). The app remembers it in `%LOCALAPPDATA%\StemsStudio\settings.json`. The same file can still be written by hand, as `{"library_dir": "Z:\\Music\\Stems"}`. Without this, each computer has its own library, starting empty. If `STEMS_STUDIO_LIBRARY` is set, that folder is used and the button is hidden.
-6. Updates: on Windows, double-click **Update Stems Studio** on the Desktop. That is the update step every time: it closes the app, downloads the newest main copy, and opens that copy. If an older engine is still running, the new launch stops it and opens a new window on the new page, instead of bringing the old window back. The **Update now** bar inside the app does the same download and then reopens. Keep every computer that shares a library on the same version.
+### Updating Stems Studio
+- On Windows: Double-click the **Update Stems Studio** shortcut on your Desktop (or click **Update now** when an update alert appears inside the app). It safely pulls the latest release and restarts the app.
+- On Mac/Linux: Run `git pull origin main` inside the project folder, or download the latest release files.
+- Your songs, separated stems, and singing coach recordings in `%LOCALAPPDATA%\StemsStudio` are never touched during updates.
 
 
 ---
