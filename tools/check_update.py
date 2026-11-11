@@ -28,4 +28,15 @@ import app
 assert app.window_url("http://127.0.0.1:8099", "abc123") == "http://127.0.0.1:8099?build=abc123"
 assert app.window_url("http://127.0.0.1:8099?x=1", "abc123") == "http://127.0.0.1:8099?x=1&build=abc123"
 
+# Verify git blob SHA matching for ZIP update false-positive prevention
+with open(os.path.join(updater.BASE_DIR, "app.py"), "rb") as _f:
+    _app_shas = updater._git_blob_shas(_f.read())
+assert updater._local_matches_commit_files([
+    {"filename": "version.json", "sha": "0000000000000000000000000000000000000000", "status": "modified"},
+    {"filename": "app.py", "sha": next(iter(_app_shas)), "status": "modified"},
+])
+assert not updater._local_matches_commit_files([
+    {"filename": "app.py", "sha": "0000000000000000000000000000000000000000", "status": "modified"},
+])
+
 print("update check ok")

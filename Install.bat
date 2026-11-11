@@ -21,11 +21,11 @@ echo Step 1 of 4: checking Python 3.12 environment...
 
 REM 1. Try py.exe launcher if present
 where py >nul 2>nul
-if %errorlevel% equ 0 (
+if not errorlevel 1 (
     py -3.12 --version >nul 2>nul
-    if %errorlevel% equ 0 (
+    if not errorlevel 1 (
         py -3.12 -m venv "%~dp0.venv"
-        if %errorlevel% equ 0 goto venv_ready
+        if not errorlevel 1 goto venv_ready
     )
 )
 
@@ -34,34 +34,21 @@ for /f "delims=" %%I in ('where python 2^>nul') do (
     "%%I" -c "import sys; sys.exit(0 if sys.version_info[:2] == (3, 12) else 1)" >nul 2>nul
     if not errorlevel 1 (
         "%%I" -m venv "%~dp0.venv"
-        if %errorlevel% equ 0 goto venv_ready
+        if not errorlevel 1 goto venv_ready
     )
 )
 
 REM 3. Check standard Python 3.12 user and system directories
 if exist "%LOCALAPPDATA%\Programs\Python\Python312\python.exe" (
     "%LOCALAPPDATA%\Programs\Python\Python312\python.exe" -m venv "%~dp0.venv"
-    if %errorlevel% equ 0 goto venv_ready
+    if not errorlevel 1 goto venv_ready
 )
 if exist "%ProgramFiles%\Python312\python.exe" (
     "%ProgramFiles%\Python312\python.exe" -m venv "%~dp0.venv"
-    if %errorlevel% equ 0 goto venv_ready
+    if not errorlevel 1 goto venv_ready
 )
 
-REM 4. Try uv if already installed
-set "UV="
-where uv >nul 2>nul
-if not errorlevel 1 set "UV=uv"
-if not defined UV (
-    python -m uv --version >nul 2>nul
-    if not errorlevel 1 set "UV=python -m uv"
-)
-if defined UV (
-    %UV% venv "%~dp0.venv" --python 3.12 --managed-python --seed
-    if %errorlevel% equ 0 goto venv_ready
-)
-
-REM 5. No Python 3.12 found: automatically download and install Python 3.12 for the user!
+REM 4. No Python 3.12 found: automatically download and install signed Python 3.12 for the user!
 echo.
 echo ======================================================================
 echo   Python 3.12 was not found on this system.
@@ -76,18 +63,18 @@ if not errorlevel 1 (
     winget install Python.Python.3.12 --silent --accept-package-agreements --accept-source-agreements
     if exist "%LOCALAPPDATA%\Programs\Python\Python312\python.exe" (
         "%LOCALAPPDATA%\Programs\Python\Python312\python.exe" -m venv "%~dp0.venv"
-        if %errorlevel% equ 0 goto venv_ready
+        if not errorlevel 1 goto venv_ready
     )
     if exist "%ProgramFiles%\Python312\python.exe" (
         "%ProgramFiles%\Python312\python.exe" -m venv "%~dp0.venv"
-        if %errorlevel% equ 0 goto venv_ready
+        if not errorlevel 1 goto venv_ready
     )
 )
 
-REM Fallback: Download official Python 3.12 installer directly from python.org
+REM Fallback: Download official signed Python 3.12 installer directly from python.org
 if not exist "%LOCALAPPDATA%\Programs\Python\Python312\python.exe" if not exist "%ProgramFiles%\Python312\python.exe" (
     echo Downloading official Python 3.12 installer from python.org...
-    powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; (New-Object Net.WebClient).DownloadFile('https://www.python.org/ftp/python/3.12.8/python-3.12.8-amd64.exe', '$env:TEMP\python-3.12-installer.exe')"
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; (New-Object Net.WebClient).DownloadFile('https://www.python.org/ftp/python/3.12.8/python-3.12.8-amd64.exe', '%TEMP%\python-3.12-installer.exe')"
     if exist "%TEMP%\python-3.12-installer.exe" (
         echo Installing Python 3.12 quietly...
         start /wait "" "%TEMP%\python-3.12-installer.exe" /quiet InstallAllUsers=0 PrependPath=1 Include_test=0 Include_pip=1
@@ -98,16 +85,29 @@ if not exist "%LOCALAPPDATA%\Programs\Python\Python312\python.exe" if not exist 
 REM Check if Python 3.12 is available now
 if exist "%LOCALAPPDATA%\Programs\Python\Python312\python.exe" (
     "%LOCALAPPDATA%\Programs\Python\Python312\python.exe" -m venv "%~dp0.venv"
-    if %errorlevel% equ 0 goto venv_ready
+    if not errorlevel 1 goto venv_ready
 )
 if exist "%ProgramFiles%\Python312\python.exe" (
     "%ProgramFiles%\Python312\python.exe" -m venv "%~dp0.venv"
-    if %errorlevel% equ 0 goto venv_ready
+    if not errorlevel 1 goto venv_ready
 )
 where py >nul 2>nul
-if %errorlevel% equ 0 (
+if not errorlevel 1 (
     py -3.12 -m venv "%~dp0.venv"
-    if %errorlevel% equ 0 goto venv_ready
+    if not errorlevel 1 goto venv_ready
+)
+
+REM 5. Last resort: try uv if present
+set "UV="
+where uv >nul 2>nul
+if not errorlevel 1 set "UV=uv"
+if not defined UV (
+    python -m uv --version >nul 2>nul
+    if not errorlevel 1 set "UV=python -m uv"
+)
+if defined UV (
+    %UV% venv "%~dp0.venv" --python 3.12 --managed-python --seed
+    if not errorlevel 1 goto venv_ready
 )
 
 if not exist "%VENV_PY%" goto fail_python

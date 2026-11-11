@@ -27,8 +27,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "%CD%\tools\close-stems-stud
 echo.
 echo Getting the newest Stems Studio...
 where git >nul 2>nul
-if errorlevel 1 goto fail_git
-if not exist "%CD%\.git" goto fail_git
+if errorlevel 1 goto zip_update
+if not exist "%CD%\.git" goto zip_update
 
 git fetch origin
 if errorlevel 1 goto fail_fetch
@@ -43,7 +43,15 @@ if errorlevel 1 goto fail_gitwork
 
 git pull --ff-only origin %BRANCH%
 if errorlevel 1 goto fail_gitwork
+goto post_update
 
+:zip_update
+set "CONSOLE_PY=%CD%\.venv\Scripts\python.exe"
+if not exist "%CONSOLE_PY%" goto fail_python
+"%CONSOLE_PY%" -c "import sys, updater; r = updater.apply_zip_update(); print(r.get('message', '')); sys.exit(0 if r.get('ok') else 1)"
+if errorlevel 1 goto fail_fetch
+
+:post_update
 if not exist "%PY%" goto fail_python
 
 echo.

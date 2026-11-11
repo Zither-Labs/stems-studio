@@ -30,15 +30,7 @@ import uuid
 
 import updater
 
-# Auto-configure bundled ffmpeg
-try:
-    if sys.stdout is None:
-        sys.stdout = sys.stderr = open(os.devnull, "w")
-    import static_ffmpeg
-    static_ffmpeg.add_paths()
-except Exception:
-    pass
-
+# Auto-configure bundled ffmpeg without clobbering pythonw's None stdout/stderr before app.py opens stems-studio.log
 if not shutil.which("ffmpeg"):
     for _d in [
         os.path.join(os.path.dirname(os.path.abspath(__file__)), ".venv", "Lib", "site-packages", "static_ffmpeg", "bin", "win32"),
@@ -47,6 +39,28 @@ if not shutil.which("ffmpeg"):
         if os.path.isfile(os.path.join(_d, "ffmpeg.exe")):
             os.environ["PATH"] = _d + os.pathsep + os.environ["PATH"]
             break
+
+if not shutil.which("ffmpeg"):
+    _orig_stdout, _orig_stderr = sys.stdout, sys.stderr
+    _devnull = None
+    try:
+        if sys.stdout is None or sys.stderr is None:
+            _devnull = open(os.devnull, "w")
+            if sys.stdout is None:
+                sys.stdout = _devnull
+            if sys.stderr is None:
+                sys.stderr = _devnull
+        import static_ffmpeg
+        static_ffmpeg.add_paths()
+    except Exception:
+        pass
+    finally:
+        sys.stdout, sys.stderr = _orig_stdout, _orig_stderr
+        if _devnull is not None:
+            try:
+                _devnull.close()
+            except Exception:
+                pass
 
 APP_NAME = "stems-studio"
 APP_VERSION = 8

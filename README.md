@@ -159,7 +159,7 @@ The Vocal Training Studio helps you learn to sing songs by:
 
 ## 💻 Running the App
 
-Stems Studio is a local desktop app. It runs entirely on your computer and opens in its own window (Chrome or Edge, with no tabs or address bar). GitHub is only used to keep a backup of the code and its history; the app never updates itself.
+Stems Studio is a local desktop app. It runs entirely on your computer and opens in its own window (Chrome or Edge, with no tabs or address bar). When a newer version is available on GitHub, the app offers a 1-click **Update now** banner (and only updates when you click it).
 
 ### Windows: install once
 1. Double-click **`Install.bat`**. It builds a private Python 3.12 environment in this folder (`.venv`, ignored by git), installs the GPU (CUDA) build of PyTorch when it finds an NVIDIA graphics card, installs the stem maker (several minutes the first time), and puts two shortcuts on your Desktop and in the Start menu: **Stems Studio**, and **Update Stems Studio** (the green arrow). It ends by printing which GPU the app will use. It is safe to run again whenever something needs repairing.
@@ -201,10 +201,19 @@ The library and all stems are stored outside the code folder, so git never touch
 
 If something goes wrong at startup, the details are in `stems-studio.log` in that folder.
 
-### Updating Stems Studio
-- On Windows: Double-click the **Update Stems Studio** shortcut on your Desktop (or click **Update now** when an update alert appears inside the app). It safely pulls the latest release and restarts the app.
-- On Mac/Linux: Run `git pull origin main` inside the project folder, or download the latest release files.
-- Your songs, separated stems, and singing coach recordings in `%LOCALAPPDATA%\StemsStudio` are never touched during updates.
+### Setting it up on another computer
+*Last checked: 2026-11-10.*
+
+The steps in **Quick Start & Installation** at the top of this page are what a second computer needs, with these practical notes:
+
+- **No Git required.** You can either download the repository as a `.zip` file from GitHub (`Code` → `Download ZIP`) and extract it, or clone it with Git. Both methods support 1-click in-app updates (**Update now** in the top banner) as well as the **Update Stems Studio** Desktop shortcut on Windows.
+- **Python 3.12 is installed automatically.** On Windows (`Install.bat`) and macOS/Linux (`Install.command`), if Python 3.12 is not already installed, the installer automatically fetches and sets up Python 3.12 (via `winget` or the official signed installer from `python.org` on Windows, or `uv` on macOS/Linux) and creates a private `.venv` inside the folder.
+- **What `Install.bat` / `Install.command` downloads.** Around 2.5 GB on a machine with an NVIDIA card (CUDA PyTorch + Demucs + `static-ffmpeg` + pitch/key/lyrics libraries), or a few hundred MB without CUDA. It then asks two optional yes/no questions:
+  - *Cleaner vocals* (BS-RoFormer, into `.venv-roformer`) — a few hundred MB now, plus a ~600 MB model the first time you use it or split drums into 6 parts.
+  - *More chord guessers* (Chordino, madmom, autochord, BTC, into `.chord-tools`) — under 100 MB. Saying no to either is fine; the app still works and you can re-run `Install.bat` / `Install.command` later to add them.
+- **First song on that computer.** The first separation downloads the Demucs model (~80–320 MB depending on 4-stem vs 6-stem) into the user's Torch cache (`~/.cache/torch`).
+- **Sharing your song library across computers.** Point the new computer at the shared folder in **My Library → Change folder** (or `settings.json` / `STEMS_STUDIO_LIBRARY`, as described under *Where your songs are kept*). Every computer sharing that library should be on the same version of the app.
+- **What has and has not been tested.** The full install, GPU separation, RoFormer, chord guessers, shared library (`Z:\Music\Stems`) and update flow are used and verified on Windows 10/11 with an NVIDIA GPU. A brand-new Windows PC with nothing pre-installed and the macOS `Install.command` path have not been run end-to-end on a clean machine recently; if a step fails on a fresh machine, re-running `Install.bat` / `Install.command` after installing Python 3.12 from [python.org](https://www.python.org/downloads/) is safe and only installs what is still missing.
 
 
 ---

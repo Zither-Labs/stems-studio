@@ -354,6 +354,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (masterMeterR) masterMeterR.style.width = `${Math.min(100, masterLevels.right * 100)}%`;
 
       redrawAllWaveforms();
+      updateTargetNote();
       animationFrameId = requestAnimationFrame(update);
     }
     cancelAnimationFrame(animationFrameId);
@@ -1480,18 +1481,6 @@ document.addEventListener('DOMContentLoaded', () => {
     showToast('Volumes are back to the middle', 'info');
   });
 
-  function syncMuteSoloButtons() {
-    for (const track of engine.tracks.values()) {
-      const card = document.getElementById(`trackCard_${track.id}`);
-      if (card) {
-        const mBtn = card.querySelector('.btn-mute');
-        const sBtn = card.querySelector('.btn-solo');
-        if (mBtn) mBtn.classList.toggle('active', track.isMuted);
-        if (sBtn) sBtn.classList.toggle('active', track.isSoloed);
-      }
-    }
-  }
-
   // Multi-Stem Import Modal
   btnImportStems.addEventListener('click', () => dropzoneModal.classList.add('open'));
   modalCloseBtn.addEventListener('click', () => dropzoneModal.classList.remove('open'));
@@ -1983,55 +1972,6 @@ document.addEventListener('DOMContentLoaded', () => {
       octave: octave
     };
   }
-
-  // Add target note update to animation loop
-  const originalStartAnimationLoop = startAnimationLoop;
-  startAnimationLoop = function() {
-    function update() {
-      const curTime = engine.getCurrentTime();
-      const total = engine.totalDuration || 0;
-      const progress = total > 0 ? (curTime / total) : 0;
-
-      currentTimeEl.textContent = formatTime(curTime);
-      totalTimeEl.textContent = formatTime(total);
-
-      scrubberProgress.style.width = `${progress * 100}%`;
-      scrubberPlayhead.style.left = `${progress * 100}%`;
-
-      if (engine.isLooping && total > 0) {
-        scrubberLoopOverlay.style.display = 'block';
-        scrubberLoopOverlay.style.left = `${(engine.loopStart / total) * 100}%`;
-        scrubberLoopOverlay.style.width = `${((engine.loopEnd - engine.loopStart) / total) * 100}%`;
-      } else {
-        scrubberLoopOverlay.style.display = 'none';
-      }
-
-      // Track VU Meters
-      for (const track of engine.tracks.values()) {
-        const levels = engine.getTrackLevels(track.id);
-        const vuFill = document.getElementById(`vuFill_${track.id}`);
-        const vuClip = document.getElementById(`vuClip_${track.id}`);
-        if (vuFill) vuFill.style.width = `${Math.min(100, levels.peak * 110)}%`;
-        if (vuClip) vuClip.classList.toggle('clipping', levels.clip);
-      }
-
-      // Master VU Meters
-      const masterLevels = engine.getMasterLevels();
-      if (masterMeterL) masterMeterL.style.width = `${Math.min(100, masterLevels.left * 100)}%`;
-      if (masterMeterR) masterMeterR.style.width = `${Math.min(100, masterLevels.right * 100)}%`;
-
-      redrawAllWaveforms();
-      
-      // Update target note for vocal training
-      updateTargetNote();
-
-      animationFrameId = requestAnimationFrame(update);
-    }
-    cancelAnimationFrame(animationFrameId);
-    animationFrameId = requestAnimationFrame(update);
-  };
-  
-  startAnimationLoop();
 
   // Comparison Source Buttons
   const sourceButtons = [btnSourceOriginal, btnSourceUser, btnSourceBoth];

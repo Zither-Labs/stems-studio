@@ -10,6 +10,7 @@ Checks GitHub to see if newer versions exist and brings them in with 1-click:
 Set STEMS_STUDIO_NO_UPDATE_CHECK=1 to turn the check off.
 """
 
+import hashlib
 import io
 import json
 import os
@@ -101,8 +102,67 @@ def get_local_version():
     return None
 
 
+def _write_local_version(sha):
+    """Persist the commit SHA in version.json for non-git installs."""
+    if not sha or os.path.isdir(os.path.join(BASE_DIR, ".git")):
+        return
+    vfile = os.path.join(BASE_DIR, "version.json")
+    try:
+        with open(vfile, "w", encoding="utf-8") as f:
+            json.dump({"version": sha[:7], "sha": sha, "updated_at": time.time()}, f, indent=2)
+    except Exception:
+        pass
+
+
+def _git_blob_shas(raw_bytes):
+    """Return git blob SHA-1 digests for raw_bytes (both exact and CRLF->LF normalized)."""
+    shas = set()
+    for b in (raw_bytes, raw_bytes.replace(b"\r\n", b"\n")):
+        h = hashlib.sha1()
+        h.update(f"blob {len(b)}\0".encode("ascii"))
+        h.update(b)
+        shas.add(h.hexdigest())
+    return shas
+
+
+def _local_matches_commit_files(files):
+    """Check whether local files on disk already match the latest commit's changed file blobs.
+
+    Prevents a freshly downloaded main.zip from falsely reporting an update merely because
+    version.json could not contain the commit SHA of the commit that created it.
+    """
+    if not files or not isinstance(files, list):
+        return False
+    checked = 0
+    for fobj in files:
+        if not isinstance(fobj, dict):
+            continue
+        rel = fobj.get("filename", "")
+        if not rel or rel == "version.json":
+            continue
+        status = fobj.get("status", "")
+        local_path = os.path.join(BASE_DIR, rel.replace("/", os.sep))
+        if status == "removed":
+            if os.path.exists(local_path):
+                return False
+            checked += 1
+            continue
+        expected_sha = fobj.get("sha", "")
+        if not expected_sha or not os.path.isfile(local_path):
+            return False
+        try:
+            with open(local_path, "rb") as f:
+                data = f.read()
+        except OSError:
+            return False
+        if expected_sha not in _git_blob_shas(data):
+            return False
+        checked += 1
+    return checked > 0
+
+
 def fetch_github_latest(repo_slug):
-    """Fetch the latest commit info from GitHub API. Returns (sha, message)."""
+    """Fetch the latest commit info from GitHub API. Returns (sha, message, files)."""
     api_url = f"https://api.github.com/repos/{repo_slug}/commits/main"
     req = urllib.request.Request(api_url, headers={
         "User-Agent": USER_AGENT,
@@ -112,7 +172,8 @@ def fetch_github_latest(repo_slug):
         data = json.loads(resp.read().decode("utf-8"))
         sha = data.get("sha", "")
         msg = data.get("commit", {}).get("message", "Updated Stems Studio")
-        return sha, msg.splitlines()[0]
+        files = data.get("files", [])
+        return sha, msg.splitlines()[0], files
 
 
 def update_plan(branch, head, remote, ahead, dirty):
@@ -174,12 +235,15 @@ def check():
     # 2. HTTP API check (for ZIP downloads, installer copies, or offline git)
     try:
         repo_slug = get_repo_slug()
-        latest_sha, commit_msg = fetch_github_latest(repo_slug)
+        latest_sha, commit_msg, commit_files = fetch_github_latest(repo_slug)
         local_ver = get_local_version()
         remote_short = latest_sha[:7] if latest_sha else ""
 
         if local_ver and latest_sha.startswith(local_ver):
             _set(state="current", current=local_ver, remote=remote_short, method="zip", checked_at=time.time())
+        elif not has_git and _local_matches_commit_files(commit_files):
+            _write_local_version(latest_sha)
+            _set(state="current", current=remote_short, remote=remote_short, method="zip", checked_at=time.time())
         else:
             _set(state="available", plan="update", behind=1, changes=[commit_msg],
                  current=local_ver or "installed", remote=remote_short, target_sha=latest_sha,
@@ -238,13 +302,17 @@ def apply_zip_update(target_sha=None, repo_slug=None):
             changed_files.append(rel)
 
         # Update local version.json marker
-        if target_sha:
-            vfile = os.path.join(BASE_DIR, "version.json")
+        if not target_sha and zf.comment:
+            comment_sha = zf.comment.decode("utf-8", errors="ignore").strip()
+            if re.fullmatch(r"[0-9a-fA-F]{40}", comment_sha):
+                target_sha = comment_sha
+        if not target_sha:
             try:
-                with open(vfile, "w", encoding="utf-8") as f:
-                    json.dump({"version": target_sha[:7], "sha": target_sha, "updated_at": time.time()}, f, indent=2)
+                target_sha, _, _ = fetch_github_latest(slug)
             except Exception:
                 pass
+        if target_sha:
+            _write_local_version(target_sha)
 
         run_install = any(name.lower() in ("install.bat", "install.command", "separator/requirements.txt") for name in changed_files)
         return {"ok": True, "message": "Updated. Reopening Stems Studio.", "run_install": run_install, "restart": True}
