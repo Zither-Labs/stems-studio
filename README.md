@@ -15,24 +15,26 @@ A modern multi-track audio stem mixer, AI separator, **vocal training studio**, 
 
 ## ⚡ Quick Start & Installation
 
-Stems Studio runs 100% locally on your computer. Download the ZIP file (or clone with git), run the installer, and launch from your Desktop or Applications menu.
+Stems Studio runs 100% locally on your computer. Grab the latest installer or ZIP from **[GitHub Releases](https://github.com/Zither-Labs/stems-studio/releases/latest)**, run the setup once, and launch from your Desktop or Applications menu.
 
 ### 🪟 Windows (10 / 11)
-1. Download this repository as a **[ZIP](https://github.com/Zither-Labs/stems-studio/archive/refs/heads/main.zip)** (or click the green **Code** button at the top → **Download ZIP**).
-2. Right-click the downloaded ZIP and select **Extract All...** to unpack it.
-3. Open the folder and double-click **`Install.bat`**.
-   - *Note: If Windows displays a blue "Windows protected your PC" pop-up, click **More info** → **Run anyway**.*
-   - *The installer automatically sets up Python 3.12, PyTorch (CUDA GPU acceleration if an NVIDIA card is found), and audio libraries.*
-4. Double-click the **Stems Studio** shortcut on your Desktop to open the app!
+- **Option A — 1-Click Setup Installer (Easiest):**
+  1. Download **[`StemsStudio-Setup.exe`](https://github.com/Zither-Labs/stems-studio/releases/latest/download/StemsStudio-Setup.exe)** from the **[Releases](https://github.com/Zither-Labs/stems-studio/releases/latest)** page and run it.
+  2. Click through the setup wizard — at the end, it automatically sets up Python 3.12, PyTorch (CUDA GPU acceleration if an NVIDIA card is found), and places the **Stems Studio** shortcut on your Desktop.
+- **Option B — Portable ZIP (No installer needed):**
+  1. Download **[`StemsStudio.zip`](https://github.com/Zither-Labs/stems-studio/releases/latest/download/StemsStudio.zip)** (or click the green **Code** button at the top → **Download ZIP**).
+  2. Right-click the downloaded ZIP and select **Extract All...** to unpack it.
+  3. Open the folder and double-click **`Install.bat`** *(if Windows displays a blue SmartScreen prompt, click **More info** → **Run anyway**)*.
+  4. Double-click the **Stems Studio** shortcut on your Desktop to open the app!
 
 ### 🍎 macOS (Apple Silicon M1/M2/M3/M4 & Intel)
-1. Download the **[ZIP](https://github.com/Zither-Labs/stems-studio/archive/refs/heads/main.zip)** and double-click to extract it.
+1. Download **[`StemsStudio.zip`](https://github.com/Zither-Labs/stems-studio/releases/latest/download/StemsStudio.zip)** from **[Releases](https://github.com/Zither-Labs/stems-studio/releases/latest)** and double-click to extract it.
 2. Open the extracted folder, right-click **`Install.command`**, and choose **Open** *(confirm the Gatekeeper prompt)*.
 3. The installer configures Python and sets up PyTorch with **Apple Silicon GPU acceleration (Metal / MPS)**.
 4. Launch **Stems Studio** directly from **Launchpad**, **Spotlight (`Cmd + Space`)**, or your Applications folder (`~/Applications`)!
 
 ### 🐧 Linux (Ubuntu, Debian, Fedora, Arch)
-1. Extract the repository and open a terminal in the folder:
+1. Download and extract **[`StemsStudio.zip`](https://github.com/Zither-Labs/stems-studio/releases/latest/download/StemsStudio.zip)**, then open a terminal in the folder:
    ```bash
    chmod +x Install.command
    ./Install.command
