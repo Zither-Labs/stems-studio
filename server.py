@@ -230,6 +230,15 @@ def current_build():
             return sha
     except (OSError, subprocess.SubprocessError):
         pass
+    vfile = os.path.join(BASE_DIR, "version.json")
+    if os.path.isfile(vfile):
+        try:
+            with open(vfile, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if data.get("version"):
+                    return str(data["version"])
+        except Exception:
+            pass
     return f"{APP_VERSION}-local"
 
 
