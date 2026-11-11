@@ -18,18 +18,18 @@ import sys
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Split audio into stems for Stems Studio")
-    parser.add_argument("input", nargs="?", help="Path to audio file (MP3/WAV/FLAC) or YouTube URL")
+    parser.add_argument("input", nargs="?", help="Path to audio file (MP3/WAV/FLAC) or media URL")
     parser.add_argument("--out", default="stems_output", help="Directory where stems will be saved")
     parser.add_argument("--model", default="htdemucs", help="Demucs model (htdemucs, htdemucs_ft, mdx_extra)")
     return parser.parse_args()
 
 
 def download_youtube(url, output_dir):
-    print(f"\n[1/3] Downloading audio from YouTube: {url}")
+    print(f"\n[1/3] Retrieving audio stream: {url}")
     try:
         import yt_dlp
     except ImportError:
-        print("yt-dlp is required for YouTube URLs. Run: pip install yt-dlp")
+        print("yt-dlp is required for media URLs. Run: pip install yt-dlp")
         sys.exit(1)
 
     os.makedirs(output_dir, exist_ok=True)
@@ -90,7 +90,7 @@ def main():
         print("=" * 60)
         print("  Stems Studio — AI Audio Stem Separator")
         print("=" * 60)
-        input_source = input("\nEnter audio file path or YouTube URL: ").strip().strip('"')
+        input_source = input("\nEnter audio file path or media URL: ").strip().strip('"')
 
     if not input_source:
         print("No input provided.")

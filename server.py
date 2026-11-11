@@ -1489,12 +1489,12 @@ def run_separation_job(job_id, source_type, source_val, model="htdemucs_6s", pre
 
         # Step 1: Acquire audio file
         if source_type == "youtube":
-            job["message"] = f"Downloading audio from YouTube ({dev_info['device_name']})..."
+            job["message"] = f"Retrieving media stream ({dev_info['device_name']})..."
             job["progress"] = 15
             try:
                 import yt_dlp
             except ImportError:
-                raise Exception("YouTube support (yt-dlp) is not installed. Try a song file instead.")
+                raise Exception("Media stream extraction support (yt-dlp) is not installed. Try an audio file instead.")
             ffmpeg_exe = shutil.which("ffmpeg")
             ydl_opts = {
                 'format': 'bestaudio/best',
@@ -1510,8 +1510,8 @@ def run_separation_job(job_id, source_type, source_val, model="htdemucs_6s", pre
                 ydl_opts['ffmpeg_location'] = os.path.dirname(ffmpeg_exe)
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(source_val, download=True)
-                job["title"] = info.get("title", "YouTube Audio")
-                # What YouTube knows about the song, for the lyrics lookup.
+                job["title"] = info.get("title", "Online Audio")
+                # Stream metadata for the lyrics lookup.
                 lyrics_extra = {
                     "artist": info.get("artist") or info.get("creator"),
                     "title": info.get("track") or info.get("title"),

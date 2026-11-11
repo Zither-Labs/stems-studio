@@ -1,6 +1,6 @@
 /**
  * Stems Studio - Main Application Controller
- * Handles Song Intake (YouTube URL / Audio File / Demo), AI Stem Separation,
+ * Handles Song Intake (Media URL / Audio File / Demo), AI Stem Separation,
  * 6-Stem Nepali Folk & Acoustic profiles, multi-track mixing, and waveforms.
  */
 
@@ -775,7 +775,7 @@ document.addEventListener('DOMContentLoaded', () => {
   async function startCreateStems() {
     const url = createStemsUrl.value.trim();
     if (!createFileChoice && !url) {
-      showToast('Choose a song file or paste a YouTube link first.', 'error');
+      showToast('Choose an audio file or paste a media URL first.', 'error');
       return;
     }
 
