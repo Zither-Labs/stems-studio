@@ -1559,7 +1559,7 @@ def busy_job_for(song_id):
 
 
 def find_alternative_stream(source_val, ydl_opts, blocked_err=""):
-    """When a YouTube link fails due to bot protection, fetch title via oEmbed and find an alternative audio stream."""
+    """When a YouTube link fails due to bot protection, fetch title via oEmbed and find a full-length alternative audio stream."""
     import urllib.request
     import urllib.parse
     import re
@@ -1589,10 +1589,29 @@ def find_alternative_stream(source_val, ydl_opts, blocked_err=""):
     clean = re.sub(r'(?i)\s*[\(\[]\s*(official\s*(music\s*)?video|video|audio|lyrics|official|hd|4k|remaster(ed)?)\s*[\)\]]', '', raw_title).strip()
     clean = re.sub(r'(?i)\bvevo\b', '', clean).strip()
 
+    def score_candidate(cand_title, cand_duration):
+        # Discard snippets, previews, ringtones (anything under 75 seconds)
+        if cand_duration and cand_duration < 75:
+            return -1000
+
+        score = 100
+        tl = (cand_title or "").lower()
+
+        # Penalize remakes, remixes, instrumental covers unless no original exists
+        for penalty in ["remix", "edit", "nightcore", "instrumental", "karaoke", "sped up", "slowed", "bass boosted", "parody", "cover"]:
+            if penalty in tl:
+                score -= 35
+
+        # Normal song duration sweet spot (2 to 7 minutes)
+        if cand_duration and 110 <= cand_duration <= 450:
+            score += 30
+
+        return score
+
     search_queries = [
+        f"scsearch15:{clean}",
+        f"ytsearch10:{clean} full audio",
         f"ytsearch10:{clean} audio lyrics",
-        f"ytsearch10:{clean} cover audio",
-        f"scsearch5:{clean}"
     ]
 
     search_opts = dict(ydl_opts)
@@ -1602,6 +1621,8 @@ def find_alternative_stream(source_val, ydl_opts, blocked_err=""):
         'ignoreerrors': True,
     })
 
+    candidates = []
+    seen_urls = set()
     for q in search_queries:
         try:
             with yt_dlp.YoutubeDL(search_opts) as ydl_search:
@@ -1614,15 +1635,32 @@ def find_alternative_stream(source_val, ydl_opts, blocked_err=""):
                 if blocked_id and cid == blocked_id:
                     continue
                 curl = entry.get("webpage_url") or (f"https://www.youtube.com/watch?v={cid}" if cid else None)
-                if not curl:
+                if not curl or curl in seen_urls:
                     continue
-                try:
-                    with yt_dlp.YoutubeDL(ydl_opts) as dl:
-                        info = dl.extract_info(curl, download=True)
-                        if info:
-                            return info
-                except Exception:
+                seen_urls.add(curl)
+
+                dur = entry.get("duration") or 0
+                title = entry.get("title") or ""
+                sc = score_candidate(title, dur)
+                if sc > -500:
+                    candidates.append((sc, dur, title, curl))
+        except Exception:
+            continue
+
+    # Sort candidates by best score first
+    candidates.sort(key=lambda x: x[0], reverse=True)
+
+    for sc, dur, title, curl in candidates:
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as dl:
+                info = dl.extract_info(curl, download=True)
+                if not info:
                     continue
+                final_dur = info.get("duration") or dur
+                # Ensure the downloaded audio is a full song (at least 75 seconds)
+                if final_dur and final_dur < 75:
+                    continue
+                return info
         except Exception:
             continue
 
@@ -1659,6 +1697,12 @@ def run_separation_job(job_id, source_type, source_val, model="htdemucs_6s", pre
             except ImportError:
                 raise Exception("Media stream extraction support (yt-dlp) is not installed. Try an audio file instead.")
             ffmpeg_exe = shutil.which("ffmpeg")
+            if not ffmpeg_exe:
+                try:
+                    import static_ffmpeg
+                    ffmpeg_exe = static_ffmpeg.run.get_or_fetch_platform_executables_else_raise()[0]
+                except Exception:
+                    pass
             ydl_opts = {
                 'format': 'bestaudio/best',
                 'outtmpl': os.path.join(job_dir, 'source_audio.%(ext)s'),
