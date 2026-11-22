@@ -102,6 +102,21 @@ LIBRARY_NOTE = ""        # shown to the user when the chosen library folder coul
 os.makedirs(DATA_DIR, exist_ok=True)
 
 
+def find_cookies_file():
+    """Look for a user-provided cookies.txt file for YouTube authentication."""
+    candidates = [
+        os.path.join(BASE_DIR, "cookies.txt"),
+        os.path.join(DATA_DIR, "cookies.txt"),
+        os.path.join(os.path.expanduser("~"), "Downloads", "cookies.txt"),
+        os.path.join(os.path.expanduser("~"), "cookies.txt"),
+        os.path.join(os.path.expanduser("~"), "Desktop", "cookies.txt"),
+    ]
+    for path in candidates:
+        if os.path.isfile(path) and os.path.getsize(path) > 0:
+            return path
+    return None
+
+
 def read_settings():
     """settings.json in the data folder. A missing or broken file is an empty dict."""
     try:
@@ -1540,20 +1555,37 @@ def run_separation_job(job_id, source_type, source_val, model="htdemucs_6s", pre
                     'preferredcodec': 'wav',
                     'preferredquality': '192',
                 }],
-                'quiet': True
+                'quiet': True,
+                'no_warnings': True,
             }
             if ffmpeg_exe:
                 ydl_opts['ffmpeg_location'] = os.path.dirname(ffmpeg_exe)
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(source_val, download=True)
-                job["title"] = info.get("title", "Online Audio")
-                # Stream metadata for the lyrics lookup.
-                lyrics_extra = {
-                    "artist": info.get("artist") or info.get("creator"),
-                    "title": info.get("track") or info.get("title"),
-                    "album": info.get("album"),
-                    "duration": info.get("duration"),
-                }
+
+            cookie_path = find_cookies_file()
+            if cookie_path:
+                ydl_opts['cookiefile'] = cookie_path
+
+            try:
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(source_val, download=True)
+            except Exception as ydl_err:
+                err_text = str(ydl_err)
+                if "Sign in to confirm you’re not a bot" in err_text or "confirm you're not a bot" in err_text or "confirm you’re not a bot" in err_text:
+                    raise Exception(
+                        "YouTube blocked this stream with a bot check. "
+                        "To fix this, export your YouTube cookies using a browser extension (such as 'Get cookies.txt LOCALLY') "
+                        "and save 'cookies.txt' into your Stems Studio or Downloads folder. "
+                        "Or simply download the song directly and drop the file into Stems Studio."
+                    )
+                raise
+            job["title"] = info.get("title", "Online Audio")
+            # Stream metadata for the lyrics lookup.
+            lyrics_extra = {
+                "artist": info.get("artist") or info.get("creator"),
+                "title": info.get("track") or info.get("title"),
+                "album": info.get("album"),
+                "duration": info.get("duration"),
+            }
             audio_file = os.path.join(job_dir, "source_audio.wav")
         else:
             audio_file = source_val
