@@ -103,18 +103,59 @@ os.makedirs(DATA_DIR, exist_ok=True)
 
 
 def find_cookies_file():
-    """Look for a user-provided cookies.txt file for YouTube authentication."""
-    candidates = [
-        os.path.join(BASE_DIR, "cookies.txt"),
-        os.path.join(DATA_DIR, "cookies.txt"),
-        os.path.join(os.path.expanduser("~"), "Downloads", "cookies.txt"),
-        os.path.join(os.path.expanduser("~"), "cookies.txt"),
-        os.path.join(os.path.expanduser("~"), "Desktop", "cookies.txt"),
+    """Look for a user-provided cookies file for YouTube authentication."""
+    import glob
+    search_dirs = [
+        BASE_DIR,
+        DATA_DIR,
+        os.path.join(os.path.expanduser("~"), "Downloads"),
+        os.path.expanduser("~"),
+        os.path.join(os.path.expanduser("~"), "Desktop"),
     ]
-    for path in candidates:
-        if os.path.isfile(path) and os.path.getsize(path) > 0:
-            return path
+    patterns = ["cookies.txt", "*cookies*.txt", "*youtube*.txt"]
+    found = []
+    for d in search_dirs:
+        if not os.path.isdir(d):
+            continue
+        for pat in patterns:
+            for p in glob.glob(os.path.join(d, pat)):
+                if os.path.isfile(p):
+                    try:
+                        sz = os.path.getsize(p)
+                        if sz > 0:
+                            mtime = os.path.getmtime(p)
+                            found.append((mtime, p))
+                    except OSError:
+                        pass
+    if found:
+        # Pick the newest file
+        found.sort(key=lambda x: x[0], reverse=True)
+        return found[0][1]
     return None
+
+
+def find_js_runtime():
+    """Locate a JavaScript runtime (Node, Deno, Bun, QuickJS) for yt-dlp challenge solving."""
+    # Check PATH first
+    for name in ("deno", "node", "bun", "quickjs"):
+        path = shutil.which(name)
+        if path:
+            return name, path
+
+    # Check common Windows locations
+    windows_candidates = [
+        ("node", os.path.expandvars(r"%LOCALAPPDATA%\Programs\cursor\resources\app\resources\helpers\node.exe")),
+        ("node", os.path.expandvars(r"%ProgramFiles%\nodejs\node.exe")),
+        ("node", os.path.expandvars(r"%ProgramFiles(x86)%\nodejs\node.exe")),
+        ("node", os.path.expandvars(r"%APPDATA%\npm\node.exe")),
+        ("node", os.path.expandvars(r"%LOCALAPPDATA%\Programs\node\node.exe")),
+        ("deno", os.path.expandvars(r"%USERPROFILE%\.deno\bin\deno.exe")),
+        ("bun", os.path.expandvars(r"%USERPROFILE%\.bun\bin\bun.exe")),
+    ]
+    for name, path in windows_candidates:
+        if os.path.isfile(path):
+            return name, path
+    return None, None
 
 
 def read_settings():
@@ -1565,6 +1606,10 @@ def run_separation_job(job_id, source_type, source_val, model="htdemucs_6s", pre
             if cookie_path:
                 ydl_opts['cookiefile'] = cookie_path
 
+            js_name, js_path = find_js_runtime()
+            if js_name and js_path:
+                ydl_opts['js_runtimes'] = {js_name: {'path': js_path}}
+
             try:
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     info = ydl.extract_info(source_val, download=True)
@@ -1573,9 +1618,16 @@ def run_separation_job(job_id, source_type, source_val, model="htdemucs_6s", pre
                 if "Sign in to confirm you’re not a bot" in err_text or "confirm you're not a bot" in err_text or "confirm you’re not a bot" in err_text:
                     raise Exception(
                         "YouTube blocked this stream with a bot check. "
-                        "To fix this, export your YouTube cookies using a browser extension (such as 'Get cookies.txt LOCALLY') "
+                        "To fix this, export your YouTube cookies while signed into YouTube (e.g. using 'Get cookies.txt LOCALLY') "
                         "and save 'cookies.txt' into your Stems Studio or Downloads folder. "
                         "Or simply download the song directly and drop the file into Stems Studio."
+                    )
+                if "Requested format is not available" in err_text:
+                    raise Exception(
+                        "YouTube did not provide accessible audio streams for this video (format unavailable). "
+                        "This happens when YouTube restricts streams behind login or challenge verification. "
+                        "Make sure your exported cookies.txt is from an active signed-in YouTube session, "
+                        "or drop the downloaded audio file directly into Stems Studio."
                     )
                 raise
             job["title"] = info.get("title", "Online Audio")
