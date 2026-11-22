@@ -185,6 +185,11 @@
 
         <div class="create-or">or paste a media URL</div>
         <input type="text" class="create-text-input" id="createStemsUrl" placeholder="https://... (supported media or stream URL)">
+        <label class="create-folk-toggle" style="margin-top: 0.45rem;" id="createStemsFallbackLabel">
+          <input type="checkbox" id="createStemsFallback" checked>
+          <span><strong>Auto-fallback:</strong> If an official YouTube video is blocked by bot verification, automatically find and use an alternative audio stream.</span>
+        </label>
+        <p class="create-option-hint" style="margin-top: 0.25rem;">Notice: Official VEVO and music label videos on YouTube may enforce anti-bot challenges. If blocked, Stems Studio will search for an alternative audio stream, or you can drop your audio file directly above.</p>
 
         <div class="create-options">
           <div class="create-option-label">How many stems?</div>

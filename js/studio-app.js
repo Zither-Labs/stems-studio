@@ -698,13 +698,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const split = document.getElementById('createGuitarSplit');
     const clean = document.getElementById('createCleanVocals');
     const drums = document.getElementById('createSplitDrums');
+    const fallback = document.getElementById('createStemsFallback');
     const model = checked && checked.value === '4' ? 'htdemucs' : 'htdemucs_6s';
     return {
       model,
       preset: folk && folk.checked ? 'nepali_folk' : 'standard',
       guitarSplit: model === 'htdemucs_6s' && Boolean(split && split.checked),
       cleanVocals: cleanVocalsInstalled && Boolean(clean && clean.checked),
-      splitDrums: drumSplitInstalled && Boolean(drums && drums.checked)
+      splitDrums: drumSplitInstalled && Boolean(drums && drums.checked),
+      allowFallback: fallback ? Boolean(fallback.checked) : true
     };
   }
 
@@ -748,11 +750,13 @@ document.addEventListener('DOMContentLoaded', () => {
       if (clean) clean.checked = saved.cleanVocals === true;
       const drums = document.getElementById('createSplitDrums');
       if (drums) drums.checked = saved.splitDrums === true;
+      const fallback = document.getElementById('createStemsFallback');
+      if (fallback && typeof saved.allowFallback === 'boolean') fallback.checked = saved.allowFallback;
     } catch (err) { /* private mode or corrupt value: keep the defaults */ }
   }
 
   function saveCreateOptions() {
-    const { model, preset } = getCreateOptions();
+    const { model, preset, allowFallback } = getCreateOptions();
     const split = document.getElementById('createGuitarSplit');
     try {
       localStorage.setItem(CREATE_OPTIONS_KEY, JSON.stringify({
@@ -760,14 +764,15 @@ document.addEventListener('DOMContentLoaded', () => {
         folk: preset === 'nepali_folk',
         guitarSplit: Boolean(split && split.checked),
         cleanVocals: Boolean(document.getElementById('createCleanVocals') && document.getElementById('createCleanVocals').checked),
-        splitDrums: Boolean(document.getElementById('createSplitDrums') && document.getElementById('createSplitDrums').checked)
+        splitDrums: Boolean(document.getElementById('createSplitDrums') && document.getElementById('createSplitDrums').checked),
+        allowFallback: Boolean(allowFallback)
       }));
     } catch (err) { /* ignore */ }
   }
 
   restoreCreateOptions();
   syncGuitarSplitAvailability();
-  document.querySelectorAll('input[name="createStemCount"], #createFolkNames, #createGuitarSplit, #createCleanVocals, #createSplitDrums')
+  document.querySelectorAll('input[name="createStemCount"], #createFolkNames, #createGuitarSplit, #createCleanVocals, #createSplitDrums, #createStemsFallback')
     .forEach(el => el.addEventListener('change', () => {
       syncGuitarSplitAvailability();
       saveCreateOptions();
@@ -802,7 +807,15 @@ document.addEventListener('DOMContentLoaded', () => {
         resp = await fetch('/api/separate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ youtube_url: url, model: options.model, preset: options.preset, guitar_split: options.guitarSplit, clean_vocals: options.cleanVocals, split_drums: options.splitDrums })
+          body: JSON.stringify({
+            youtube_url: url,
+            model: options.model,
+            preset: options.preset,
+            guitar_split: options.guitarSplit,
+            clean_vocals: options.cleanVocals,
+            split_drums: options.splitDrums,
+            allow_fallback: options.allowFallback
+          })
         });
       }
       if (!resp.ok) throw new Error(`The stem maker refused the request (${resp.status}).`);

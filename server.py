@@ -1558,8 +1558,79 @@ def busy_job_for(song_id):
     return None
 
 
+def find_alternative_stream(source_val, ydl_opts, blocked_err=""):
+    """When a YouTube link fails due to bot protection, fetch title via oEmbed and find an alternative audio stream."""
+    import urllib.request
+    import urllib.parse
+    import re
+    import yt_dlp
+
+    m = re.search(r'(?:v=|\/|embed\/|shorts\/)([0-9A-Za-z_-]{11})', source_val)
+    blocked_id = m.group(1) if m else None
+
+    raw_title = ""
+    author = ""
+    try:
+        oembed_url = f"https://www.youtube.com/oembed?url={urllib.parse.quote(source_val)}&format=json"
+        req = urllib.request.Request(oembed_url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=6) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            raw_title = data.get("title", "")
+            author = data.get("author_name", "")
+    except Exception:
+        pass
+
+    if not raw_title and blocked_id:
+        raw_title = blocked_id
+
+    if not raw_title:
+        return None
+
+    clean = re.sub(r'(?i)\s*[\(\[]\s*(official\s*(music\s*)?video|video|audio|lyrics|official|hd|4k|remaster(ed)?)\s*[\)\]]', '', raw_title).strip()
+    clean = re.sub(r'(?i)\bvevo\b', '', clean).strip()
+
+    search_queries = [
+        f"ytsearch10:{clean} audio lyrics",
+        f"ytsearch10:{clean} cover audio",
+        f"scsearch5:{clean}"
+    ]
+
+    search_opts = dict(ydl_opts)
+    search_opts.update({
+        'quiet': True,
+        'extract_flat': True,
+        'ignoreerrors': True,
+    })
+
+    for q in search_queries:
+        try:
+            with yt_dlp.YoutubeDL(search_opts) as ydl_search:
+                res = ydl_search.extract_info(q, download=False)
+                entries = res.get("entries", []) if res else []
+            for entry in entries:
+                if not entry:
+                    continue
+                cid = entry.get("id")
+                if blocked_id and cid == blocked_id:
+                    continue
+                curl = entry.get("webpage_url") or (f"https://www.youtube.com/watch?v={cid}" if cid else None)
+                if not curl:
+                    continue
+                try:
+                    with yt_dlp.YoutubeDL(ydl_opts) as dl:
+                        info = dl.extract_info(curl, download=True)
+                        if info:
+                            return info
+                except Exception:
+                    continue
+        except Exception:
+            continue
+
+    return None
+
+
 def run_separation_job(job_id, source_type, source_val, model="htdemucs_6s", preset="nepali_folk",
-                       content_key=None, source_label="", title=None, split_drums=False):
+                       content_key=None, source_label="", title=None, split_drums=False, allow_fallback=True):
     job = JOBS[job_id]
     job_dir = os.path.join(OUTPUT_DIR, job_id)
     os.makedirs(job_dir, exist_ok=True)
@@ -1615,21 +1686,29 @@ def run_separation_job(job_id, source_type, source_val, model="htdemucs_6s", pre
                     info = ydl.extract_info(source_val, download=True)
             except Exception as ydl_err:
                 err_text = str(ydl_err)
-                if "Sign in to confirm you’re not a bot" in err_text or "confirm you're not a bot" in err_text or "confirm you’re not a bot" in err_text:
+                is_bot_blocked = (
+                    "Sign in to confirm you’re not a bot" in err_text or
+                    "confirm you're not a bot" in err_text or
+                    "confirm you’re not a bot" in err_text or
+                    "Requested format is not available" in err_text or
+                    "HTTP Error 403" in err_text
+                )
+                alt_info = None
+                if is_bot_blocked and allow_fallback:
+                    job["message"] = "Official stream protected by YouTube. Searching for alternative stream..."
+                    job["progress"] = 18
+                    alt_info = find_alternative_stream(source_val, ydl_opts, err_text)
+
+                if alt_info:
+                    info = alt_info
+                elif is_bot_blocked:
                     raise Exception(
-                        "YouTube blocked this stream with a bot check. "
-                        "To fix this, export your YouTube cookies while signed into YouTube (e.g. using 'Get cookies.txt LOCALLY') "
-                        "and save 'cookies.txt' into your Stems Studio or Downloads folder. "
-                        "Or simply download the song directly and drop the file into Stems Studio."
+                        "YouTube blocked this stream with a bot check" +
+                        (", and no alternative stream could be found." if allow_fallback else ".") +
+                        " You can drop the audio file directly into Stems Studio to create stems without YouTube restrictions."
                     )
-                if "Requested format is not available" in err_text:
-                    raise Exception(
-                        "YouTube did not provide accessible audio streams for this video (format unavailable). "
-                        "This happens when YouTube restricts streams behind login or challenge verification. "
-                        "Make sure your exported cookies.txt is from an active signed-in YouTube session, "
-                        "or drop the downloaded audio file directly into Stems Studio."
-                    )
-                raise
+                else:
+                    raise
             job["title"] = info.get("title", "Online Audio")
             # Stream metadata for the lyrics lookup.
             lyrics_extra = {
@@ -2235,6 +2314,7 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
                                               truthy(data.get("guitar_split", False)),
                                               truthy(data.get("clean_vocals", False)))
                 split_drums = truthy(data.get("split_drums", False))
+                allow_fallback = truthy(data.get("allow_fallback", True))
 
                 if not youtube_url:
                     self.send_response(400)
@@ -2258,7 +2338,7 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
 
                 t = threading.Thread(
                     target=run_separation_job,
-                    args=(job_id, "youtube", youtube_url, model, preset, content_key, youtube_url, None, split_drums),
+                    args=(job_id, "youtube", youtube_url, model, preset, content_key, youtube_url, None, split_drums, allow_fallback),
                     daemon=True
                 )
                 t.start()
@@ -2340,7 +2420,7 @@ class StudioRequestHandler(http.server.SimpleHTTPRequestHandler):
 
                 t = threading.Thread(
                     target=run_separation_job,
-                    args=(job_id, "file", uploaded_path, model, preset, content_key, original_name, title, split_drums),
+                    args=(job_id, "file", uploaded_path, model, preset, content_key, original_name, title, split_drums, False),
                     daemon=True
                 )
                 t.start()
