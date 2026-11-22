@@ -75,6 +75,7 @@ def get_local_ip():
 
 
 PAIRING_TOKEN = uuid.uuid4().hex[:6].upper()
+APP_NAME = "stems-studio"
 APP_VERSION = 8
 PORT = 8099
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
